@@ -2616,7 +2616,7 @@ function secureEmbedPlayer(streamUrl) {
     state.activeEmbedUrl = streamUrl;
     state.embedLoadCount = 0;
     state.embedReloading = false;
-    elements.embedPlayer.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation");
+    elements.embedPlayer.removeAttribute("sandbox");
     elements.embedPlayer.setAttribute("allow", "autoplay; fullscreen; picture-in-picture; encrypted-media");
     elements.embedPlayer.setAttribute("allowfullscreen", "");
     elements.embedPlayer.referrerPolicy = "no-referrer";
