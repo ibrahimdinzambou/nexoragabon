@@ -1,4 +1,4 @@
-const API_ROOT = "/api";
+const API_ROOT = window.NexoraApi?.root?.() || "/api";
 const TOKEN_KEY = "nexora_access_token";
 const NETWORK_RETRY_DELAYS = [300, 900];
 const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT", "OPS"];
@@ -170,7 +170,7 @@ async function api(path, options = {}) {
     headers.set("Accept", "application/json");
     if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
     if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
-    const response = await fetchWithRetry(`${API_ROOT}${path}`, { ...options, headers });
+    const response = await fetchWithRetry(apiUrl(path), { ...options, headers });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || body.success === false) {
         const error = new Error(body.message || "L'opération a échoué.");
@@ -178,6 +178,10 @@ async function api(path, options = {}) {
         throw error;
     }
     return body.data ?? body;
+}
+
+function apiUrl(path) {
+    return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
 }
 
 async function fetchWithRetry(url, options) {

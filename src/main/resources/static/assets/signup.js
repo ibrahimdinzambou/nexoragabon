@@ -1,4 +1,5 @@
 const TOKEN_KEY = "nexora_access_token";
+const API_ROOT = window.NexoraApi?.root?.() || "/api";
 const params = new URLSearchParams(window.location.search);
 
 const state = {
@@ -49,6 +50,10 @@ function escapeHtml(value) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+}
+
+function apiUrl(path) {
+    return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
 }
 
 function formatPrice(plan) {
@@ -116,7 +121,7 @@ function renderPlanPicker() {
 }
 
 async function loadPlans() {
-    const response = await fetch("/api/billing/plans", { headers: { Accept: "application/json" } });
+    const response = await fetch(apiUrl("/billing/plans"), { headers: { Accept: "application/json" } });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || body.success === false || !Array.isArray(body.data) || !body.data.length) {
         throw new Error("Les formules sont momentanément indisponibles.");
@@ -226,7 +231,7 @@ async function submitSignup(event) {
 
     try {
         const response = state.pendingEmail
-            ? await fetch("/api/auth/email/verify", {
+            ? await fetch(apiUrl("/auth/email/verify"), {
                 method: "POST",
                 headers: {
                     Accept: "application/json",
@@ -237,7 +242,7 @@ async function submitSignup(event) {
                     code: String(formData.get("code")).trim()
                 })
             })
-            : await fetch("/api/auth/register", {
+            : await fetch(apiUrl("/auth/register"), {
                 method: "POST",
                 headers: {
                     Accept: "application/json",
@@ -295,7 +300,7 @@ async function resendOtp() {
     if (!state.pendingEmail) return;
     elements.resendOtpButton.disabled = true;
     try {
-        const response = await fetch("/api/auth/email/resend", {
+        const response = await fetch(apiUrl("/auth/email/resend"), {
             method: "POST",
             headers: {
                 Accept: "application/json",

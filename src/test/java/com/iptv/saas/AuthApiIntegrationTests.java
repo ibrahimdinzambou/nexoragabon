@@ -142,7 +142,7 @@ class AuthApiIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "email": "admin@example.com",
+                                  "email": "alexandredinzambou@gmail.com",
                                   "password": "password"
                                 }
                                 """))
@@ -155,7 +155,7 @@ class AuthApiIntegrationTests {
 
         mvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.user.email").value("admin@example.com"));
+                .andExpect(jsonPath("$.data.user.email").value("alexandredinzambou@gmail.com"));
     }
 
     @Test

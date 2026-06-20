@@ -20,13 +20,16 @@ public class EmailTemplateService {
 
     private final String companyName;
     private final String companyEmail;
+    private final String publicSiteUrl;
 
     public EmailTemplateService(
             @Value("${app.mail.from-name:Nexora}") String companyName,
-            @Value("${app.mail.from-address:noreply@nexora.local}") String companyEmail
+            @Value("${app.mail.from-address:noreply@nexoragabon.com}") String companyEmail,
+            @Value("${app.public.site-url:https://nexoragabon.com}") String publicSiteUrl
     ) {
         this.companyName = companyName;
         this.companyEmail = companyEmail;
+        this.publicSiteUrl = trimSlash(publicSiteUrl);
     }
 
     public String connectionTest() {
@@ -65,7 +68,7 @@ public class EmailTemplateService {
                         "TICKET #" + ticketId,
                         subject,
                         "Statut : ouvert"
-                ) + button("Ouvrir mon espace Nexora", "http://localhost:8080/")
+                ) + button("Ouvrir mon espace Nexora", publicSiteUrl)
         );
     }
 
@@ -77,7 +80,7 @@ public class EmailTemplateService {
                         "TICKET #" + ticketId,
                         subject,
                         "Connectez-vous pour consulter le message."
-                ) + button("Consulter la réponse", "http://localhost:8080/")
+                ) + button("Consulter la réponse", publicSiteUrl)
         );
     }
 
@@ -359,7 +362,7 @@ public class EmailTemplateService {
         if (invoice.organization != null && invoice.organization.billingEmail != null) {
             return invoice.organization.billingEmail;
         }
-        return "client@nexora.local";
+        return "client@nexoragabon.com";
     }
 
     private String invoicePlanName(Invoice invoice) {
@@ -490,5 +493,10 @@ public class EmailTemplateService {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
+    }
+
+    private String trimSlash(String value) {
+        String normalized = value == null || value.isBlank() ? "https://nexoragabon.com" : value.trim();
+        return normalized.replaceAll("/+$", "");
     }
 }

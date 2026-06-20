@@ -28,6 +28,7 @@ public class AuthService {
     private final BillingService billingService;
     private final TransactionalMailService mail;
     private final EmailTemplateService templates;
+    private final TelegramAlertService telegram;
     private final AuditService audit;
     private final SecureRandom random = new SecureRandom();
     private final boolean requireEmailVerification;
@@ -42,6 +43,7 @@ public class AuthService {
             BillingService billingService,
             TransactionalMailService mail,
             EmailTemplateService templates,
+            TelegramAlertService telegram,
             AuditService audit,
             @Value("${app.security.require-email-verification:true}") boolean requireEmailVerification,
             @Value("${app.security.email-otp-ttl-minutes:15}") long emailOtpTtlMinutes,
@@ -54,6 +56,7 @@ public class AuthService {
         this.billingService = billingService;
         this.mail = mail;
         this.templates = templates;
+        this.telegram = telegram;
         this.audit = audit;
         this.requireEmailVerification = requireEmailVerification;
         this.emailOtpTtlMinutes = emailOtpTtlMinutes;
@@ -145,6 +148,7 @@ public class AuthService {
         }
         String token = tokenService.createToken(user, "login");
         audit.log(user, "auth.login", "User", user.id, user.email);
+        alertAdminLogin(user, "Connexion directe");
         return authPayload(user, organizationService.currentOrganization(user), token);
     }
 
@@ -161,6 +165,7 @@ public class AuthService {
         users.save(user);
         String token = tokenService.createToken(user, "2fa");
         audit.log(user, "auth.2fa.verified", "User", user.id, user.email);
+        alertAdminLogin(user, "Connexion 2FA validee");
         return authPayload(user, organizationService.currentOrganization(user), token);
     }
 
@@ -219,6 +224,7 @@ public class AuthService {
         user.resetOtpExpiresAt = null;
         users.save(user);
         audit.log(user, "auth.password.reset", "User", user.id, user.email);
+        alertAdminSecurity(user, "Mot de passe admin reinitialise", "Reset par code email");
     }
 
     @Transactional(readOnly = true)
@@ -249,6 +255,7 @@ public class AuthService {
     @Transactional
     public Map<String, Object> updateProfile(UserEntity user, String name, String email) {
         UserEntity managed = users.findById(user.id).orElseThrow(() -> ApiException.notFound("Utilisateur introuvable"));
+        String previousEmail = managed.email;
         if (name != null && !name.isBlank()) {
             managed.name = name.trim();
         }
@@ -268,6 +275,13 @@ public class AuthService {
         }
         users.save(managed);
         audit.log(managed, "auth.profile.updated", "User", managed.id, managed.email);
+        if (!String.valueOf(previousEmail).equalsIgnoreCase(managed.email)) {
+            alertAdminSecurity(
+                    managed,
+                    "Profil admin mis a jour",
+                    "Email: " + previousEmail + " -> " + managed.email
+            );
+        }
         return ApiMappers.user(managed);
     }
 
@@ -280,6 +294,48 @@ public class AuthService {
         managed.passwordHash = passwordEncoder.encode(newPassword);
         users.save(managed);
         audit.log(managed, "auth.password.changed", "User", managed.id, managed.email);
+        alertAdminSecurity(managed, "Mot de passe admin modifie", "Changement depuis l'espace utilisateur");
+    }
+
+    private void alertAdminLogin(UserEntity user, String mode) {
+        if (!isAdminLike(user)) {
+            return;
+        }
+        String title = user.role == Enums.UserRole.SUPER_ADMIN ? "Connexion super admin" : "Connexion admin";
+        telegram.send(
+                title,
+                """
+                Email: %s
+                Role: %s
+                Mode: %s
+                Heure: %s
+                """.formatted(user.email, user.role, mode, Instant.now())
+        );
+    }
+
+    private void alertAdminSecurity(UserEntity user, String title, String detail) {
+        if (!isAdminLike(user)) {
+            return;
+        }
+        telegram.send(
+                title,
+                """
+                Email: %s
+                Role: %s
+                Detail: %s
+                Heure: %s
+                """.formatted(user.email, user.role, detail, Instant.now())
+        );
+    }
+
+    private boolean isAdminLike(UserEntity user) {
+        return user != null && (
+                user.role == Enums.UserRole.SUPER_ADMIN
+                        || user.role == Enums.UserRole.ADMIN
+                        || user.role == Enums.UserRole.BILLING
+                        || user.role == Enums.UserRole.SUPPORT
+                        || user.role == Enums.UserRole.OPS
+        );
     }
 
     private Map<String, Object> authPayload(UserEntity user, Organization organization, String token) {

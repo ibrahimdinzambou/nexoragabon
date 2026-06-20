@@ -54,15 +54,17 @@ public class TelegramAlertService {
             client.sendAsync(request(title, body, actions), HttpResponse.BodyHandlers.ofString())
                     .thenAccept(response -> {
                         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                            log.info("Telegram alert rejected with HTTP {}", response.statusCode());
+                            log.warn("Telegram alert rejected with HTTP {} for title={}", response.statusCode(), title);
+                        } else {
+                            log.info("Telegram alert sent: {}", title);
                         }
                     })
                     .exceptionally(exception -> {
-                        log.info("Telegram alert failed: {}", exception.getMessage());
+                        log.warn("Telegram alert failed for title={}: {}", title, exception.getMessage());
                         return null;
                     });
         } catch (Exception exception) {
-            log.info("Telegram alert skipped: {}", exception.getMessage());
+            log.warn("Telegram alert skipped for title={}: {}", title, exception.getMessage());
         }
     }
 

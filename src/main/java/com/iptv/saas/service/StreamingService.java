@@ -247,7 +247,22 @@ public class StreamingService {
         session = sessions.save(session);
         telegram.send(
                 "Bascule IPTV automatique",
-                "Session #" + session.id + ": compte " + failedAccount.id + " vers " + replacement.id
+                """
+                Session: #%d
+                Client: %s
+                Contenu: %s:%s
+                Source precedente: #%d %s
+                Nouvelle source: #%d %s
+                """.formatted(
+                        session.id,
+                        session.user == null ? "-" : session.user.email,
+                        session.contentType,
+                        session.itemId,
+                        failedAccount.id,
+                        failedAccount.name,
+                        replacement.id,
+                        replacement.name
+                )
         );
         audit.log(
                 session.user,
@@ -290,8 +305,12 @@ public class StreamingService {
                 );
                 telegram.send(
                         "Compte IPTV desactive automatiquement",
-                        "#%d %s\nEchecs lecture: %d/%d\nCode: %s"
-                                .formatted(account.id, account.name, account.failureCount, threshold, failureCode)
+                        """
+                        Compte: #%d %s
+                        Echecs lecture: %d/%d
+                        Code: %s
+                        Statut: disabled
+                        """.formatted(account.id, account.name, account.failureCount, threshold, failureCode)
                 );
             } else {
                 account.lastHealthStatus = "stream-failed";

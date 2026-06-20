@@ -31,7 +31,7 @@ public class TransactionalMailService {
             @Value("${spring.mail.host:}") String host,
             @Value("${spring.mail.port:25}") int port,
             @Value("${spring.mail.username:}") String username,
-            @Value("${app.mail.from-address:noreply@nexora.local}") String fromAddress,
+            @Value("${app.mail.from-address:noreply@nexoragabon.com}") String fromAddress,
             @Value("${app.mail.from-name:Nexora}") String fromName,
             @Value("${spring.mail.properties.mail.smtp.auth:false}") boolean authentication,
             @Value("${spring.mail.properties.mail.smtp.starttls.enable:false}") boolean startTls,

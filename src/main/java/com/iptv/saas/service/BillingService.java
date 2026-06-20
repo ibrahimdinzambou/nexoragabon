@@ -130,7 +130,24 @@ public class BillingService {
         payment = payments.save(payment);
         telegram.send(
                 "Nouveau paiement en attente",
-                payment.paymentReference + " - " + payment.amount + " " + payment.currency,
+                """
+                Reference: %s
+                Client: %s
+                Organisation: %s
+                Formule: %s
+                Montant: %s %s
+                Methode: %s
+                Expire: %s
+                """.formatted(
+                        payment.paymentReference,
+                        user.email,
+                        organization.name,
+                        plan.name,
+                        payment.amount,
+                        payment.currency,
+                        method.name,
+                        payment.expiresAt
+                ),
                 List.of(List.of(
                         new TelegramAlertService.Action("Valider #" + payment.id, "confirm:verify_payment:" + payment.id),
                         new TelegramAlertService.Action("Refuser #" + payment.id, "confirm:reject_payment:" + payment.id)
@@ -204,7 +221,27 @@ public class BillingService {
         activateSubscription(payment);
         Invoice invoice = invoiceService.createForPayment(payment);
         invoiceService.resend(admin, invoice.id);
-        telegram.send("Paiement valide", payment.paymentReference + " - " + payment.amount + " " + payment.currency);
+        telegram.send(
+                "Paiement valide",
+                """
+                Reference: %s
+                Client: %s
+                Organisation: %s
+                Formule: %s
+                Montant: %s %s
+                Admin: %s
+                Facture: %s
+                """.formatted(
+                        payment.paymentReference,
+                        payment.user == null ? "-" : payment.user.email,
+                        payment.organization == null ? "-" : payment.organization.name,
+                        payment.plan == null ? "-" : payment.plan.name,
+                        payment.amount,
+                        payment.currency,
+                        admin.email,
+                        invoice.invoiceNumber
+                )
+        );
         audit.log(admin, "billing.payment.verified", "PaymentTransaction", payment.id, payment.paymentReference);
         return payment;
     }
@@ -221,7 +258,21 @@ public class BillingService {
         payment.verifiedAt = Instant.now();
         telegram.send(
                 "Paiement rejete",
-                payment.paymentReference + " - " + payment.rejectionReason
+                """
+                Reference: %s
+                Client: %s
+                Organisation: %s
+                Formule: %s
+                Raison: %s
+                Admin: %s
+                """.formatted(
+                        payment.paymentReference,
+                        payment.user == null ? "-" : payment.user.email,
+                        payment.organization == null ? "-" : payment.organization.name,
+                        payment.plan == null ? "-" : payment.plan.name,
+                        payment.rejectionReason,
+                        admin.email
+                )
         );
         audit.log(admin, "billing.payment.rejected", "PaymentTransaction", payment.id, payment.rejectionReason);
         return payments.save(payment);

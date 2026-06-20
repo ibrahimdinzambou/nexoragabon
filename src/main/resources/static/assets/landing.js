@@ -1,5 +1,5 @@
 const TOKEN_KEY = "nexora_access_token";
-const API_ROOT = "/api";
+const API_ROOT = window.NexoraApi?.root?.() || "/api";
 const header = document.querySelector("#landingHeader");
 const plansGrid = document.querySelector("#plansGrid");
 const loginLaunchButton = document.querySelector("#loginLaunchButton");
@@ -83,12 +83,16 @@ async function api(path, options = {}) {
     headers.set("Accept", "application/json");
     if (options.body) headers.set("Content-Type", "application/json");
     if (landingState.token) headers.set("Authorization", `Bearer ${landingState.token}`);
-    const response = await fetch(`${API_ROOT}${path}`, { ...options, headers });
+    const response = await fetch(apiUrl(path), { ...options, headers });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || body.success === false) {
         throw new Error(body.message || "Connexion impossible pour le moment.");
     }
     return body.data ?? body;
+}
+
+function apiUrl(path) {
+    return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
 }
 
 function setLandingAuthField(field, visible, required) {
@@ -403,7 +407,7 @@ function renderPlans(plans) {
 
 async function loadPlans() {
     try {
-        const response = await fetch("/api/billing/plans", { headers: { Accept: "application/json" } });
+        const response = await fetch(apiUrl("/billing/plans"), { headers: { Accept: "application/json" } });
         const body = await response.json();
         if (!response.ok || body.success === false || !Array.isArray(body.data)) throw new Error();
         renderPlans(body.data);

@@ -627,7 +627,7 @@ Le back-office est une interface Blade, mais sa donnée vient de l’API. La log
 
 Seeder:
 
-- Admin: `admin@example.com` / `password`.
+- Admin: `alexandredinzambou@gmail.com` / `password`.
 - User test: `test@example.com` / `password`.
 - Plans: free, basic, pro, enterprise.
 - Moyens de paiement: mobile money, virement bancaire.

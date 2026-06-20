@@ -3,6 +3,7 @@ package com.iptv.saas.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.iptv.saas.security.BearerTokenFilter;
 import com.iptv.saas.web.Responses;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -15,6 +16,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
@@ -22,7 +29,8 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, BearerTokenFilter bearerTokenFilter, ObjectMapper mapper)
             throws Exception {
-        http.csrf(AbstractHttpConfigurer::disable)
+        http.cors(cors -> {})
+                .csrf(AbstractHttpConfigurer::disable)
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, ex) -> {
@@ -62,6 +70,43 @@ public class SecurityConfig {
                 )
                 .addFilterBefore(bearerTokenFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    @Bean
+    CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origin-patterns:}") String configuredOriginPatterns
+    ) {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOriginPatterns(originPatterns(configuredOriginPatterns));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
+        configuration.setExposedHeaders(List.of("Location"));
+        configuration.setAllowCredentials(false);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", configuration);
+        source.registerCorsConfiguration("/actuator/health", configuration);
+        return source;
+    }
+
+    private List<String> originPatterns(String configuredOriginPatterns) {
+        String defaults = String.join(",",
+                "https://nexoragabon.com",
+                "https://www.nexoragabon.com",
+                "https://*.vercel.app",
+                "https://nexora-api-production.up.railway.app",
+                "http://localhost:3000",
+                "http://localhost:5173",
+                "http://localhost:8080"
+        );
+        String value = configuredOriginPatterns == null || configuredOriginPatterns.isBlank()
+                ? defaults
+                : configuredOriginPatterns;
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .toList();
     }
 
     @Bean

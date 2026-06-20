@@ -59,13 +59,21 @@ public class TelegramIptvHealthMonitor {
             accounts.save(account);
             telegram.send(
                     "Compte IPTV en alerte",
-                    "#%d %s\n%s\nCharge: %d/%s"
+                    """
+                    Compte: #%d %s
+                    Etat: %s
+                    Charge: %d/%s
+                    Expiration: %s
+                    Sante fournisseur: %s
+                    """
                             .formatted(
                                     account.id,
                                     account.name,
                                     state,
                                     account.activeStreams,
-                                    account.maxStreams <= 0 ? "infini" : String.valueOf(account.maxStreams)
+                                    account.maxStreams <= 0 ? "infini" : String.valueOf(account.maxStreams),
+                                    account.expiresAt == null ? "non renseignee" : account.expiresAt,
+                                    account.lastHealthStatus == null ? "inconnue" : account.lastHealthStatus
                             ),
                     List.of(List.of(
                             new TelegramAlertService.Action("Tester", "test_account:" + account.id),

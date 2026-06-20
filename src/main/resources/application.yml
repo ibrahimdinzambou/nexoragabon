@@ -57,9 +57,22 @@ management:
         include: health,info,metrics
 
 app:
+  public:
+    site-url: ${PUBLIC_SITE_URL:https://nexoragabon.com}
+    api-base-url: ${PUBLIC_API_BASE_URL:https://nexora-api-production.up.railway.app}
+  cors:
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:}
   mail:
-    from-address: ${MAIL_FROM_ADDRESS:${MAIL_USERNAME:noreply@nexora.local}}
+    from-address: ${MAIL_FROM_ADDRESS:${MAIL_USERNAME:noreply@nexoragabon.com}}
     from-name: ${MAIL_FROM_NAME:Nexora}
+  seed:
+    super-admin-email: ${SUPER_ADMIN_EMAIL:alexandredinzambou@gmail.com}
+    super-admin-name: ${SUPER_ADMIN_NAME:Alexandre Dinzambou}
+    super-admin-password: ${SUPER_ADMIN_PASSWORD:}
+  alerts:
+    enabled: ${APP_ALERTS_ENABLED:${TELEGRAM_ALERTS_ENABLED:false}}
+    health-interval-ms: ${APP_HEALTH_ALERT_INTERVAL_MS:900000}
+    health-initial-delay-ms: ${APP_HEALTH_ALERT_INITIAL_DELAY_MS:60000}
   security:
     token-ttl-hours: ${TOKEN_TTL_HOURS:168}
     require-email-verification: ${REQUIRE_EMAIL_VERIFICATION:true}
@@ -151,3 +164,18 @@ app:
       chat-roles: ${TELEGRAM_ADMIN_CHAT_ROLES:}
       poll-interval-ms: ${TELEGRAM_ADMIN_POLL_INTERVAL_MS:3000}
       poll-initial-delay-ms: ${TELEGRAM_ADMIN_POLL_INITIAL_DELAY_MS:5000}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: postgres
+    import: optional:file:.env[.properties]
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:iptv_saas}}
+    driver-class-name: org.postgresql.Driver
+    username: ${SPRING_DATASOURCE_USERNAME:${PGUSER:postgres}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${PGPASSWORD:postgres}}
+  h2:
+    console:
+      enabled: false

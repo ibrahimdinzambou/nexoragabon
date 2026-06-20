@@ -73,7 +73,19 @@ public class SupportService {
         if (ticket.priority == Enums.TicketPriority.HIGH || ticket.priority == Enums.TicketPriority.URGENT) {
             telegram.send(
                     "Ticket support prioritaire",
-                    "#" + ticket.id + " - " + ticket.priority + " - " + ticket.subject,
+                    """
+                    Ticket: #%d
+                    Priorite: %s
+                    Client: %s
+                    Organisation: %s
+                    Sujet: %s
+                    """.formatted(
+                            ticket.id,
+                            ticket.priority,
+                            user.email,
+                            organization.name,
+                            ticket.subject
+                    ),
                     List.of(List.of(
                             new TelegramAlertService.Action("Repondu #" + ticket.id, "answer_ticket:" + ticket.id),
                             new TelegramAlertService.Action("Fermer #" + ticket.id, "confirm:close_ticket:" + ticket.id)
@@ -123,6 +135,21 @@ public class SupportService {
             }
         } else {
             ticket.status = Enums.TicketStatus.PENDING;
+            if (ticket.priority == Enums.TicketPriority.HIGH || ticket.priority == Enums.TicketPriority.URGENT) {
+                telegram.send(
+                        "Reponse client sur ticket prioritaire",
+                        """
+                        Ticket: #%d
+                        Priorite: %s
+                        Client: %s
+                        Sujet: %s
+                        """.formatted(ticket.id, ticket.priority, user.email, ticket.subject),
+                        List.of(List.of(
+                                new TelegramAlertService.Action("Repondu #" + ticket.id, "answer_ticket:" + ticket.id),
+                                new TelegramAlertService.Action("Fermer #" + ticket.id, "confirm:close_ticket:" + ticket.id)
+                        ))
+                );
+            }
         }
         tickets.save(ticket);
         audit.log(user, "support.ticket.replied", "SupportTicket", ticket.id, ticket.subject);

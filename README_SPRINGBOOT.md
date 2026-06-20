@@ -26,15 +26,56 @@ API locale:
 - `http://localhost:8080/actuator/health`
 - `http://localhost:8080/h2-console`
 
+Production:
+
+- Site Vercel: `https://nexoragabon.com` et `https://www.nexoragabon.com`
+- API Railway: `https://nexora-api-production.up.railway.app`
+- Health: `https://nexora-api-production.up.railway.app/actuator/health`
+
 H2:
 
 - JDBC URL: `jdbc:h2:file:./data/iptv-saas;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE`
 - User: `sa`
 - Password: vide
 
+## Railway et PostgreSQL
+
+Le depot contient `railway.toml` pour builder le jar avec Railpack, demarrer
+`target/iptv-saas-api-0.1.0.jar` et verifier `/actuator/health`.
+
+Pour Railway:
+
+1. Ajoutez un service PostgreSQL au projet Railway.
+2. Dans le service Spring Boot, configurez:
+
+```properties
+SPRING_PROFILES_ACTIVE=postgres
+SPRING_DATASOURCE_URL=jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
+SPRING_DATASOURCE_USERNAME=${{Postgres.PGUSER}}
+SPRING_DATASOURCE_PASSWORD=${{Postgres.PGPASSWORD}}
+```
+
+Gardez aussi les variables fonctionnelles du `.env` local: SMTP, Telegram,
+TMDB, Consumet, TorBox et add-ons selon les integrations activees.
+Configurez aussi les URLs publiques, CORS et le seed super admin pour le front
+Vercel:
+
+```properties
+PUBLIC_SITE_URL=https://nexoragabon.com
+PUBLIC_API_BASE_URL=https://nexora-api-production.up.railway.app
+CORS_ALLOWED_ORIGIN_PATTERNS=https://nexoragabon.com,https://www.nexoragabon.com,https://*.vercel.app
+SUPER_ADMIN_EMAIL=alexandredinzambou@gmail.com
+SUPER_ADMIN_NAME=Alexandre Dinzambou
+```
+
+Le profil `postgres` cree ou met a jour le schema via Hibernate (`ddl-auto:
+update`). La migration des donnees H2 existantes vers PostgreSQL reste une
+etape separee: export H2, import PostgreSQL, puis verification des comptes,
+plans, abonnements et sessions.
+
 ## Comptes seed
 
-- Admin: `admin@example.com` / `password`
+- Admin: `alexandredinzambou@gmail.com` / `password`
 - User: `test@example.com` / `password`
 
 ## Exemples
@@ -46,7 +87,7 @@ POST /api/auth/login
 Content-Type: application/json
 
 {
-  "email": "admin@example.com",
+  "email": "alexandredinzambou@gmail.com",
   "password": "password"
 }
 ```
@@ -91,7 +132,7 @@ $env:MAIL_HOST="sandbox.smtp.mailtrap.io"
 $env:MAIL_PORT="2525"
 $env:MAIL_USERNAME="identifiant-mailtrap"
 $env:MAIL_PASSWORD="mot-de-passe-mailtrap"
-$env:MAIL_FROM_ADDRESS="notifications@nexora.local"
+$env:MAIL_FROM_ADDRESS="notifications@nexoragabon.com"
 $env:MAIL_FROM_NAME="Nexora"
 $env:MAIL_SMTP_AUTH="true"
 $env:MAIL_STARTTLS="true"
@@ -170,7 +211,10 @@ intégrée à Spring Boot se trouve dans:
 - `src/main/resources/static/assets/app.js`
 - `src/main/resources/static/assets/images/`
 
-L’interface est servie directement par Spring Boot sur `http://localhost:8080/`.
+L’interface est servie directement par Spring Boot sur `http://localhost:8080/`
+en local, et par Vercel sur `https://nexoragabon.com` en production. Le fichier
+`assets/runtime-config.js` connecte le front Vercel a l'API Railway
+`https://nexora-api-production.up.railway.app`.
 Elle propose le catalogue Direct/Films/Séries, la recherche, l’inscription, la
 connexion, le profil client et l’ouverture des sessions de streaming via l’API.
 Les playlists M3U configurées dans les comptes IPTV sont chargées côté serveur:
@@ -185,7 +229,7 @@ Sans authentification, un catalogue de découverte est affiché. Pour tester le
 catalogue connecté:
 
 - `test@example.com` / `password`
-- `admin@example.com` / `password`
+- `alexandredinzambou@gmail.com` / `password`
 
 ## Couverture fonctionnelle
 

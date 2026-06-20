@@ -403,6 +403,17 @@ button {
     font-size: 11px;
 }
 
+.search-empty.search-loading {
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+}
+
+.search-empty.search-loading .spinner {
+    display: block;
+    color: var(--accent);
+}
+
 .search-show-all {
     width: 100%;
     padding: 14px 17px;
@@ -830,6 +841,12 @@ button {
     box-shadow: 0 0 10px var(--success);
 }
 
+.status-pill.loading span {
+    background: var(--accent);
+    box-shadow: 0 0 12px rgba(231, 195, 109, 0.72);
+    animation: statusPulse 1s ease-in-out infinite;
+}
+
 .catalog-controls {
     display: flex;
     align-items: center;
@@ -965,6 +982,36 @@ button {
 .catalog-rows {
     display: grid;
     gap: 34px;
+}
+
+.catalog-loading-strip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 54px;
+    padding: 13px 16px;
+    color: var(--muted);
+    border: 1px solid rgba(231, 195, 109, 0.24);
+    background:
+        linear-gradient(90deg, rgba(231, 195, 109, 0.12), transparent 42%),
+        rgba(255, 255, 255, 0.025);
+    font-size: 12px;
+}
+
+.catalog-loading-strip .spinner {
+    display: block;
+    flex: 0 0 auto;
+    color: var(--accent);
+}
+
+.catalog-loading-strip strong {
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.catalog-loading-strip span:last-child {
+    min-width: 0;
 }
 
 .watch-showcase {
@@ -1655,11 +1702,25 @@ body.compact-catalog .card-copy strong {
     text-align: center;
 }
 
+.empty-state.loading-state {
+    border-color: rgba(231, 195, 109, 0.24);
+    background:
+        radial-gradient(circle at 50% 0, rgba(231, 195, 109, 0.11), transparent 34%),
+        rgba(255, 255, 255, 0.018);
+}
+
 .empty-state > span {
+    display: inline-grid;
+    justify-items: center;
+    gap: 12px;
     color: var(--accent);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.18em;
+}
+
+.empty-state.loading-state > span .spinner {
+    color: var(--accent);
 }
 
 .empty-state h3 {
@@ -3068,6 +3129,11 @@ body.compact-catalog .card-copy strong {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+@keyframes statusPulse {
+    0%, 100% { transform: scale(1); opacity: 0.65; }
+    50% { transform: scale(1.8); opacity: 1; }
 }
 
 @keyframes toastIn {

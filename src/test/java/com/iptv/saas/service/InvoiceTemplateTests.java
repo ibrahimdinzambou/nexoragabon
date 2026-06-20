@@ -17,7 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class InvoiceTemplateTests {
     @Test
     void rendersProvidedInvoiceModelAsHtmlAndPdf() {
-        EmailTemplateService templates = new EmailTemplateService("Nexora", "billing@nexora.test");
+        EmailTemplateService templates = new EmailTemplateService(
+                "Nexora",
+                "billing@nexora.test",
+                "https://nexoragabon.test"
+        );
         Invoice invoice = sampleInvoice();
 
         String html = templates.invoice(invoice);

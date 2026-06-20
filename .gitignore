@@ -12,3 +12,8 @@ data/
 .codex/
 runtime-logs/
 .github/modernize/
+addons/
+Netflix-Clone-HTML-CSS--main/
+netflix-main/
+hs_err_pid*.log
+replay_pid*.log

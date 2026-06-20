@@ -28,6 +28,7 @@ import java.util.Set;
 @Configuration
 public class DataSeeder {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataSeeder.class);
+    private static final String LEGACY_SUPER_ADMIN_EMAIL = "admin@example.com";
     private static final String USER_SUPPLIED_LICENSE = "Manifeste fourni par l'utilisateur";
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
@@ -70,16 +71,7 @@ public class DataSeeder {
                     "Effectuez un virement et ajoutez la reference dans la demande de paiement."
             )));
 
-            UserEntity admin = users.findByEmailIgnoreCase("admin@example.com").orElseGet(() -> {
-                UserEntity user = new UserEntity();
-                user.name = "Admin";
-                user.email = "admin@example.com";
-                user.passwordHash = passwordEncoder.encode("password");
-                user.role = Enums.UserRole.SUPER_ADMIN;
-                user.active = true;
-                user.emailVerified = true;
-                return users.save(user);
-            });
+            UserEntity admin = seedSuperAdmin(users, passwordEncoder, environment);
 
             UserEntity test = users.findByEmailIgnoreCase("test@example.com").orElseGet(() -> {
                 UserEntity user = new UserEntity();
@@ -157,7 +149,10 @@ public class DataSeeder {
             if (uptimeChecks.count() == 0) {
                 UptimeCheck check = new UptimeCheck();
                 check.name = "API Health";
-                check.url = "http://localhost:8080/actuator/health";
+                check.url = trimSlash(environment.getProperty(
+                        "app.public.api-base-url",
+                        "https://nexora-api-production.up.railway.app"
+                )) + "/actuator/health";
                 check.method = "GET";
                 check.enabled = true;
                 uptimeChecks.save(check);
@@ -189,6 +184,52 @@ public class DataSeeder {
             }
             ensureDemoExternalCatalogAccess(users, mapper, consumet, tmdb, communityAddonService, test);
         };
+    }
+
+    private UserEntity seedSuperAdmin(
+            UserRepository users,
+            PasswordEncoder passwordEncoder,
+            Environment environment
+    ) {
+        String email = normalizeEmail(environment.getProperty(
+                "app.seed.super-admin-email",
+                "alexandredinzambou@gmail.com"
+        ));
+        String name = environment.getProperty("app.seed.super-admin-name", "Alexandre Dinzambou");
+        String configuredPassword = environment.getProperty("app.seed.super-admin-password", "");
+
+        UserEntity admin = users.findByEmailIgnoreCase(email)
+                .orElseGet(() -> users.findByEmailIgnoreCase(LEGACY_SUPER_ADMIN_EMAIL)
+                        .map(user -> {
+                            user.email = email;
+                            return user;
+                        })
+                        .orElseGet(UserEntity::new));
+        boolean isNew = admin.id == null;
+        admin.name = name == null || name.isBlank() ? "Alexandre Dinzambou" : name.trim();
+        admin.email = email;
+        if (isNew || (configuredPassword != null && !configuredPassword.isBlank())) {
+            admin.passwordHash = passwordEncoder.encode(
+                    configuredPassword == null || configuredPassword.isBlank()
+                            ? "password"
+                            : configuredPassword
+            );
+        }
+        admin.role = Enums.UserRole.SUPER_ADMIN;
+        admin.active = true;
+        admin.emailVerified = true;
+        return users.save(admin);
+    }
+
+    private String normalizeEmail(String email) {
+        String value = email == null || email.isBlank()
+                ? "alexandredinzambou@gmail.com"
+                : email.trim().toLowerCase();
+        return value;
+    }
+
+    private String trimSlash(String value) {
+        return String.valueOf(value == null ? "" : value).replaceAll("/+$", "");
     }
 
     private String stremioPornAddonUrl(Environment environment) {

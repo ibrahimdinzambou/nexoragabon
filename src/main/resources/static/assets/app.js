@@ -1,4 +1,4 @@
-const API_ROOT = "/api";
+const API_ROOT = window.NexoraApi?.root?.() || "/api";
 const TOKEN_KEY = "nexora_access_token";
 const MOVIE_SORT_KEY = "nexora_movie_sort";
 const SETTINGS_KEY = "nexora_profile_settings";
@@ -14,6 +14,7 @@ const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.net";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
+const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const launchParams = new URLSearchParams(window.location.search);
 const WATCH_REQUIRES_AUTH = launchParams.get("demo") !== "1";
 const titleCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
@@ -82,7 +83,6 @@ const state = {
     activeEmbedUrl: null,
     embedLoadCount: 0,
     embedReloading: false,
-    embedNavigationRestoreTimer: null,
     activePlaybackMode: null,
     activePlaybackQuality: null,
     playerGeneration: 0,
@@ -234,7 +234,7 @@ async function api(path, options = {}) {
         headers.set("Authorization", `Bearer ${state.token}`);
     }
 
-    const response = await fetchWithRetry(`${API_ROOT}${path}`, { ...options, headers });
+    const response = await fetchWithRetry(apiUrl(path), { ...options, headers });
     const body = await response.json().catch(() => ({}));
 
     if (!response.ok || body.success === false) {
@@ -245,6 +245,16 @@ async function api(path, options = {}) {
     }
 
     return body.data;
+}
+
+function apiUrl(path) {
+    return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
+}
+
+function resolveApiResourceUrl(value) {
+    return window.NexoraApi?.resolve
+        ? window.NexoraApi.resolve(value)
+        : new URL(value, window.location.origin).href;
 }
 
 async function fetchWithRetry(url, options) {
@@ -320,6 +330,9 @@ function normalizeImageSource(source, fallback = "/assets/images/landscape-1.jpg
     const value = String(source || "").trim();
     if (!value) return fallback;
     if (/^(?:file:|[a-z]:[\\/]|\\\\)/i.test(value)) return fallback;
+    if (value.startsWith("/api/") || value.startsWith("api/")) {
+        return resolveApiResourceUrl(value);
+    }
 
     try {
         const parsed = new URL(value, window.location.origin);
@@ -445,6 +458,7 @@ async function loadCatalog() {
     state.catalogAbortController = abortController;
     state.catalogLoading = true;
     updateCatalogStatus();
+    renderCatalog();
     renderSearchSuggestions();
 
     if (!query) {
@@ -538,6 +552,7 @@ async function loadCatalog() {
         }
         state.catalogLoading = false;
         updateCatalogStatus();
+        renderCatalog();
         renderSearchSuggestions();
     }
 }
@@ -634,6 +649,7 @@ function filteredCatalog() {
 function renderCatalog() {
     const items = filteredCatalog();
     const searching = Boolean(state.query.trim());
+    const loading = state.catalogLoading;
     renderMovieSort(searching);
     const definitions = rowDefinitions.filter((row) => (
         searching || state.activeType === "all" || row.type === state.activeType
@@ -681,10 +697,23 @@ function renderCatalog() {
     const homeShowcase = !searching && state.activeType === "all"
         ? renderHomeShowcase(items)
         : "";
-    elements.catalogRows.innerHTML = homeShowcase + rows;
+    const loadingBanner = loading && rows ? renderCatalogLoadingBanner(searching) : "";
+    elements.catalogRows.innerHTML = homeShowcase + loadingBanner + rows;
     elements.emptyState.hidden = Boolean(rows);
-    updateCatalogHeading(items.length);
+    updateCatalogHeading(items.length, loading);
     renderHeroCarousel(items);
+}
+
+function renderCatalogLoadingBanner(searching) {
+    return `
+        <div class="catalog-loading-strip" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <strong>${searching ? "Recherche en cours" : "Synchronisation du catalogue"}</strong>
+            <span>${searching
+                ? "Nexora interroge les sources distantes, les resultats arrivent."
+                : "Nexora met a jour les chaines, films et series disponibles."}</span>
+        </div>
+    `;
 }
 
 function renderHomeShowcase(items) {
@@ -1313,6 +1342,7 @@ function renderSearchSuggestions(forceOpen = false) {
     const status = state.catalogLoading && query
         ? "Recherche..."
         : `${items.length} proposition${items.length > 1 ? "s" : ""}`;
+    const loadingSearch = state.catalogLoading && query;
     const list = items.length
         ? `
             <ul class="search-result-list">
@@ -1342,9 +1372,12 @@ function renderSearchSuggestions(forceOpen = false) {
             </ul>
         `
         : `
-            <div class="search-empty">
-                <strong>Aucun titre trouvé</strong>
-                <span>Essayez un autre titre, une chaîne ou un genre.</span>
+            <div class="search-empty ${loadingSearch ? "search-loading" : ""}">
+                ${loadingSearch ? `<span class="spinner" aria-hidden="true"></span>` : ""}
+                <strong>${loadingSearch ? "Recherche en cours" : "Aucun titre trouvé"}</strong>
+                <span>${loadingSearch
+                    ? "Le catalogue distant repond encore, gardez cette recherche ouverte."
+                    : "Essayez un autre titre, une chaîne ou un genre."}</span>
             </div>
         `;
     const showAll = query
@@ -1421,26 +1454,42 @@ async function commitSearch() {
     document.querySelector("#catalogue").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function updateCatalogHeading(resultCount) {
+function updateCatalogHeading(resultCount, loading = false) {
     const query = state.query.trim();
+    elements.emptyState.classList.toggle("loading-state", loading);
+    elements.resetFilters.hidden = loading;
     if (query) {
-        elements.catalogKicker.textContent = `RECHERCHE · ${resultCount} RÉSULTAT${resultCount > 1 ? "S" : ""}`;
+        elements.catalogKicker.textContent = loading
+            ? "RECHERCHE EN COURS"
+            : `RECHERCHE · ${resultCount} RÉSULTAT${resultCount > 1 ? "S" : ""}`;
         elements.catalogTitle.textContent = `Résultats pour « ${query} »`;
-        elements.emptyState.querySelector("span").textContent = "0 résultat";
-        elements.emptyState.querySelector("h3").textContent = `Aucun résultat pour « ${query} »`;
-        elements.emptyState.querySelector("p").textContent = "Essayez un autre titre, une chaîne, un genre ou une catégorie.";
+        elements.emptyState.querySelector("span").innerHTML = loading
+            ? `<span class="spinner large" aria-hidden="true"></span> Recherche`
+            : "0 résultat";
+        elements.emptyState.querySelector("h3").textContent = loading
+            ? "Recherche en cours..."
+            : `Aucun résultat pour « ${query} »`;
+        elements.emptyState.querySelector("p").textContent = loading
+            ? "Nexora synchronise les sources distantes. Les resultats peuvent prendre quelques secondes a apparaitre."
+            : "Essayez un autre titre, une chaîne, un genre ou une catégorie.";
         return;
     }
 
-    elements.catalogKicker.textContent = "À VOIR MAINTENANT";
+    elements.catalogKicker.textContent = loading ? "SYNCHRONISATION EN COURS" : "À VOIR MAINTENANT";
     elements.catalogTitle.textContent = state.activeType === "movie"
         ? "Tous vos films, enfin bien rangés"
         : state.activeType === "live"
             ? "Toutes vos chaînes, en un coup d’œil"
             : "Le meilleur du catalogue";
-    elements.emptyState.querySelector("span").textContent = "0 résultat";
-    elements.emptyState.querySelector("h3").textContent = "Aucun programme à l’horizon";
-    elements.emptyState.querySelector("p").textContent = "Essayez une autre recherche ou revenez à l’ensemble du catalogue.";
+    elements.emptyState.querySelector("span").innerHTML = loading
+        ? `<span class="spinner large" aria-hidden="true"></span> Catalogue`
+        : "0 résultat";
+    elements.emptyState.querySelector("h3").textContent = loading
+        ? "Chargement du catalogue..."
+        : "Aucun programme à l’horizon";
+    elements.emptyState.querySelector("p").textContent = loading
+        ? "Synchronisation des chaines, films et series en cours. Cette etape peut durer quelques secondes."
+        : "Essayez une autre recherche ou revenez à l’ensemble du catalogue.";
 }
 
 async function setFilter(type) {
@@ -1845,6 +1894,7 @@ function updateAccountUi() {
 function updateCatalogStatus() {
     const connected = Boolean(state.user);
     elements.catalogStatus.classList.toggle("connected", connected);
+    elements.catalogStatus.classList.toggle("loading", state.catalogLoading);
     elements.catalogStatus.lastChild.textContent = state.catalogLoading
         ? " Synchronisation du catalogue..."
         : connected
@@ -2429,7 +2479,6 @@ function videasyUrlForItem(item) {
     if (!tmdbId) return "";
 
     const parameters = new URLSearchParams({
-        overlay: "true",
         color: VIDEASY_ACCENT_COLOR
     });
 
@@ -2537,7 +2586,7 @@ function qualityLabel(quality) {
 }
 
 async function startStreamPlayback(item, proxyUrl, playbackMode) {
-    const streamUrl = new URL(proxyUrl, window.location.origin).href;
+    const streamUrl = resolveApiResourceUrl(proxyUrl);
     const generation = state.playerGeneration + 1;
     state.playerGeneration = generation;
     state.activeProxyUrl = proxyUrl;
@@ -2612,35 +2661,14 @@ async function startStreamPlayback(item, proxyUrl, playbackMode) {
 }
 
 function secureEmbedPlayer(streamUrl) {
-    clearEmbedNavigationTimer();
     state.activeEmbedUrl = streamUrl;
     state.embedLoadCount = 0;
     state.embedReloading = false;
     elements.embedPlayer.removeAttribute("sandbox");
-    elements.embedPlayer.setAttribute("allow", "autoplay; fullscreen; picture-in-picture; encrypted-media");
+    elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
     elements.embedPlayer.setAttribute("allowfullscreen", "");
     elements.embedPlayer.referrerPolicy = "no-referrer";
     elements.embedPlayer.src = streamUrl;
-}
-
-function clearEmbedNavigationTimer() {
-    if (state.embedNavigationRestoreTimer) {
-        window.clearTimeout(state.embedNavigationRestoreTimer);
-        state.embedNavigationRestoreTimer = null;
-    }
-}
-
-function restoreEmbedAfterExternalNavigation() {
-    if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
-    state.embedReloading = true;
-    elements.playerMessage.textContent = "Redirection externe bloquee, reprise du lecteur.";
-    elements.embedPlayer.src = "about:blank";
-    window.setTimeout(() => {
-        if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
-        state.embedLoadCount = 0;
-        elements.embedPlayer.src = state.activeEmbedUrl;
-        state.embedReloading = false;
-    }, 80);
 }
 
 async function requestPlayerFullscreen() {
@@ -2875,7 +2903,6 @@ function detachPlayerMedia() {
     state.activeEmbedUrl = null;
     state.embedLoadCount = 0;
     state.embedReloading = false;
-    clearEmbedNavigationTimer();
     elements.streamPlayer.hidden = false;
     elements.streamPlayer.pause();
     elements.streamPlayer.removeAttribute("src");
@@ -3014,7 +3041,7 @@ function releasePlayerSession() {
     state.activePlaybackQuality = null;
     clearPlayerRecoveryTimer();
     stopHeartbeat();
-    fetch(`${API_ROOT}/stream/close/${encodeURIComponent(sessionToken)}`, {
+    fetch(apiUrl(`/stream/close/${encodeURIComponent(sessionToken)}`), {
         method: "DELETE",
         headers: {
             Accept: "application/json",
@@ -3335,9 +3362,6 @@ elements.embedPlayer.addEventListener("load", () => {
     if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
     if (state.embedReloading) return;
     state.embedLoadCount += 1;
-    if (state.embedLoadCount <= 1) return;
-    clearEmbedNavigationTimer();
-    state.embedNavigationRestoreTimer = window.setTimeout(restoreEmbedAfterExternalNavigation, 120);
 });
 
 elements.streamPlayer.addEventListener("playing", () => {
