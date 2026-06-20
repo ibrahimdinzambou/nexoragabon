@@ -1,0 +1,14 @@
+target/
+.mvn/apache-maven-*/
+.mvn/*.zip
+.mvn/*.tar.gz
+data/
+*.log
+.idea/
+.vscode/
+*.iml
+.env
+.agents/
+.codex/
+runtime-logs/
+.github/modernize/

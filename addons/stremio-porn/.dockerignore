@@ -1,0 +1,5 @@
+./**
+!dist/**
+!static/**
+!package.json
+!railway-start.js

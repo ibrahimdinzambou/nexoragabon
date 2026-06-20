@@ -1,0 +1,7 @@
+﻿VLC version 3.0.23 Vetinari (3.0.23-2-0-g79128878dd)
+Compilé par videolan sur runner-sgapdqgx-project-435-concurrent-1 (Dec 23 2025 11:15:25)
+Compilateur : gcc version 6.4.0 (GCC)
+Ce programme est fourni SANS AUCUNE GARANTIE, tel que permis par la loi.
+Vous pouvez le redistribuer selon les termes de la Licence Publique Générale GNU ;
+voir le fichier COPYING pour plus de détails.
+Écrit par l’équipe VideoLAN ; voir le fichier AUTHORS.
