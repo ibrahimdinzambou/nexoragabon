@@ -1,5 +1,5 @@
 const TOKEN_KEY = "nexora_access_token";
-const API_ROOT = "/api";
+const API_ROOT = window.NEXORA_CONFIG?.apiRoot || "/api";
 const header = document.querySelector("#landingHeader");
 const plansGrid = document.querySelector("#plansGrid");
 const loginLaunchButton = document.querySelector("#loginLaunchButton");
@@ -92,10 +92,21 @@ async function api(path, options = {}) {
 }
 
 function apiUrl(path) {
+    const value = String(path || "");
     if (window.NexoraApi?.url) {
-        return window.NexoraApi.url(path);
+        return window.NexoraApi.url(value);
     }
-    return `${API_ROOT}${path}`;
+    if (/^https?:\/\//i.test(value)) {
+        return value;
+    }
+    const apiBaseUrl = window.NEXORA_CONFIG?.apiBaseUrl || "";
+    if (value.startsWith("/api/")) {
+        return apiBaseUrl ? `${apiBaseUrl}${value}` : value;
+    }
+    if (value.startsWith("api/")) {
+        return apiBaseUrl ? `${apiBaseUrl}/${value}` : `/${value}`;
+    }
+    return `${API_ROOT}${value.startsWith("/") ? value : `/${value}`}`;
 }
 
 function setLandingAuthField(field, visible, required) {
