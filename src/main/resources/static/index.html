@@ -7,8 +7,8 @@
     <meta name="description" content="Nexora réunit télévision en direct, films, séries et sources privées dans une expérience fluide sur tous vos écrans.">
     <title>Nexora | Toute votre télévision, enfin réunie</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/landing.css?v=20260616-1">
-    <script src="/assets/landing.js?v=20260616-1" defer></script>
+    <link rel="stylesheet" href="/assets/landing.css?v=20260620-2">
+    <script src="/assets/landing.js?v=20260620-2" defer></script>
 </head>
 <body>
 <div class="page-grain" aria-hidden="true"></div>
@@ -266,7 +266,7 @@
         <h2 id="landingAuthTitle">Connexion securisee</h2>
         <p id="landingAuthSubtitle">Connectez-vous avec votre compte Nexora pour ouvrir votre espace personnel.</p>
         <form id="landingAuthForm">
-            <label class="landing-field">
+            <label class="landing-field" id="landingEmailField">
                 <span>Adresse e-mail</span>
                 <input name="email" type="email" autocomplete="email" placeholder="vous@exemple.com" required>
             </label>
@@ -278,10 +278,17 @@
                 <span>Code de verification</span>
                 <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
             </label>
+            <label class="landing-field" id="landingResetPasswordField" hidden>
+                <span>Nouveau mot de passe</span>
+                <input name="resetPassword" type="password" autocomplete="new-password" minlength="8" placeholder="8 caracteres minimum">
+            </label>
             <p class="landing-form-error" id="landingAuthError" role="alert" hidden></p>
             <button class="button button-light landing-auth-submit" id="landingAuthSubmit" type="submit">Se connecter</button>
         </form>
-        <p class="landing-auth-note">Pas encore de compte ? <a href="/signup.html">Creer mon espace</a></p>
+        <p class="landing-auth-note">
+            <button id="landingForgotPasswordButton" type="button">Mot de passe oublie ?</button>
+            <span>Pas encore de compte ? <a href="/signup.html">Creer mon espace</a></span>
+        </p>
     </section>
 </div>
 </body>

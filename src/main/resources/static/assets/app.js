@@ -63,6 +63,8 @@ const state = {
     profileSettings: loadProfileSettings(),
     twoFactorEmail: null,
     emailVerificationEmail: null,
+    passwordResetEmail: null,
+    passwordResetCode: null,
     activeSessionToken: null,
     playerOpening: false,
     heartbeatId: null,
@@ -77,6 +79,10 @@ const state = {
     playerLastProgressAt: 0,
     activePlayerItem: null,
     activeProxyUrl: null,
+    activeEmbedUrl: null,
+    embedLoadCount: 0,
+    embedReloading: false,
+    embedNavigationRestoreTimer: null,
     activePlaybackMode: null,
     activePlaybackQuality: null,
     playerGeneration: 0,
@@ -146,7 +152,11 @@ const elements = {
     authSubtitle: document.querySelector("#authSubtitle"),
     authSubmit: document.querySelector("#authSubmit"),
     authError: document.querySelector("#authError"),
+    authEmailField: document.querySelector("#authEmailField"),
+    authPasswordField: document.querySelector("#authPasswordField"),
     twoFactorField: document.querySelector("#twoFactorField"),
+    resetPasswordField: document.querySelector("#resetPasswordField"),
+    forgotPasswordButton: document.querySelector("#forgotPasswordButton"),
     profileModal: document.querySelector("#profileModal"),
     profileName: document.querySelector("#profileName"),
     profileEmail: document.querySelector("#profileEmail"),
@@ -208,6 +218,7 @@ const elements = {
     playerTitle: document.querySelector("#playerTitle"),
     playerBadge: document.querySelector("#playerBadge"),
     playerQuality: document.querySelector("#playerQuality"),
+    playerFullscreenButton: document.querySelector("#playerFullscreenButton"),
     playerMessage: document.querySelector("#playerMessage"),
     toast: document.querySelector("#toast")
 };
@@ -1489,10 +1500,17 @@ function setAuthMode(mode) {
     state.authMode = "login";
     state.twoFactorEmail = null;
     state.emailVerificationEmail = null;
+    state.passwordResetEmail = null;
+    state.passwordResetCode = null;
     elements.authError.hidden = true;
-    elements.twoFactorField.hidden = true;
     if (elements.authTabs) elements.authTabs.hidden = true;
-    elements.twoFactorField.querySelector("input").required = false;
+    setAuthField(elements.authEmailField, true, true);
+    setAuthField(elements.authPasswordField, true, true);
+    setAuthField(elements.twoFactorField, false, false);
+    setAuthField(elements.resetPasswordField, false, false);
+    setCodeFieldLabel("Code de verification");
+    elements.forgotPasswordButton.hidden = false;
+    elements.forgotPasswordButton.textContent = "Mot de passe oublie ?";
 
     document.querySelectorAll(".register-field").forEach((field) => {
         field.hidden = true;
@@ -1505,6 +1523,96 @@ function setAuthMode(mode) {
     elements.authTitle.textContent = "Connexion";
     elements.authSubtitle.textContent = "Accedez a votre catalogue avec votre e-mail et votre mot de passe.";
     elements.authSubmit.firstChild.textContent = "Se connecter ";
+}
+
+function setAuthField(field, visible, required) {
+    if (!field) return;
+    field.hidden = !visible;
+    field.querySelectorAll("input").forEach((input) => {
+        input.required = Boolean(required);
+        if (!visible) input.value = "";
+    });
+}
+
+function setCodeFieldLabel(label) {
+    const labelElement = elements.twoFactorField?.querySelector("span");
+    if (labelElement) labelElement.textContent = label;
+}
+
+function setAuthCodeStep(kind, email) {
+    setAuthField(elements.authEmailField, false, false);
+    setAuthField(elements.authPasswordField, false, false);
+    setAuthField(elements.twoFactorField, true, true);
+    setAuthField(elements.resetPasswordField, false, false);
+    setCodeFieldLabel(kind === "email" ? "Code OTP" : "Code de verification");
+    elements.forgotPasswordButton.hidden = true;
+    elements.authTitle.textContent = kind === "email"
+        ? "Verification de votre email"
+        : "Verification en deux etapes";
+    elements.authSubtitle.textContent = kind === "email"
+        ? `Saisissez le code OTP envoye a ${email}.`
+        : `Saisissez le code envoye a ${email}.`;
+    elements.authSubmit.firstChild.textContent = "Verifier ";
+}
+
+function setForgotPasswordMode() {
+    state.authMode = "forgot";
+    state.twoFactorEmail = null;
+    state.emailVerificationEmail = null;
+    state.passwordResetEmail = null;
+    state.passwordResetCode = null;
+    elements.authError.hidden = true;
+    if (elements.authTabs) elements.authTabs.hidden = true;
+    setAuthField(elements.authEmailField, true, true);
+    setAuthField(elements.authPasswordField, false, false);
+    setAuthField(elements.twoFactorField, false, false);
+    setAuthField(elements.resetPasswordField, false, false);
+    elements.forgotPasswordButton.hidden = false;
+    elements.forgotPasswordButton.textContent = "Retour a la connexion";
+    elements.authTitle.textContent = "Mot de passe oublie";
+    elements.authSubtitle.textContent = "Indiquez votre adresse e-mail. Nous envoyons un code pour choisir un nouveau mot de passe.";
+    elements.authSubmit.firstChild.textContent = "Envoyer le code ";
+}
+
+function setResetCodeMode(email) {
+    state.authMode = "reset-code";
+    state.passwordResetEmail = email;
+    state.passwordResetCode = null;
+    setAuthField(elements.authEmailField, false, false);
+    setAuthField(elements.authPasswordField, false, false);
+    setAuthField(elements.twoFactorField, true, true);
+    setAuthField(elements.resetPasswordField, false, false);
+    setCodeFieldLabel("Code de reinitialisation");
+    elements.forgotPasswordButton.hidden = false;
+    elements.forgotPasswordButton.textContent = "Retour a la connexion";
+    elements.authTitle.textContent = "Code OTP";
+    elements.authSubtitle.textContent = `Saisissez le code envoye a ${email}.`;
+    elements.authSubmit.firstChild.textContent = "Verifier le code ";
+}
+
+function setResetPasswordMode(email, code) {
+    state.authMode = "reset-password";
+    state.passwordResetEmail = email;
+    state.passwordResetCode = code;
+    setAuthField(elements.authEmailField, false, false);
+    setAuthField(elements.authPasswordField, false, false);
+    setAuthField(elements.twoFactorField, false, false);
+    setAuthField(elements.resetPasswordField, true, true);
+    elements.forgotPasswordButton.hidden = false;
+    elements.forgotPasswordButton.textContent = "Retour a la connexion";
+    elements.authTitle.textContent = "Nouveau mot de passe";
+    elements.authSubtitle.textContent = "Choisissez un nouveau mot de passe pour votre compte.";
+    elements.authSubmit.firstChild.textContent = "Modifier le mot de passe ";
+}
+
+function toggleForgotPasswordMode() {
+    if (state.authMode === "forgot" || state.authMode === "reset-code" || state.authMode === "reset-password") {
+        const email = state.passwordResetEmail || elements.authForm.elements.email.value;
+        setAuthMode("login");
+        elements.authForm.elements.email.value = email || "";
+        return;
+    }
+    setForgotPasswordMode();
 }
 
 function requestLogin(message, afterLogin = null) {
@@ -1524,6 +1632,50 @@ async function submitAuth(event) {
 
     try {
         let data;
+        if (state.authMode === "reset-password") {
+            const newPassword = String(formData.get("resetPassword") || "");
+            if (newPassword.length < 8) {
+                throw new Error("Le nouveau mot de passe doit contenir au moins 8 caracteres.");
+            }
+            await api("/auth/reset-password", {
+                method: "POST",
+                body: JSON.stringify({
+                    email: state.passwordResetEmail,
+                    code: state.passwordResetCode,
+                    password: newPassword
+                })
+            });
+            const email = state.passwordResetEmail;
+            setAuthMode("login");
+            elements.authForm.elements.email.value = email;
+            elements.authError.textContent = "Mot de passe modifie. Vous pouvez vous connecter.";
+            elements.authError.hidden = false;
+            return;
+        }
+        if (state.authMode === "reset-code") {
+            const code = String(formData.get("code") || "").trim();
+            if (code.length !== 6) {
+                throw new Error("Saisissez le code OTP a 6 chiffres.");
+            }
+            await api("/auth/reset-password/verify", {
+                method: "POST",
+                body: JSON.stringify({
+                    email: state.passwordResetEmail,
+                    code
+                })
+            });
+            setResetPasswordMode(state.passwordResetEmail, code);
+            return;
+        }
+        if (state.authMode === "forgot") {
+            const email = String(formData.get("email") || "").trim();
+            await api("/auth/forgot-password", {
+                method: "POST",
+                body: JSON.stringify({ email })
+            });
+            setResetCodeMode(email);
+            return;
+        }
         if (state.twoFactorEmail) {
             data = await api("/auth/2fa/verify", {
                 method: "POST",
@@ -1553,20 +1705,13 @@ async function submitAuth(event) {
 
         if (data.requiresEmailVerification) {
             state.emailVerificationEmail = data.email;
-            if (elements.authTabs) elements.authTabs.hidden = true;
-            elements.twoFactorField.hidden = false;
-            elements.twoFactorField.querySelector("input").required = true;
-            elements.authTitle.textContent = "Verification de votre email";
-            elements.authSubtitle.textContent = `Saisissez le code OTP envoye a ${data.email}.`;
-            elements.authSubmit.firstChild.textContent = "Verifier ";
+            setAuthCodeStep("email", data.email);
             return;
         }
 
         if (data.requiresTwoFactor) {
             state.twoFactorEmail = data.email;
-            if (elements.authTabs) elements.authTabs.hidden = true;
-            elements.twoFactorField.hidden = false;
-            elements.twoFactorField.querySelector("input").required = true;
+            setAuthCodeStep("2fa", data.email);
             elements.authTitle.textContent = "Vérification en deux étapes";
             elements.authSubtitle.textContent = `Saisissez le code envoyé à ${data.email}.`;
             elements.authSubmit.firstChild.textContent = "Vérifier ";
@@ -1732,7 +1877,7 @@ async function logout() {
     state.browseCatalog = [...fallbackCatalog];
     state.catalog = [...fallbackCatalog];
     resetSearchQuery(false);
-    showToast("Vous êtes maintenant déconnecté.");
+    window.location.href = "/";
 }
 
 function switchSettingsTab(tab) {
@@ -1830,7 +1975,7 @@ async function logoutAllDevices() {
     state.browseCatalog = [...fallbackCatalog];
     state.catalog = [...fallbackCatalog];
     resetSearchQuery(false);
-    showToast("Tous les appareils ont été déconnectés.");
+    window.location.href = "/";
 }
 
 function handleAccountClick() {
@@ -2405,7 +2550,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode) {
         state.activePlaybackMode = playbackMode;
         elements.streamPlayer.hidden = true;
         elements.embedPlayer.hidden = false;
-        elements.embedPlayer.src = streamUrl;
+        secureEmbedPlayer(streamUrl);
         elements.playerQuality.disabled = true;
         setEmbedPlayerOpened();
         return;
@@ -2464,6 +2609,55 @@ async function startStreamPlayback(item, proxyUrl, playbackMode) {
 
     elements.streamPlayer.src = streamUrl;
     await elements.streamPlayer.play();
+}
+
+function secureEmbedPlayer(streamUrl) {
+    clearEmbedNavigationTimer();
+    state.activeEmbedUrl = streamUrl;
+    state.embedLoadCount = 0;
+    state.embedReloading = false;
+    elements.embedPlayer.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation");
+    elements.embedPlayer.setAttribute("allow", "autoplay; fullscreen; picture-in-picture; encrypted-media");
+    elements.embedPlayer.setAttribute("allowfullscreen", "");
+    elements.embedPlayer.referrerPolicy = "no-referrer";
+    elements.embedPlayer.src = streamUrl;
+}
+
+function clearEmbedNavigationTimer() {
+    if (state.embedNavigationRestoreTimer) {
+        window.clearTimeout(state.embedNavigationRestoreTimer);
+        state.embedNavigationRestoreTimer = null;
+    }
+}
+
+function restoreEmbedAfterExternalNavigation() {
+    if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
+    state.embedReloading = true;
+    elements.playerMessage.textContent = "Redirection externe bloquee, reprise du lecteur.";
+    elements.embedPlayer.src = "about:blank";
+    window.setTimeout(() => {
+        if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
+        state.embedLoadCount = 0;
+        elements.embedPlayer.src = state.activeEmbedUrl;
+        state.embedReloading = false;
+    }, 80);
+}
+
+async function requestPlayerFullscreen() {
+    const playerCard = elements.playerModal.querySelector(".player-card");
+    const preferredTarget = state.activePlaybackMode === "embed"
+        ? elements.embedPlayer
+        : elements.streamPlayer;
+    const target = preferredTarget?.requestFullscreen ? preferredTarget : playerCard;
+    try {
+        await target?.requestFullscreen?.();
+    } catch {
+        try {
+            await playerCard?.requestFullscreen?.();
+        } catch {
+            showToast("Le plein ecran n'est pas autorise par ce navigateur.", true);
+        }
+    }
 }
 
 function isRecoverableMpegtsError(type, detail, info) {
@@ -2678,6 +2872,10 @@ function detachPlayerMedia() {
     }
     elements.embedPlayer.removeAttribute("src");
     elements.embedPlayer.hidden = true;
+    state.activeEmbedUrl = null;
+    state.embedLoadCount = 0;
+    state.embedReloading = false;
+    clearEmbedNavigationTimer();
     elements.streamPlayer.hidden = false;
     elements.streamPlayer.pause();
     elements.streamPlayer.removeAttribute("src");
@@ -3106,6 +3304,7 @@ elements.authTabs.addEventListener("click", (event) => {
     setAuthMode(button.dataset.authMode);
 });
 elements.authForm.addEventListener("submit", submitAuth);
+elements.forgotPasswordButton.addEventListener("click", toggleForgotPasswordMode);
 elements.settingsNav.addEventListener("click", (event) => {
     const button = event.target.closest("[data-settings-tab]");
     if (button) switchSettingsTab(button.dataset.settingsTab);
@@ -3116,6 +3315,7 @@ elements.passwordSettingsForm.addEventListener("submit", submitPasswordSettings)
 elements.settingsTwoFactor.addEventListener("change", toggleTwoFactor);
 elements.logoutAllButton.addEventListener("click", logoutAllDevices);
 elements.logoutButton.addEventListener("click", logout);
+elements.playerFullscreenButton.addEventListener("click", requestPlayerFullscreen);
 
 document.addEventListener("click", (event) => {
     if (!elements.searchShell.contains(event.target)) {
@@ -3129,6 +3329,15 @@ document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     const openModalElement = [...document.querySelectorAll(".modal")].find((modal) => !modal.hidden);
     if (openModalElement) closeModal(openModalElement.id);
+});
+
+elements.embedPlayer.addEventListener("load", () => {
+    if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
+    if (state.embedReloading) return;
+    state.embedLoadCount += 1;
+    if (state.embedLoadCount <= 1) return;
+    clearEmbedNavigationTimer();
+    state.embedNavigationRestoreTimer = window.setTimeout(restoreEmbedAfterExternalNavigation, 120);
 });
 
 elements.streamPlayer.addEventListener("playing", () => {

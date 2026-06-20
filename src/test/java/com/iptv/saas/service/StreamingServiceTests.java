@@ -72,6 +72,39 @@ class StreamingServiceTests {
     }
 
     @Test
+    void rejectsAStreamAfterTheTrialPeriodEnds() {
+        UserSessionRepository sessions = mock(UserSessionRepository.class);
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        SubscriptionRepository subscriptions = mock(SubscriptionRepository.class);
+        OrganizationService organizations = mock(OrganizationService.class);
+        IptvCatalogService catalog = mock(IptvCatalogService.class);
+        CommunityAddonService addons = mock(CommunityAddonService.class);
+        SubscriptionAccessService access = mock(SubscriptionAccessService.class);
+        TelegramAlertService telegram = mock(TelegramAlertService.class);
+        AuditService audit = mock(AuditService.class);
+        StreamingService service = new StreamingService(
+                sessions, accounts, subscriptions, organizations, catalog, addons, access, telegram, audit, 90
+        );
+
+        Organization organization = new Organization();
+        organization.status = Enums.OrganizationStatus.ACTIVE;
+        UserEntity user = new UserEntity();
+        Plan plan = new Plan();
+        Subscription subscription = new Subscription();
+        subscription.plan = plan;
+        subscription.status = Enums.SubscriptionStatus.TRIALING;
+        subscription.trialEndsAt = Instant.now().minusSeconds(5);
+
+        when(organizations.currentOrganization(user)).thenReturn(organization);
+        when(subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(organization))
+                .thenReturn(Optional.of(subscription));
+
+        assertThrows(ApiException.class, () -> service.open(user, "live", "channel-1"));
+        verify(catalog, times(0)).accessForItem("channel-1");
+        verify(catalog, times(0)).selectStream("live", "channel-1");
+    }
+
+    @Test
     void adminCanOpenAdultAddonStreamWithoutCategoryEntitlement() {
         UserSessionRepository sessions = mock(UserSessionRepository.class);
         IptvAccountRepository accounts = mock(IptvAccountRepository.class);

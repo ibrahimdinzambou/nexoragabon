@@ -91,7 +91,7 @@ public class BillingService {
             if (days <= 0) {
                 throw ApiException.paymentRequired("Cette formule ne propose pas d'essai gratuit");
             }
-            if (subscriptions.existsByOrganizationAndPlanAndTrialEndsAtIsNotNull(organization, plan)) {
+            if (trialAlreadyUsed(user, organization, plan)) {
                 throw ApiException.paymentRequired("Essai deja utilise pour cette formule. Veuillez valider un paiement.");
             }
             subscription.status = Enums.SubscriptionStatus.TRIALING;
@@ -169,7 +169,7 @@ public class BillingService {
             subscription.currentPeriodEnd = null;
         } else {
             int days = trialDays(plan);
-            if (days <= 0 || subscriptions.existsByOrganizationAndPlanAndTrialEndsAtIsNotNull(organization, plan)) {
+            if (days <= 0 || trialAlreadyUsed(user, organization, plan)) {
                 throw ApiException.paymentRequired("Paiement requis pour activer cette formule");
             }
             subscription.status = Enums.SubscriptionStatus.TRIALING;
@@ -343,6 +343,11 @@ public class BillingService {
             return Math.max(0, defaultTrialDays);
         }
         return plan.trialDays > 0 ? plan.trialDays : 0;
+    }
+
+    private boolean trialAlreadyUsed(UserEntity user, Organization organization, Plan plan) {
+        return subscriptions.existsByOrganizationAndPlanAndTrialEndsAtIsNotNull(organization, plan)
+                || (user != null && subscriptions.countTrialsForOwnerAndPlan(user, plan) > 0);
     }
 
     private int billingPeriodDays(Plan plan) {

@@ -7,7 +7,7 @@
     <meta name="description" content="Votre espace de streaming personnel Nexora.">
     <title>Nexora Watch | TV, films et séries</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/app.css?v=20260620-2">
+    <link rel="stylesheet" href="/assets/app.css?v=20260620-4">
 </head>
 <body>
 <div class="noise" aria-hidden="true"></div>
@@ -190,11 +190,11 @@
         <div class="auth-tabs" id="authTabs" hidden></div>
 
         <form id="authForm">
-            <label class="field">
+            <label class="field" id="authEmailField">
                 <span>Adresse e-mail</span>
                 <input name="email" type="email" autocomplete="email" placeholder="vous@exemple.com" required>
             </label>
-            <label class="field">
+            <label class="field" id="authPasswordField">
                 <span>Mot de passe</span>
                 <input name="password" type="password" autocomplete="current-password" minlength="6" placeholder="Mot de passe" required>
             </label>
@@ -202,6 +202,13 @@
                 <span>Code de vérification</span>
                 <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
             </label>
+            <label class="field" id="resetPasswordField" hidden>
+                <span>Nouveau mot de passe</span>
+                <input name="resetPassword" type="password" autocomplete="new-password" minlength="8" placeholder="8 caracteres minimum">
+            </label>
+            <div class="auth-inline-actions">
+                <button id="forgotPasswordButton" type="button">Mot de passe oublie ?</button>
+            </div>
             <p class="form-error" id="authError" role="alert" hidden></p>
             <button class="button button-primary submit-button" id="authSubmit" type="submit">
                 Se connecter
@@ -468,7 +475,7 @@
     <section class="player-card" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
         <button class="modal-close player-close" type="button" data-close-modal="playerModal" aria-label="Fermer">×</button>
         <video id="streamPlayer" controls playsinline></video>
-        <iframe id="embedPlayer" title="Lecteur externe" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" referrerpolicy="no-referrer" hidden></iframe>
+        <iframe id="embedPlayer" title="Lecteur externe" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen sandbox="allow-scripts allow-same-origin allow-presentation" referrerpolicy="no-referrer" hidden></iframe>
         <div class="player-placeholder" id="playerPlaceholder">
             <span class="spinner large" aria-hidden="true"></span>
             <p>Préparation de votre programme...</p>
@@ -489,6 +496,7 @@
                         <option value="uhd">Originale</option>
                     </select>
                 </label>
+                <button class="player-fullscreen" id="playerFullscreenButton" type="button">Plein ecran</button>
                 <p id="playerMessage">Connexion au flux sécurisé Nexora.</p>
             </div>
         </div>
@@ -498,6 +506,6 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="/assets/vendor/mpegts.js" defer></script>
-    <script src="/assets/app.js?v=20260620-2" defer></script>
+    <script src="/assets/app.js?v=20260620-4" defer></script>
 </body>
 </html>

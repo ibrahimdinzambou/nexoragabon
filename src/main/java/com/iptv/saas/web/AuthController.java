@@ -65,6 +65,12 @@ public class AuthController {
         return Responses.message("Mot de passe modifie");
     }
 
+    @PostMapping("/reset-password/verify")
+    public Object verifyResetPassword(@Valid @RequestBody CodeRequest request) {
+        auth.verifyResetPasswordCode(request.email(), request.code());
+        return Responses.message("Code OTP valide");
+    }
+
     @PostMapping("/email/verify")
     public Object verifyEmail(@Valid @RequestBody CodeRequest request) {
         return Responses.ok(auth.verifyEmail(request.email(), request.code()));

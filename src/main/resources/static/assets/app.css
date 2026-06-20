@@ -1890,6 +1890,28 @@ body.compact-catalog .card-copy strong {
     text-decoration: underline;
 }
 
+.auth-inline-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin: -4px 0 12px;
+}
+
+.auth-inline-actions button {
+    padding: 0;
+    color: rgba(255, 255, 255, 0.78);
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.auth-inline-actions button:hover,
+.auth-inline-actions button:focus-visible {
+    color: #fff;
+    text-decoration: underline;
+}
+
 .series-card {
     position: relative;
     z-index: 1;
@@ -2961,6 +2983,23 @@ body.compact-catalog .card-copy strong {
     background: #0a0d0b;
     font: inherit;
     text-transform: none;
+}
+
+.player-fullscreen {
+    height: 34px;
+    padding: 0 12px;
+    color: var(--ink);
+    border: 0;
+    background: var(--accent-strong);
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.player-fullscreen:hover,
+.player-fullscreen:focus-visible {
+    filter: brightness(1.08);
 }
 
 .live-badge {

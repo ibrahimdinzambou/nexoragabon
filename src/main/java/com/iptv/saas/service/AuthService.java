@@ -213,17 +213,27 @@ public class AuthService {
 
     @Transactional
     public void resetPassword(String email, String code, String password) {
+        UserEntity user = resetPasswordUser(email, code);
+        user.passwordHash = passwordEncoder.encode(password);
+        user.resetOtp = null;
+        user.resetOtpExpiresAt = null;
+        users.save(user);
+        audit.log(user, "auth.password.reset", "User", user.id, user.email);
+    }
+
+    @Transactional(readOnly = true)
+    public void verifyResetPasswordCode(String email, String code) {
+        resetPasswordUser(email, code);
+    }
+
+    private UserEntity resetPasswordUser(String email, String code) {
         UserEntity user = users.findByEmailIgnoreCase(normalizeEmail(email))
                 .orElseThrow(() -> ApiException.notFound("Utilisateur introuvable"));
         if (user.resetOtp == null || !user.resetOtp.equals(code)
                 || user.resetOtpExpiresAt == null || user.resetOtpExpiresAt.isBefore(Instant.now())) {
             throw ApiException.validation("Code reset invalide ou expire");
         }
-        user.passwordHash = passwordEncoder.encode(password);
-        user.resetOtp = null;
-        user.resetOtpExpiresAt = null;
-        users.save(user);
-        audit.log(user, "auth.password.reset", "User", user.id, user.email);
+        return user;
     }
 
     @Transactional

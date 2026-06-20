@@ -10,14 +10,20 @@ const authTitle = document.querySelector("#landingAuthTitle");
 const authSubtitle = document.querySelector("#landingAuthSubtitle");
 const authSubmit = document.querySelector("#landingAuthSubmit");
 const authError = document.querySelector("#landingAuthError");
+const emailField = document.querySelector("#landingEmailField");
 const passwordField = document.querySelector("#landingPasswordField");
 const codeField = document.querySelector("#landingCodeField");
+const resetPasswordField = document.querySelector("#landingResetPasswordField");
+const forgotPasswordButton = document.querySelector("#landingForgotPasswordButton");
 
 const landingState = {
     token: localStorage.getItem(TOKEN_KEY),
     user: null,
     twoFactorEmail: null,
-    emailVerificationEmail: null
+    emailVerificationEmail: null,
+    passwordResetEmail: null,
+    passwordResetCode: null,
+    authMode: "login"
 };
 
 function updateHeader() {
@@ -85,12 +91,25 @@ async function api(path, options = {}) {
     return body.data ?? body;
 }
 
+function setLandingAuthField(field, visible, required) {
+    if (!field) return;
+    field.hidden = !visible;
+    field.querySelectorAll("input").forEach((input) => {
+        input.required = Boolean(required);
+        if (!visible) input.value = "";
+    });
+}
+
 function setAuthStep(step, email = "") {
     const waitingForCode = step === "2fa" || step === "email";
-    passwordField.hidden = waitingForCode;
-    passwordField.querySelector("input").required = !waitingForCode;
-    codeField.hidden = !waitingForCode;
-    codeField.querySelector("input").required = waitingForCode;
+    landingState.authMode = step;
+    setLandingAuthField(emailField, !waitingForCode, true);
+    setLandingAuthField(passwordField, !waitingForCode, !waitingForCode);
+    setLandingAuthField(codeField, waitingForCode, waitingForCode);
+    codeField.querySelector("span").textContent = "Code de verification";
+    setLandingAuthField(resetPasswordField, false, false);
+    forgotPasswordButton.hidden = waitingForCode;
+    forgotPasswordButton.textContent = "Mot de passe oublie ?";
     authError.hidden = true;
     authTitle.textContent = waitingForCode ? "Code de verification" : "Connexion securisee";
     authSubtitle.textContent = step === "email"
@@ -101,9 +120,62 @@ function setAuthStep(step, email = "") {
     authSubmit.textContent = waitingForCode ? "Verifier" : "Se connecter";
 }
 
+function setForgotPasswordStep() {
+    landingState.authMode = "forgot";
+    landingState.twoFactorEmail = null;
+    landingState.emailVerificationEmail = null;
+    landingState.passwordResetEmail = null;
+    landingState.passwordResetCode = null;
+    setLandingAuthField(emailField, true, true);
+    setLandingAuthField(passwordField, false, false);
+    setLandingAuthField(codeField, false, false);
+    setLandingAuthField(resetPasswordField, false, false);
+    forgotPasswordButton.hidden = false;
+    forgotPasswordButton.textContent = "Retour a la connexion";
+    authError.hidden = true;
+    authTitle.textContent = "Mot de passe oublie";
+    authSubtitle.textContent = "Indiquez votre e-mail. Nous envoyons un code pour creer un nouveau mot de passe.";
+    authSubmit.textContent = "Envoyer le code";
+}
+
+function setResetCodeStep(email) {
+    landingState.authMode = "reset-code";
+    landingState.passwordResetEmail = email;
+    landingState.passwordResetCode = null;
+    setLandingAuthField(emailField, false, false);
+    setLandingAuthField(passwordField, false, false);
+    setLandingAuthField(codeField, true, true);
+    codeField.querySelector("span").textContent = "Code de reinitialisation";
+    setLandingAuthField(resetPasswordField, false, false);
+    forgotPasswordButton.hidden = false;
+    forgotPasswordButton.textContent = "Retour a la connexion";
+    authError.hidden = true;
+    authTitle.textContent = "Code OTP";
+    authSubtitle.textContent = `Saisissez le code envoye a ${email}.`;
+    authSubmit.textContent = "Verifier le code";
+}
+
+function setResetPasswordStep(email, code) {
+    landingState.authMode = "reset-password";
+    landingState.passwordResetEmail = email;
+    landingState.passwordResetCode = code;
+    setLandingAuthField(emailField, false, false);
+    setLandingAuthField(passwordField, false, false);
+    setLandingAuthField(codeField, false, false);
+    setLandingAuthField(resetPasswordField, true, true);
+    forgotPasswordButton.hidden = false;
+    forgotPasswordButton.textContent = "Retour a la connexion";
+    authError.hidden = true;
+    authTitle.textContent = "Nouveau mot de passe";
+    authSubtitle.textContent = "Choisissez un nouveau mot de passe pour votre compte.";
+    authSubmit.textContent = "Modifier le mot de passe";
+}
+
 function resetAuthForm() {
     landingState.twoFactorEmail = null;
     landingState.emailVerificationEmail = null;
+    landingState.passwordResetEmail = null;
+    landingState.passwordResetCode = null;
     authForm.reset();
     setAuthStep("login");
 }
@@ -157,6 +229,50 @@ async function submitAuth(event) {
     authSubmit.classList.add("loading");
     try {
         let data;
+        if (landingState.authMode === "reset-password") {
+            const newPassword = String(formData.get("resetPassword") || "");
+            if (newPassword.length < 8) {
+                throw new Error("Le nouveau mot de passe doit contenir au moins 8 caracteres.");
+            }
+            await api("/auth/reset-password", {
+                method: "POST",
+                body: JSON.stringify({
+                    email: landingState.passwordResetEmail,
+                    code: landingState.passwordResetCode,
+                    password: newPassword
+                })
+            });
+            const email = landingState.passwordResetEmail;
+            resetAuthForm();
+            authForm.elements.email.value = email;
+            authError.textContent = "Mot de passe modifie. Vous pouvez vous connecter.";
+            authError.hidden = false;
+            return;
+        }
+        if (landingState.authMode === "reset-code") {
+            const code = String(formData.get("code") || "").trim();
+            if (code.length !== 6) {
+                throw new Error("Saisissez le code OTP a 6 chiffres.");
+            }
+            await api("/auth/reset-password/verify", {
+                method: "POST",
+                body: JSON.stringify({
+                    email: landingState.passwordResetEmail,
+                    code
+                })
+            });
+            setResetPasswordStep(landingState.passwordResetEmail, code);
+            return;
+        }
+        if (landingState.authMode === "forgot") {
+            const email = String(formData.get("email") || "").trim();
+            await api("/auth/forgot-password", {
+                method: "POST",
+                body: JSON.stringify({ email })
+            });
+            setResetCodeStep(email);
+            return;
+        }
         if (landingState.twoFactorEmail) {
             data = await api("/auth/2fa/verify", {
                 method: "POST",
@@ -214,6 +330,15 @@ function setupAuthLinks() {
         });
     });
     authForm.addEventListener("submit", submitAuth);
+    forgotPasswordButton.addEventListener("click", () => {
+        if (landingState.authMode === "forgot" || landingState.authMode === "reset-code" || landingState.authMode === "reset-password") {
+            const email = landingState.passwordResetEmail || authForm.elements.email.value;
+            resetAuthForm();
+            authForm.elements.email.value = email || "";
+            return;
+        }
+        setForgotPasswordStep();
+    });
     authModal.addEventListener("click", (event) => {
         if (event.target.closest("[data-close-auth]")) closeAuthModal();
     });
