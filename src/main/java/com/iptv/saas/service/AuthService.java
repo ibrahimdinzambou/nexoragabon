@@ -8,6 +8,9 @@ import com.iptv.saas.repository.UserRepository;
 import com.iptv.saas.web.ApiException;
 import com.iptv.saas.web.ApiMappers;
 import com.iptv.saas.web.Responses;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -18,15 +21,19 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final OrganizationService organizationService;
     private final BillingService billingService;
     private final TransactionalMailService mail;
+    private final Executor mailExecutor;
     private final EmailTemplateService templates;
     private final TelegramAlertService telegram;
     private final AuditService audit;
@@ -42,6 +49,7 @@ public class AuthService {
             OrganizationService organizationService,
             BillingService billingService,
             TransactionalMailService mail,
+            @Qualifier("mailTaskExecutor") Executor mailExecutor,
             EmailTemplateService templates,
             TelegramAlertService telegram,
             AuditService audit,
@@ -55,6 +63,7 @@ public class AuthService {
         this.organizationService = organizationService;
         this.billingService = billingService;
         this.mail = mail;
+        this.mailExecutor = mailExecutor;
         this.templates = templates;
         this.telegram = telegram;
         this.audit = audit;
@@ -130,7 +139,7 @@ public class AuthService {
             user.twoFactorCode = otp();
             user.twoFactorCodeExpiresAt = Instant.now().plus(twoFactorTtlMinutes, ChronoUnit.MINUTES);
             users.save(user);
-            mail.sendHtml(
+            sendMailHtmlLater(
                     user.email,
                     "Votre code de connexion Nexora",
                     templates.otp(
@@ -204,7 +213,7 @@ public class AuthService {
         user.resetOtp = otp();
         user.resetOtpExpiresAt = Instant.now().plus(emailOtpTtlMinutes, ChronoUnit.MINUTES);
         users.save(user);
-        mail.sendHtml(
+        sendMailHtmlLater(
                 user.email,
                 "Réinitialisation de votre mot de passe Nexora",
                 templates.otp(
@@ -365,7 +374,7 @@ public class AuthService {
     }
 
     private void sendEmailOtp(UserEntity user) {
-        mail.sendHtml(
+        sendMailHtmlLater(
                 user.email,
                 "Vérifiez votre adresse e-mail Nexora",
                 templates.otp(
@@ -375,6 +384,14 @@ public class AuthService {
                         emailOtpTtlMinutes
                 )
         );
+    }
+
+    private void sendMailHtmlLater(String to, String subject, String html) {
+        try {
+            mailExecutor.execute(() -> mail.sendHtml(to, subject, html));
+        } catch (RuntimeException exception) {
+            log.warn("E-mail auth non planifie pour {}: {}", to, exception.getMessage());
+        }
     }
 
     private String otp() {
