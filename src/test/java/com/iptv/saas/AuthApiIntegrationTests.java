@@ -236,4 +236,21 @@ class AuthApiIntegrationTests {
                 .andExpect(jsonPath("$.data.token", not(blankOrNullString())))
                 .andExpect(jsonPath("$.data.user.email").value("test@example.com"));
     }
+
+    @Test
+    void forgotPasswordRespondsAfterSavingResetCode() throws Exception {
+        mvc.perform(post("/api/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "test@example.com"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        var user = users.findByEmailIgnoreCase("test@example.com").orElseThrow();
+        assertNotNull(user.resetOtp);
+        assertNotNull(user.resetOtpExpiresAt);
+    }
 }

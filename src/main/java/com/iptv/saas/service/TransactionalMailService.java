@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,7 @@ public class TransactionalMailService {
         this.ssl = ssl;
     }
 
+    @Async("mailTaskExecutor")
     public void send(String to, String subject, String body) {
         if (to == null || to.isBlank()) {
             return;
@@ -72,6 +74,7 @@ public class TransactionalMailService {
         }
     }
 
+    @Async("mailTaskExecutor")
     public void sendHtml(String to, String subject, String html) {
         if (to == null || to.isBlank()) {
             return;
@@ -83,6 +86,7 @@ public class TransactionalMailService {
         }
     }
 
+    @Async("mailTaskExecutor")
     public void sendHtmlWithAttachment(
             String to,
             String subject,
