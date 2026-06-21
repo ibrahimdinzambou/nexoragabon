@@ -189,6 +189,15 @@ public class TmdbMetadataService {
         return get(normalizedType + "/" + id, parameters);
     }
 
+    public JsonNode season(long tvId, int seasonNumber) {
+        if (tvId <= 0 || seasonNumber <= 0) {
+            throw ApiException.validation("Saison TMDB invalide");
+        }
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("language", language);
+        return get("tv/" + tvId + "/season/" + seasonNumber, parameters);
+    }
+
     public String imageUrl(String filePath, String size) {
         String path = clean(filePath);
         if (path.isBlank()) {

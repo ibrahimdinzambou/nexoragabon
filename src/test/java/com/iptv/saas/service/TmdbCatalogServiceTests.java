@@ -173,6 +173,30 @@ class TmdbCatalogServiceTests {
                   "content_ratings":{"results":[{"iso_3166_1":"FR","rating":"16"}]}
                 }
                 """));
+        server.createContext("/tv/1399/season/1", exchange -> json(exchange, """
+                {
+                  "id":3624,
+                  "season_number":1,
+                  "episodes":[
+                    {
+                      "episode_number":1,
+                      "name":"Winter Is Coming",
+                      "overview":"The Stark family receives a royal visit.",
+                      "air_date":"2011-04-17",
+                      "still_path":"/winter.jpg",
+                      "vote_average":8.0
+                    },
+                    {
+                      "episode_number":2,
+                      "name":"The Kingsroad",
+                      "overview":"The royal party heads south.",
+                      "air_date":"2011-04-24",
+                      "still_path":"/kingsroad.jpg",
+                      "vote_average":7.8
+                    }
+                  ]
+                }
+                """));
         server.start();
         TmdbCatalogService service = service();
 
@@ -188,6 +212,9 @@ class TmdbCatalogServiceTests {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> episodes = (List<Map<String, Object>>) seasons.get(0).get("episodes");
         assertEquals("tmdb~series~1399~s~1~e~1", episodes.get(0).get("id"));
+        assertEquals("Winter Is Coming", episodes.get(0).get("name"));
+        assertEquals("The Stark family receives a royal visit.", episodes.get(0).get("summary"));
+        assertEquals("2011-04-17", episodes.get(0).get("releaseDate"));
         assertEquals(1399L, episodes.get(0).get("tmdbId"));
         assertEquals(true, episodes.get(0).get("streamAvailable"));
         assertEquals("videasy", episodes.get(0).get("playbackProvider"));

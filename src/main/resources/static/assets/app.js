@@ -12,7 +12,7 @@ const SEARCH_DEBOUNCE_MS = 550;
 const MIN_REMOTE_SEARCH_LENGTH = 2;
 const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
-const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.net";
+const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
@@ -83,6 +83,7 @@ const state = {
     activeProxyUrl: null,
     activeEmbedUrl: null,
     embedRequiresUserLaunch: false,
+    embedAssistTimer: null,
     embedLoadCount: 0,
     embedReloading: false,
     activePlaybackMode: null,
@@ -2711,6 +2712,7 @@ function launchEmbedInline() {
     setEmbedPlayerOpened(
         "Lecteur TMDB ouvert. Si le chargement reste bloque sur mobile, utilisez Ouvrir."
     );
+    scheduleEmbedAssistMessage();
     syncEmbedActionButtons();
 }
 
@@ -2727,6 +2729,21 @@ function syncEmbedActionButtons() {
     elements.embedOpenExternalButton.disabled = !hasEmbed;
     elements.playerEmbedOpenButton.hidden = !hasEmbed;
     elements.playerEmbedOpenButton.disabled = !hasEmbed;
+}
+
+function scheduleEmbedAssistMessage() {
+    clearEmbedAssistTimer();
+    state.embedAssistTimer = window.setTimeout(() => {
+        if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl || elements.embedPlayer.hidden) return;
+        elements.playerMessage.textContent = "Si le lecteur TMDB tourne encore, la source Videasy est probablement indisponible pour ce titre.";
+    }, 14000);
+}
+
+function clearEmbedAssistTimer() {
+    if (state.embedAssistTimer) {
+        window.clearTimeout(state.embedAssistTimer);
+        state.embedAssistTimer = null;
+    }
 }
 
 async function requestPlayerFullscreen() {
@@ -2963,6 +2980,7 @@ function detachPlayerMedia() {
     state.playerGeneration += 1;
     clearPlayerRecoveryTimer();
     clearPlayerStartupTimer();
+    clearEmbedAssistTimer();
     if (state.mpegtsPlayer) {
         destroyMpegtsPlayer(state.mpegtsPlayer);
         state.mpegtsPlayer = null;

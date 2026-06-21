@@ -258,7 +258,7 @@ public class TmdbCatalogService {
             if (seasonNumber <= 0 || episodeCount <= 0) {
                 continue;
             }
-            List<Map<String, Object>> episodes = generatedEpisodes(seriesId, season, seasonNumber, episodeCount);
+            List<Map<String, Object>> episodes = seasonEpisodes(seriesId, season, seasonNumber, episodeCount);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("season", seasonNumber);
             payload.put("name", textOrDefault(season, "Saison " + seasonNumber, "name"));
@@ -270,30 +270,85 @@ public class TmdbCatalogService {
         return seasons;
     }
 
+    private List<Map<String, Object>> seasonEpisodes(long seriesId, JsonNode season, int seasonNumber, int episodeCount) {
+        try {
+            JsonNode details = tmdb.season(seriesId, seasonNumber);
+            List<Map<String, Object>> episodes = detailedEpisodes(seriesId, details, season, seasonNumber, episodeCount);
+            if (!episodes.isEmpty()) {
+                return episodes;
+            }
+        } catch (ApiException exception) {
+            LOGGER.warn("Episodes TMDB detailles ignores pour {} saison {}: {}", seriesId, seasonNumber, exception.getMessage());
+        }
+        return generatedEpisodes(seriesId, season, seasonNumber, episodeCount);
+    }
+
+    private List<Map<String, Object>> detailedEpisodes(
+            long seriesId,
+            JsonNode seasonDetails,
+            JsonNode season,
+            int seasonNumber,
+            int episodeCount
+    ) {
+        JsonNode values = seasonDetails.path("episodes");
+        if (!values.isArray()) {
+            return List.of();
+        }
+        int cappedCount = Math.min(episodeCount, 80);
+        String seasonPoster = imageUrl(text(season, "poster_path"), "w300");
+        List<Map<String, Object>> episodes = new ArrayList<>();
+        for (JsonNode episodeNode : values) {
+            int episodeNumber = episodeNode.path("episode_number").asInt(0);
+            if (episodeNumber <= 0 || episodeNumber > cappedCount) {
+                continue;
+            }
+            Map<String, Object> payload = baseEpisodePayload(seriesId, seasonNumber, episodeNumber);
+            payload.put("name", textOrDefault(episodeNode, "Episode " + episodeNumber, "name"));
+            payload.put("summary", text(episodeNode, "overview"));
+            payload.put("releaseDate", text(episodeNode, "air_date"));
+            int runtime = episodeNode.path("runtime").asInt(0);
+            if (runtime > 0) {
+                payload.put("duration", runtime + " min");
+            }
+            payload.put("rating", rating(episodeNode.path("vote_average").asDouble(0)));
+            payload.put("poster", imageUrl(text(episodeNode, "still_path"), "w300"));
+            if (String.valueOf(payload.get("poster")).isBlank()) {
+                payload.put("poster", seasonPoster);
+            }
+            episodes.add(payload);
+        }
+        return episodes;
+    }
+
     private List<Map<String, Object>> generatedEpisodes(long seriesId, JsonNode season, int seasonNumber, int episodeCount) {
         int cappedCount = Math.min(episodeCount, 80);
         List<Map<String, Object>> episodes = new ArrayList<>();
         String poster = imageUrl(text(season, "poster_path"), "w300");
         for (int episode = 1; episode <= cappedCount; episode++) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("id", publicEpisodeId(seriesId, seasonNumber, episode));
-            payload.put("tmdbId", seriesId);
+            Map<String, Object> payload = baseEpisodePayload(seriesId, seasonNumber, episode);
             payload.put("name", "Episode " + episode);
-            payload.put("type", TYPE_SERIES);
-            payload.put("season", seasonNumber);
-            payload.put("episode", episode);
             payload.put("poster", poster);
-            payload.put("isEpisode", true);
-            payload.put("source", SOURCE);
-            payload.put("sourceCode", "tmdb");
-            payload.put("provider", SOURCE);
-            payload.put("streamAvailable", true);
-            payload.put("externalPlayback", true);
-            payload.put("playbackProvider", PLAYBACK_PROVIDER);
-            payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
             episodes.add(payload);
         }
         return episodes;
+    }
+
+    private Map<String, Object> baseEpisodePayload(long seriesId, int seasonNumber, int episode) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", publicEpisodeId(seriesId, seasonNumber, episode));
+        payload.put("tmdbId", seriesId);
+        payload.put("type", TYPE_SERIES);
+        payload.put("season", seasonNumber);
+        payload.put("episode", episode);
+        payload.put("isEpisode", true);
+        payload.put("source", SOURCE);
+        payload.put("sourceCode", "tmdb");
+        payload.put("provider", SOURCE);
+        payload.put("streamAvailable", true);
+        payload.put("externalPlayback", true);
+        payload.put("playbackProvider", PLAYBACK_PROVIDER);
+        payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
+        return payload;
     }
 
     private Map<String, Object> categoryPayload(Category category) {
