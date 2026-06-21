@@ -84,6 +84,8 @@ const state = {
     activeEmbedUrl: null,
     embedRequiresUserLaunch: false,
     embedAssistTimer: null,
+    embedAssistShown: false,
+    embedManualRetryUsed: false,
     embedLoadCount: 0,
     embedReloading: false,
     activePlaybackMode: null,
@@ -219,13 +221,14 @@ const elements = {
     embedPlayer: document.querySelector("#embedPlayer"),
     embedLaunchPanel: document.querySelector("#embedLaunchPanel"),
     embedLaunchInlineButton: document.querySelector("#embedLaunchInlineButton"),
-    embedOpenExternalButton: document.querySelector("#embedOpenExternalButton"),
+    embedOpenExternalLink: document.querySelector("#embedOpenExternalLink"),
     playerPlaceholder: document.querySelector("#playerPlaceholder"),
     playerTitle: document.querySelector("#playerTitle"),
     playerBadge: document.querySelector("#playerBadge"),
     playerQuality: document.querySelector("#playerQuality"),
     playerFullscreenButton: document.querySelector("#playerFullscreenButton"),
-    playerEmbedOpenButton: document.querySelector("#playerEmbedOpenButton"),
+    playerEmbedRetryButton: document.querySelector("#playerEmbedRetryButton"),
+    playerEmbedOpenLink: document.querySelector("#playerEmbedOpenLink"),
     playerMessage: document.querySelector("#playerMessage"),
     toast: document.querySelector("#toast")
 };
@@ -2498,8 +2501,10 @@ function videasyUrlForItem(item) {
         const episode = positiveInteger(item.episode);
         if (!season || !episode) return "";
         parameters.set("nextEpisode", "true");
-        parameters.set("autoplayNextEpisode", "true");
         parameters.set("episodeSelector", "true");
+        if (!isMobileEmbedEnvironment()) {
+            parameters.set("autoplayNextEpisode", "true");
+        }
         return `${VIDEASY_PLAYER_BASE_URL}/tv/${tmdbId}/${season}/${episode}?${parameters}`;
     }
 
@@ -2617,7 +2622,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode) {
         } else {
             launchEmbedInline();
         }
-        syncEmbedActionButtons();
+        syncEmbedActionLinks();
         return;
     }
     elements.embedPlayer.hidden = true;
@@ -2676,24 +2681,33 @@ async function startStreamPlayback(item, proxyUrl, playbackMode) {
     await elements.streamPlayer.play();
 }
 
-function shouldGateEmbedLaunch(item) {
+function isMobileEmbedEnvironment() {
     const hasCoarsePointer = window.matchMedia?.(MOBILE_EMBED_QUERY).matches;
     const isMobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-    return isTmdbPlayable(item) && (hasCoarsePointer || isMobileUserAgent);
+    return hasCoarsePointer || isMobileUserAgent;
+}
+
+function shouldGateEmbedLaunch(item) {
+    return isTmdbPlayable(item) && isMobileEmbedEnvironment();
 }
 
 function prepareEmbedPlayer(streamUrl) {
     state.activeEmbedUrl = streamUrl;
     state.embedRequiresUserLaunch = false;
+    state.embedAssistShown = false;
+    state.embedManualRetryUsed = false;
     state.embedLoadCount = 0;
     state.embedReloading = false;
     elements.embedPlayer.removeAttribute("sandbox");
     elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
     elements.embedPlayer.setAttribute("allowfullscreen", "");
+    elements.embedPlayer.setAttribute("webkitallowfullscreen", "");
     elements.embedPlayer.referrerPolicy = "no-referrer";
     elements.embedPlayer.removeAttribute("src");
     elements.embedPlayer.hidden = true;
     elements.embedLaunchPanel.hidden = true;
+    syncPlayerEmbedMode(true);
+    syncEmbedActionLinks();
 }
 
 function showEmbedLaunchPanel() {
@@ -2713,29 +2727,57 @@ function launchEmbedInline() {
         "Lecteur TMDB ouvert. Si le chargement reste bloque sur mobile, utilisez Ouvrir."
     );
     scheduleEmbedAssistMessage();
-    syncEmbedActionButtons();
+    syncEmbedActionLinks();
 }
 
-function openActiveEmbedExternally() {
+function retryEmbedInline() {
     if (!state.activeEmbedUrl) return;
-    const opened = window.open(state.activeEmbedUrl, "_blank", "noopener,noreferrer");
-    if (!opened) {
-        showToast("Autorisez l'ouverture du lecteur externe pour continuer.", true);
+    if (state.embedManualRetryUsed) {
+        showToast("Le lecteur a deja ete relance. Utilisez Ouvrir si le blocage continue.", true);
+        return;
     }
+    state.embedManualRetryUsed = true;
+    state.embedAssistShown = false;
+    clearEmbedAssistTimer();
+    elements.playerEmbedRetryButton.hidden = true;
+    elements.embedPlayer.hidden = false;
+    elements.embedPlayer.removeAttribute("src");
+    elements.playerMessage.textContent = "Relance du lecteur TMDB dans Nexora...";
+    window.setTimeout(() => {
+        if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
+        elements.embedPlayer.src = state.activeEmbedUrl;
+        scheduleEmbedAssistMessage();
+    }, 80);
 }
 
-function syncEmbedActionButtons() {
+function syncPlayerEmbedMode(isEmbed) {
+    elements.playerModal.classList.toggle("is-embed-player", Boolean(isEmbed));
+}
+
+function syncEmbedActionLinks() {
     const hasEmbed = state.activePlaybackMode === "embed" && Boolean(state.activeEmbedUrl);
-    elements.embedOpenExternalButton.disabled = !hasEmbed;
-    elements.playerEmbedOpenButton.hidden = !hasEmbed;
-    elements.playerEmbedOpenButton.disabled = !hasEmbed;
+    const href = hasEmbed ? state.activeEmbedUrl : "#";
+    elements.embedOpenExternalLink.href = href;
+    elements.embedOpenExternalLink.hidden = !hasEmbed;
+    elements.embedOpenExternalLink.setAttribute("aria-disabled", String(!hasEmbed));
+    elements.playerEmbedOpenLink.href = href;
+    elements.playerEmbedOpenLink.hidden = !hasEmbed;
+    elements.playerEmbedOpenLink.setAttribute("aria-disabled", String(!hasEmbed));
+    elements.playerEmbedRetryButton.hidden = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
+    elements.playerEmbedRetryButton.disabled = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
 }
 
 function scheduleEmbedAssistMessage() {
     clearEmbedAssistTimer();
+    state.embedAssistShown = false;
+    syncEmbedActionLinks();
     state.embedAssistTimer = window.setTimeout(() => {
         if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl || elements.embedPlayer.hidden) return;
+        state.embedAssistShown = true;
         elements.playerMessage.textContent = "Si le lecteur TMDB tourne encore, la source Videasy est probablement indisponible pour ce titre.";
+        elements.playerEmbedRetryButton.hidden = state.embedManualRetryUsed;
+        elements.playerEmbedRetryButton.disabled = state.embedManualRetryUsed;
+        elements.playerEmbedOpenLink.hidden = false;
     }, 14000);
 }
 
@@ -2989,6 +3031,8 @@ function detachPlayerMedia() {
     elements.embedPlayer.hidden = true;
     state.activeEmbedUrl = null;
     state.embedRequiresUserLaunch = false;
+    state.embedAssistShown = false;
+    state.embedManualRetryUsed = false;
     state.embedLoadCount = 0;
     state.embedReloading = false;
     elements.embedLaunchPanel.hidden = true;
@@ -2996,7 +3040,8 @@ function detachPlayerMedia() {
     elements.streamPlayer.pause();
     elements.streamPlayer.removeAttribute("src");
     elements.streamPlayer.load();
-    syncEmbedActionButtons();
+    syncPlayerEmbedMode(false);
+    syncEmbedActionLinks();
 }
 
 function destroyMpegtsPlayer(player) {
@@ -3434,8 +3479,7 @@ elements.logoutAllButton.addEventListener("click", logoutAllDevices);
 elements.logoutButton.addEventListener("click", logout);
 elements.playerFullscreenButton.addEventListener("click", requestPlayerFullscreen);
 elements.embedLaunchInlineButton.addEventListener("click", launchEmbedInline);
-elements.embedOpenExternalButton.addEventListener("click", openActiveEmbedExternally);
-elements.playerEmbedOpenButton.addEventListener("click", openActiveEmbedExternally);
+elements.playerEmbedRetryButton.addEventListener("click", retryEmbedInline);
 
 document.addEventListener("click", (event) => {
     if (!elements.searchShell.contains(event.target)) {

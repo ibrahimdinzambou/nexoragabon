@@ -2957,7 +2957,8 @@ body.compact-catalog .card-copy strong {
 .player-card iframe[hidden],
 .player-card video[hidden],
 .embed-launch-panel[hidden],
-.player-embed-open[hidden] {
+.player-embed-open[hidden],
+.player-embed-retry[hidden] {
     display: none;
 }
 
@@ -3084,8 +3085,12 @@ body.compact-catalog .card-copy strong {
 }
 
 .player-fullscreen,
-.player-embed-open {
+.player-embed-open,
+.player-embed-retry {
+    display: inline-flex;
     height: 34px;
+    align-items: center;
+    justify-content: center;
     padding: 0 12px;
     color: var(--ink);
     border: 0;
@@ -3093,10 +3098,12 @@ body.compact-catalog .card-copy strong {
     cursor: pointer;
     font-size: 10px;
     font-weight: 800;
+    text-decoration: none;
     text-transform: uppercase;
 }
 
-.player-embed-open {
+.player-embed-open,
+.player-embed-retry {
     color: #fff;
     border: 1px solid var(--line);
     background: transparent;
@@ -3105,7 +3112,9 @@ body.compact-catalog .card-copy strong {
 .player-fullscreen:hover,
 .player-fullscreen:focus-visible,
 .player-embed-open:hover,
-.player-embed-open:focus-visible {
+.player-embed-open:focus-visible,
+.player-embed-retry:hover,
+.player-embed-retry:focus-visible {
     filter: brightness(1.08);
 }
 
@@ -3601,6 +3610,56 @@ body.compact-catalog .card-copy strong {
 
     .player-placeholder {
         inset: 0 0 128px;
+    }
+
+    #playerModal.is-embed-player {
+        place-items: stretch;
+        padding: 0;
+    }
+
+    #playerModal.is-embed-player .modal-backdrop {
+        background: #030405;
+        backdrop-filter: none;
+    }
+
+    #playerModal.is-embed-player .player-card {
+        display: flex;
+        width: 100vw;
+        max-width: none;
+        height: 100vh;
+        height: 100svh;
+        flex-direction: column;
+        border: 0;
+        box-shadow: none;
+    }
+
+    #playerModal.is-embed-player .player-card iframe,
+    #playerModal.is-embed-player .embed-launch-panel {
+        flex: 1 1 auto;
+        min-height: calc(100vh - 132px);
+        min-height: min(72vh, calc(100vh - 132px));
+        min-height: min(72svh, calc(100svh - 132px));
+        aspect-ratio: auto;
+    }
+
+    #playerModal.is-embed-player .player-placeholder {
+        inset: 0 0 132px;
+    }
+
+    #playerModal.is-embed-player .player-caption {
+        flex: 0 0 auto;
+        min-height: 0;
+        padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    }
+
+    #playerModal.is-embed-player .player-quality {
+        display: none;
+    }
+
+    #playerModal.is-embed-player .player-fullscreen,
+    #playerModal.is-embed-player .player-embed-open,
+    #playerModal.is-embed-player .player-embed-retry {
+        height: 38px;
     }
 
     .series-overview {
