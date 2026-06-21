@@ -68,6 +68,10 @@ app:
   mail:
     from-address: ${MAIL_FROM_ADDRESS:${MAIL_USERNAME:noreply@nexoragabon.com}}
     from-name: ${MAIL_FROM_NAME:Nexora}
+    sendgrid:
+      api-key: ${SENDGRID_API_KEY:}
+      endpoint: ${SENDGRID_API_ENDPOINT:https://api.sendgrid.com/v3/mail/send}
+      timeout-ms: ${SENDGRID_TIMEOUT_MS:15000}
     async:
       core-pool-size: ${MAIL_ASYNC_CORE_POOL_SIZE:2}
       max-pool-size: ${MAIL_ASYNC_MAX_POOL_SIZE:4}
