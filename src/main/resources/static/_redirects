@@ -1,0 +1,2 @@
+/api/* https://nexora-api-production.up.railway.app/api/:splat 200!
+/actuator/* https://nexora-api-production.up.railway.app/actuator/:splat 200!

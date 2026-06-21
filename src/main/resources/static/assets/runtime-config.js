@@ -2,6 +2,7 @@
     const railwayApiBase = "https://nexora-api-production.up.railway.app";
     const publicSiteUrl = "https://nexoragabon.com";
     const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+    const proxiedFrontHosts = new Set(["nexoragabon.com", "www.nexoragabon.com"]);
     const railwayHost = "nexora-api-production.up.railway.app";
 
     function trimSlash(value) {
@@ -12,7 +13,14 @@
         const explicit = trimSlash(window.NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
         const host = String(window.location.hostname || "").toLowerCase();
-        if (localHosts.has(host) || host === railwayHost || host.endsWith(".up.railway.app")) {
+        if (
+            localHosts.has(host)
+            || proxiedFrontHosts.has(host)
+            || host === railwayHost
+            || host.endsWith(".up.railway.app")
+            || host.endsWith(".netlify.app")
+            || host.endsWith(".vercel.app")
+        ) {
             return "";
         }
         return railwayApiBase;

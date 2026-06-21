@@ -28,7 +28,7 @@ API locale:
 
 Production:
 
-- Site Vercel: `https://nexoragabon.com` et `https://www.nexoragabon.com`
+- Site Netlify: `https://nexoragabon.com` et `https://www.nexoragabon.com`
 - API Railway: `https://nexora-api-production.up.railway.app`
 - Health: `https://nexora-api-production.up.railway.app/actuator/health`
 
@@ -58,12 +58,12 @@ SPRING_DATASOURCE_PASSWORD=${{Postgres.PGPASSWORD}}
 Gardez aussi les variables fonctionnelles du `.env` local: SMTP, Telegram,
 TMDB, Consumet, TorBox et add-ons selon les integrations activees.
 Configurez aussi les URLs publiques, CORS et le seed super admin pour le front
-Vercel:
+Netlify:
 
 ```properties
 PUBLIC_SITE_URL=https://nexoragabon.com
 PUBLIC_API_BASE_URL=https://nexora-api-production.up.railway.app
-CORS_ALLOWED_ORIGIN_PATTERNS=https://nexoragabon.com,https://www.nexoragabon.com,https://*.vercel.app
+CORS_ALLOWED_ORIGIN_PATTERNS=https://nexoragabon.com,https://www.nexoragabon.com,https://*.netlify.app,https://*.vercel.app
 SUPER_ADMIN_EMAIL=alexandredinzambou@gmail.com
 SUPER_ADMIN_NAME=Alexandre Dinzambou
 ```
@@ -211,10 +211,11 @@ intégrée à Spring Boot se trouve dans:
 - `src/main/resources/static/assets/app.js`
 - `src/main/resources/static/assets/images/`
 
-L’interface est servie directement par Spring Boot sur `http://localhost:8080/`
-en local, et par Vercel sur `https://nexoragabon.com` en production. Le fichier
-`assets/runtime-config.js` connecte le front Vercel a l'API Railway
-`https://nexora-api-production.up.railway.app`.
+L'interface est servie directement par Spring Boot sur `http://localhost:8080/`
+en local, et par Netlify sur `https://nexoragabon.com` en production. Le fichier
+`assets/runtime-config.js` connecte le front a l'API Railway
+`https://nexora-api-production.up.railway.app`. Sur Netlify, `netlify.toml`
+publie `src/main/resources/static` et reecrit `/api/*` vers Railway.
 Elle propose le catalogue Direct/Films/Séries, la recherche, l’inscription, la
 connexion, le profil client et l’ouverture des sessions de streaming via l’API.
 Les playlists M3U configurées dans les comptes IPTV sont chargées côté serveur:

@@ -95,6 +95,7 @@ public class SecurityConfig {
                 "https://nexoragabon.com",
                 "https://www.nexoragabon.com",
                 "https://*.vercel.app",
+                "https://*.netlify.app",
                 "https://nexora-api-production.up.railway.app",
                 "http://localhost:3000",
                 "http://localhost:5173",
