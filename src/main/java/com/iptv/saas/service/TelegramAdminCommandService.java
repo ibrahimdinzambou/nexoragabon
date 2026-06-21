@@ -2,6 +2,7 @@ package com.iptv.saas.service;
 
 import com.iptv.saas.domain.CommunityAddon;
 import com.iptv.saas.domain.Enums;
+import com.iptv.saas.domain.AuditLog;
 import com.iptv.saas.domain.Invoice;
 import com.iptv.saas.domain.IptvAccount;
 import com.iptv.saas.domain.PaymentTransaction;
@@ -10,6 +11,7 @@ import com.iptv.saas.domain.SupportTicket;
 import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.domain.UserSession;
 import com.iptv.saas.repository.CommunityAddonRepository;
+import com.iptv.saas.repository.AuditLogRepository;
 import com.iptv.saas.repository.InvoiceRepository;
 import com.iptv.saas.repository.IptvAccountRepository;
 import com.iptv.saas.repository.PaymentTransactionRepository;
@@ -95,6 +97,8 @@ public class TelegramAdminCommandService {
     private final IptvAccountHealthAuditService healthAudit;
     private final OpsService ops;
     private final AuditService audit;
+    private final AuditLogRepository auditLogs;
+    private final TelegramDailyDigestService dailyDigest;
     private final Optional<BuildProperties> buildProperties;
 
     public TelegramAdminCommandService(
@@ -118,6 +122,8 @@ public class TelegramAdminCommandService {
             IptvAccountHealthAuditService healthAudit,
             OpsService ops,
             AuditService audit,
+            AuditLogRepository auditLogs,
+            TelegramDailyDigestService dailyDigest,
             Optional<BuildProperties> buildProperties
     ) {
         this.catalog = catalog;
@@ -140,6 +146,8 @@ public class TelegramAdminCommandService {
         this.healthAudit = healthAudit;
         this.ops = ops;
         this.audit = audit;
+        this.auditLogs = auditLogs;
+        this.dailyDigest = dailyDigest;
         this.buildProperties = buildProperties;
     }
 
@@ -169,6 +177,11 @@ public class TelegramAdminCommandService {
         return safe(() -> switch (command) {
             case "/whoami" -> whoami(context);
             case "/admin_status" -> adminStatus(context);
+            case "/control" -> control();
+            case "/today", "/digest_now" -> today();
+            case "/activity" -> activity(arguments(text));
+            case "/security" -> security();
+            case "/errors" -> errors();
             case "/status" -> status();
             case "/health" -> health();
             case "/sessions" -> sessionsSummary();
@@ -233,6 +246,13 @@ public class TelegramAdminCommandService {
         if (value.startsWith("menu:")) {
             String menu = value.substring("menu:".length());
             String menuCommand = switch (menu) {
+                case "control" -> "/control";
+                case "today" -> "/today";
+                case "activity" -> "/activity";
+                case "security" -> "/security";
+                case "errors" -> "/errors";
+                case "streaming" -> "/sessions";
+                case "integrations" -> "/telegram_status";
                 case "iptv" -> "/accounts";
                 case "iptv_add", "add_m3u_help", "add_xtream_help" -> "/add_m3u";
                 case "clients" -> "/users";
@@ -245,6 +265,13 @@ public class TelegramAdminCommandService {
                 return text("Acces refuse: role " + context.role() + " insuffisant pour cette rubrique.");
             }
             return switch (menu) {
+                case "control" -> control();
+                case "today" -> today();
+                case "activity" -> activity("");
+                case "security" -> security();
+                case "errors" -> errors();
+                case "streaming" -> sessionsSummary();
+                case "integrations" -> integrations();
                 case "iptv" -> accounts();
                 case "iptv_add" -> iptvAddMenu();
                 case "add_m3u_help" -> addM3uHelp();
@@ -337,6 +364,7 @@ public class TelegramAdminCommandService {
                 /add_xtream Nom | URL base | username | password
 
                 Sections:
+                Centre de controle: /control /today /activity /security /errors
                 Supervision: /status /health /sessions /capacity
                 IPTV: /accounts /account_33 /test_account 33
                 Audit IPTV: /audit_iptv /audit_iptv_now /audit_streams
@@ -349,12 +377,153 @@ public class TelegramAdminCommandService {
 
     private List<List<Button>> menuKeyboard() {
         return List.of(
+                List.of(button("Centre de controle", "menu:control"), button("Resume du jour", "menu:today")),
                 List.of(button("TV / Sources IPTV", "menu:iptv")),
                 List.of(button("Audit IPTV maintenant", "audit_iptv")),
                 List.of(button("Ajouter M3U / Xtream", "menu:iptv_add")),
                 List.of(button("Clients", "menu:clients"), button("Paiements", "menu:billing")),
                 List.of(button("Support", "menu:support"), button("Systeme", "menu:system"))
         );
+    }
+
+    private Response control() {
+        Map<String, Object> health = ops.health();
+        Map<String, Object> metrics = ops.metrics();
+        long activeSessions = sessions.countByStatus(Enums.SessionStatus.ACTIVE);
+        long failedLogins = recentLogs(Duration.ofHours(24)).stream()
+                .filter(log -> "auth.login.failed".equals(log.action))
+                .count();
+        return text("""
+                Nexora Control Center
+
+                API: %s
+                DB: %s
+                Sessions actives: %d
+                Capacite streaming: %s/%s
+                Paiements en attente: %s
+                Tickets ouverts: %s
+                Echecs connexion 24h: %d
+
+                Choisissez une rubrique.
+                """.formatted(
+                health.get("status"),
+                health.get("database"),
+                activeSessions,
+                metrics.get("activeStreams"),
+                metrics.get("streamCapacity"),
+                metrics.get("pendingPayments"),
+                metrics.get("openTickets"),
+                failedLogins
+        ), controlKeyboard());
+    }
+
+    private List<List<Button>> controlKeyboard() {
+        return List.of(
+                List.of(button("Aujourd'hui", "menu:today"), button("Activite", "menu:activity")),
+                List.of(button("Securite", "menu:security"), button("Erreurs", "menu:errors")),
+                List.of(button("Streaming", "menu:streaming"), button("IPTV", "menu:iptv")),
+                List.of(button("Paiements", "menu:billing"), button("Tickets", "menu:support")),
+                List.of(button("Integrations", "menu:integrations"), button("Menu admin", "menu:home"))
+        );
+    }
+
+    private Response today() {
+        return text(dailyDigest.todayDigest(), controlKeyboard());
+    }
+
+    private Response integrations() {
+        return text("""
+                Integrations Nexora
+
+                SMTP:
+                %s
+
+                Telegram alertes:
+                %s
+
+                TorBox:
+                %s
+                """.formatted(
+                mapLines(mail.status()),
+                mapLines(telegram.status()),
+                mapLines(torBox.status())
+        ), controlKeyboard());
+    }
+
+    private Response activity(String value) {
+        List<AuditLog> values;
+        String title;
+        if (value == null || value.isBlank()) {
+            values = recentLogs(Duration.ofHours(24));
+            title = "Activite recente - dernieres 24h";
+        } else {
+            UserEntity user = findUser(value);
+            values = auditLogs.findTop50ByUserOrderByCreatedAtDesc(user);
+            title = "Activite client #" + user.id + " " + user.email;
+        }
+        if (values.isEmpty()) {
+            return text(title + "\n\nAucune activite trouvee.", controlKeyboard());
+        }
+        return text(title + "\n\n" + values.stream()
+                .limit(LIST_LIMIT)
+                .map(this::auditLine)
+                .collect(Collectors.joining("\n\n")), controlKeyboard());
+    }
+
+    private Response security() {
+        List<AuditLog> values = recentLogs(Duration.ofHours(24));
+        long failedLogins = values.stream().filter(log -> "auth.login.failed".equals(log.action)).count();
+        long resetRequests = values.stream().filter(log -> "auth.password.reset.requested".equals(log.action)).count();
+        long resetCompleted = values.stream().filter(log -> "auth.password.reset".equals(log.action)).count();
+        long adminLogins = values.stream()
+                .filter(log -> Set.of("auth.login", "auth.2fa.verified").contains(log.action))
+                .filter(log -> adminLike(log.user))
+                .count();
+        String recent = values.stream()
+                .filter(log -> log.action != null && (
+                        log.action.startsWith("auth.login.failed")
+                                || log.action.startsWith("auth.password.reset")
+                                || log.action.startsWith("auth.2fa")
+                                || (Set.of("auth.login", "auth.password.changed").contains(log.action) && adminLike(log.user))
+                ))
+                .limit(10)
+                .map(this::auditLine)
+                .collect(Collectors.joining("\n\n"));
+        return text("""
+                Securite - 24h
+
+                Echecs connexion: %d
+                Connexions admin: %d
+                Demandes reset: %d
+                Resets finalises: %d
+
+                Evenements recents:
+                %s
+                """.formatted(
+                failedLogins,
+                adminLogins,
+                resetRequests,
+                resetCompleted,
+                recent.isBlank() ? "Aucun evenement securite recent." : recent
+        ), controlKeyboard());
+    }
+
+    private Response errors() {
+        List<AuditLog> values = recentLogs(Duration.ofHours(24)).stream()
+                .filter(log -> log.action != null && (
+                        log.action.contains(".failed")
+                                || log.action.contains(".error")
+                                || log.action.contains(".invalid")
+                                || log.action.contains("failover")
+                ))
+                .toList();
+        if (values.isEmpty()) {
+            return text("Erreurs - 24h\n\nAucune erreur critique remontee dans l'audit.", controlKeyboard());
+        }
+        return text("Erreurs - 24h\n\n" + values.stream()
+                .limit(LIST_LIMIT)
+                .map(this::auditLine)
+                .collect(Collectors.joining("\n\n")), controlKeyboard());
     }
 
     private Response iptvAddMenu() {
@@ -1188,7 +1357,17 @@ public class TelegramAdminCommandService {
         if (effective == Enums.UserRole.SUPER_ADMIN || effective == Enums.UserRole.ADMIN) {
             return true;
         }
-        if (Set.of("/admin", "/help", "/start", "/whoami", "/admin_status", "/status").contains(command)) {
+        if (Set.of(
+                "/admin",
+                "/help",
+                "/start",
+                "/whoami",
+                "/admin_status",
+                "/status",
+                "/control",
+                "/today",
+                "/digest_now"
+        ).contains(command)) {
             return true;
         }
         return switch (effective) {
@@ -1196,15 +1375,16 @@ public class TelegramAdminCommandService {
                     "/health", "/sessions", "/capacity", "/accounts", "/iptv", "/account", "/test_account",
                     "/clear_cache", "/sync_limits", "/audit_iptv", "/audit_iptv_now", "/audit_streams", "/enable_account", "/disable_account", "/accounts_warning",
                     "/active_sessions", "/close_session", "/stale_sessions", "/cleanup_sessions",
+                    "/activity", "/security", "/errors",
                     "/smtp_status", "/telegram_status", "/telegram_test", "/torbox_status"
             ).contains(command);
             case BILLING -> Set.of(
                     "/users", "/client", "/pending_payments", "/verify_payment", "/reject_payment",
-                    "/expiring_subscriptions", "/invoice_for_payment", "/resend_invoice", "/telegram_status"
+                    "/expiring_subscriptions", "/invoice_for_payment", "/resend_invoice", "/activity", "/security", "/telegram_status"
             ).contains(command);
             case SUPPORT -> Set.of(
                     "/users", "/client", "/categories", "/tickets", "/urgent_tickets",
-                    "/reply_ticket", "/close_ticket", "/answer_ticket", "/assign_ticket", "/telegram_status"
+                    "/reply_ticket", "/close_ticket", "/answer_ticket", "/assign_ticket", "/activity", "/security", "/telegram_status"
             ).contains(command);
             default -> false;
         };
@@ -1255,6 +1435,36 @@ public class TelegramAdminCommandService {
                 "approve_addon",
                 "disable_addon"
         ).contains(name);
+    }
+
+    private List<AuditLog> recentLogs(Duration age) {
+        return auditLogs.findTop50ByCreatedAtAfterOrderByCreatedAtDesc(Instant.now().minus(age));
+    }
+
+    private String auditLine(AuditLog log) {
+        String user = log.user == null ? "-" : "#" + log.user.id + " " + log.user.email;
+        String subject = log.subjectType == null ? "-" : log.subjectType + "#" + (log.subjectId == null ? "-" : log.subjectId);
+        String metadata = log.metadata == null || log.metadata.isBlank()
+                ? ""
+                : "\n" + truncate(log.metadata, 140);
+        return "%s\n%s, user %s, sujet %s, IP %s%s".formatted(
+                date(log.createdAt),
+                log.action,
+                user,
+                subject,
+                log.ipAddress == null || log.ipAddress.isBlank() ? "-" : log.ipAddress,
+                metadata
+        );
+    }
+
+    private boolean adminLike(UserEntity user) {
+        return user != null && (
+                user.role == Enums.UserRole.SUPER_ADMIN
+                        || user.role == Enums.UserRole.ADMIN
+                        || user.role == Enums.UserRole.BILLING
+                        || user.role == Enums.UserRole.SUPPORT
+                        || user.role == Enums.UserRole.OPS
+        );
     }
 
     private String accountLine(IptvAccount account) {
@@ -1404,6 +1614,14 @@ public class TelegramAdminCommandService {
 
     private boolean contains(String value, String needle) {
         return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = value.strip().replaceAll("\\s+", " ");
+        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength - 3) + "...";
     }
 
     private String date(Instant instant) {

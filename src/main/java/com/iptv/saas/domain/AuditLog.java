@@ -20,6 +20,8 @@ public class AuditLog extends BaseEntity {
     public String subjectType;
     public Long subjectId;
     public String ipAddress;
+    @Column(length = 512)
+    public String userAgent;
 
     @Column(length = 12000)
     public String metadata;

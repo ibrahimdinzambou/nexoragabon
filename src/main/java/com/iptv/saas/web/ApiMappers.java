@@ -243,6 +243,7 @@ public final class ApiMappers {
         m.put("subjectType", log.subjectType);
         m.put("subjectId", log.subjectId);
         m.put("ipAddress", log.ipAddress);
+        m.put("userAgent", log.userAgent);
         m.put("metadata", log.metadata);
         m.put("createdAt", log.createdAt);
         return m;

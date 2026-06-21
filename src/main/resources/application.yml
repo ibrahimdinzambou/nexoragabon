@@ -166,6 +166,15 @@ app:
       iptv-alert-initial-delay-ms: ${TELEGRAM_IPTV_ALERT_INITIAL_DELAY_MS:30000}
       iptv-expiry-alert-days: ${TELEGRAM_IPTV_EXPIRY_ALERT_DAYS:7}
       iptv-saturation-threshold-percent: ${TELEGRAM_IPTV_SATURATION_THRESHOLD_PERCENT:90}
+    activity:
+      enabled: ${TELEGRAM_ACTIVITY_ALERTS_ENABLED:${TELEGRAM_ALERTS_ENABLED:false}}
+      login-alerts-enabled: ${TELEGRAM_LOGIN_ALERTS_ENABLED:true}
+      failed-login-alerts-enabled: ${TELEGRAM_FAILED_LOGIN_ALERTS_ENABLED:true}
+      password-alerts-enabled: ${TELEGRAM_PASSWORD_ALERTS_ENABLED:true}
+    digest:
+      enabled: ${TELEGRAM_DAILY_DIGEST_ENABLED:${TELEGRAM_ALERTS_ENABLED:false}}
+      cron: ${TELEGRAM_DAILY_DIGEST_CRON:0 0 22 * * *}
+      zone: ${TELEGRAM_DAILY_DIGEST_ZONE:Africa/Lagos}
     admin:
       enabled: ${TELEGRAM_ADMIN_ENABLED:${TELEGRAM_PANEL_ENABLED:false}}
       bot-token: ${TELEGRAM_ADMIN_BOT_TOKEN:}

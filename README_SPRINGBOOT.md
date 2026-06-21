@@ -146,6 +146,13 @@ Telegram logs / alertes:
 $env:TELEGRAM_ALERTS_ENABLED="true"
 $env:TELEGRAM_ALERTS_BOT_TOKEN="token-du-bot-logs"
 $env:TELEGRAM_ALERTS_CHAT_ID="identifiant-du-chat-logs"
+$env:TELEGRAM_ACTIVITY_ALERTS_ENABLED="true"
+$env:TELEGRAM_LOGIN_ALERTS_ENABLED="true"
+$env:TELEGRAM_FAILED_LOGIN_ALERTS_ENABLED="true"
+$env:TELEGRAM_PASSWORD_ALERTS_ENABLED="true"
+$env:TELEGRAM_DAILY_DIGEST_ENABLED="true"
+$env:TELEGRAM_DAILY_DIGEST_CRON="0 0 22 * * *"
+$env:TELEGRAM_DAILY_DIGEST_ZONE="Africa/Lagos"
 ```
 
 Telegram administration:
@@ -169,6 +176,11 @@ Panel Telegram:
 
 - `/admin` : aide et menu avec boutons inline
 - `/whoami`, `/admin_status` : chat_id, role et etat du bot admin
+- `/control` : centre de controle Telegram avec boutons
+- `/today` ou `/digest_now` : resume complet de la journee
+- `/activity` ou `/activity email@example.com` : journal recent ou activite d'un client
+- `/security` : connexions, resets et evenements sensibles
+- `/errors` : erreurs et incidents recents issus de l'audit
 - `/status`, `/health`, `/sessions`, `/capacity` : supervision
 - `/iptv` ou `/accounts` : liste des comptes IPTV
 - `/account_33` : detail d'un compte
@@ -195,8 +207,11 @@ executer d'action d'ecriture. `TELEGRAM_ADMIN_CHAT_ROLES` accepte le format
 `chatId:ROLE` avec `SUPER_ADMIN`, `ADMIN`, `OPS`, `BILLING` ou `SUPPORT`;
 sans role explicite, un chat autorise garde le role `SUPER_ADMIN`. Les actions
 sensibles demandent confirmation par bouton inline avec expiration courte. Toutes les commandes sont ajoutees au journal d'audit. Les alertes
-automatiques IPTV previennent quand un compte tombe, expire bientot ou depasse
-le seuil de saturation configure.
+automatiques couvrent les inscriptions, connexions, echecs de connexion,
+demandes de reset mot de passe, tickets, paiements et evenements IPTV. Un
+resume quotidien est envoye selon `TELEGRAM_DAILY_DIGEST_CRON`. Les alertes IPTV
+previennent quand un compte tombe, expire bientot ou depasse le seuil de
+saturation configure.
 
 Compatibilite: les anciennes variables `TELEGRAM_BOT_TOKEN` et
 `TELEGRAM_CHAT_ID` restent acceptees comme alias du bot logs, pas du bot admin.

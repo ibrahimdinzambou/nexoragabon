@@ -20,6 +20,7 @@ public class SupportService {
     private final TransactionalMailService mail;
     private final EmailTemplateService templates;
     private final TelegramAlertService telegram;
+    private final TelegramActivityService activity;
     private final AuditService audit;
 
     public SupportService(
@@ -30,6 +31,7 @@ public class SupportService {
             TransactionalMailService mail,
             EmailTemplateService templates,
             TelegramAlertService telegram,
+            TelegramActivityService activity,
             AuditService audit
     ) {
         this.tickets = tickets;
@@ -39,6 +41,7 @@ public class SupportService {
         this.mail = mail;
         this.templates = templates;
         this.telegram = telegram;
+        this.activity = activity;
         this.audit = audit;
     }
 
@@ -70,28 +73,7 @@ public class SupportService {
                 "Ticket support #" + ticket.id + " reçu",
                 templates.supportOpened(ticket.id, subject)
         );
-        if (ticket.priority == Enums.TicketPriority.HIGH || ticket.priority == Enums.TicketPriority.URGENT) {
-            telegram.send(
-                    "Ticket support prioritaire",
-                    """
-                    Ticket: #%d
-                    Priorite: %s
-                    Client: %s
-                    Organisation: %s
-                    Sujet: %s
-                    """.formatted(
-                            ticket.id,
-                            ticket.priority,
-                            user.email,
-                            organization.name,
-                            ticket.subject
-                    ),
-                    List.of(List.of(
-                            new TelegramAlertService.Action("Repondu #" + ticket.id, "answer_ticket:" + ticket.id),
-                            new TelegramAlertService.Action("Fermer #" + ticket.id, "confirm:close_ticket:" + ticket.id)
-                    ))
-            );
-        }
+        activity.ticketOpened(ticket);
         audit.log(user, "support.ticket.created", "SupportTicket", ticket.id, subject);
         return ticket;
     }

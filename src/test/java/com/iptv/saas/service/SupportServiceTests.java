@@ -59,6 +59,7 @@ class SupportServiceTests {
                 mock(TransactionalMailService.class),
                 mock(EmailTemplateService.class),
                 mock(TelegramAlertService.class),
+                mock(TelegramActivityService.class),
                 mock(AuditService.class)
         );
     }

@@ -9,19 +9,23 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuditService {
     private final AuditLogRepository logs;
+    private final RequestInfoService requestInfo;
 
-    public AuditService(AuditLogRepository logs) {
+    public AuditService(AuditLogRepository logs, RequestInfoService requestInfo) {
         this.logs = logs;
+        this.requestInfo = requestInfo;
     }
 
     @Transactional
-    public void log(UserEntity user, String action, String subjectType, Long subjectId, String metadata) {
+    public AuditLog log(UserEntity user, String action, String subjectType, Long subjectId, String metadata) {
         AuditLog log = new AuditLog();
         log.user = user;
         log.action = action;
         log.subjectType = subjectType;
         log.subjectId = subjectId;
+        log.ipAddress = requestInfo.clientIp();
+        log.userAgent = requestInfo.userAgent();
         log.metadata = metadata;
-        logs.save(log);
+        return logs.save(log);
     }
 }

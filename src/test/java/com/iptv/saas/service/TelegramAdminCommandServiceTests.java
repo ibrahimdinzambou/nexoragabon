@@ -6,6 +6,7 @@ import com.iptv.saas.domain.IptvAccount;
 import com.iptv.saas.domain.PaymentTransaction;
 import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.repository.CommunityAddonRepository;
+import com.iptv.saas.repository.AuditLogRepository;
 import com.iptv.saas.repository.InvoiceRepository;
 import com.iptv.saas.repository.IptvAccountRepository;
 import com.iptv.saas.repository.PaymentTransactionRepository;
@@ -239,6 +240,8 @@ class TelegramAdminCommandServiceTests {
         IptvAccountHealthAuditService healthAudit = mock(IptvAccountHealthAuditService.class);
         OpsService ops = mock(OpsService.class);
         AuditService audit = mock(AuditService.class);
+        AuditLogRepository auditLogs = mock(AuditLogRepository.class);
+        TelegramDailyDigestService dailyDigest = mock(TelegramDailyDigestService.class);
         TelegramAdminCommandService service = new TelegramAdminCommandService(
                 catalog,
                 accounts,
@@ -260,6 +263,8 @@ class TelegramAdminCommandServiceTests {
                 healthAudit,
                 ops,
                 audit,
+                auditLogs,
+                dailyDigest,
                 Optional.empty()
         );
         return new Fixture(catalog, accounts, sessions, streaming, addons, addonRepository, users, subscriptions,

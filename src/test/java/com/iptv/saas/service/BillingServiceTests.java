@@ -38,6 +38,7 @@ class BillingServiceTests {
                 organizations,
                 invoices,
                 telegram,
+                mock(TelegramActivityService.class),
                 audit,
                 "free",
                 7,

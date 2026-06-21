@@ -23,6 +23,7 @@ public class BillingService {
     private final OrganizationService organizationService;
     private final InvoiceService invoiceService;
     private final TelegramAlertService telegram;
+    private final TelegramActivityService activity;
     private final AuditService audit;
     private final String defaultTrialPlan;
     private final int defaultTrialDays;
@@ -36,6 +37,7 @@ public class BillingService {
             OrganizationService organizationService,
             InvoiceService invoiceService,
             TelegramAlertService telegram,
+            TelegramActivityService activity,
             AuditService audit,
             @Value("${app.billing.default-trial-plan:free}") String defaultTrialPlan,
             @Value("${app.billing.default-trial-days:7}") int defaultTrialDays,
@@ -48,6 +50,7 @@ public class BillingService {
         this.organizationService = organizationService;
         this.invoiceService = invoiceService;
         this.telegram = telegram;
+        this.activity = activity;
         this.audit = audit;
         this.defaultTrialPlan = defaultTrialPlan;
         this.defaultTrialDays = defaultTrialDays;
@@ -194,7 +197,9 @@ public class BillingService {
             subscription.currentPeriodEnd = subscription.trialEndsAt;
         }
         audit.log(user, "billing.plan.changed", "Subscription", subscription.id, plan.code);
-        return subscriptions.save(subscription);
+        Subscription saved = subscriptions.save(subscription);
+        activity.planChanged(user, saved);
+        return saved;
     }
 
     @Transactional

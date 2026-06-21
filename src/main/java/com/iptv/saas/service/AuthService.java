@@ -36,6 +36,7 @@ public class AuthService {
     private final Executor mailExecutor;
     private final EmailTemplateService templates;
     private final TelegramAlertService telegram;
+    private final TelegramActivityService activity;
     private final AuditService audit;
     private final SecureRandom random = new SecureRandom();
     private final boolean requireEmailVerification;
@@ -52,6 +53,7 @@ public class AuthService {
             @Qualifier("mailTaskExecutor") Executor mailExecutor,
             EmailTemplateService templates,
             TelegramAlertService telegram,
+            TelegramActivityService activity,
             AuditService audit,
             @Value("${app.security.require-email-verification:true}") boolean requireEmailVerification,
             @Value("${app.security.email-otp-ttl-minutes:15}") long emailOtpTtlMinutes,
@@ -66,6 +68,7 @@ public class AuthService {
         this.mailExecutor = mailExecutor;
         this.templates = templates;
         this.telegram = telegram;
+        this.activity = activity;
         this.audit = audit;
         this.requireEmailVerification = requireEmailVerification;
         this.emailOtpTtlMinutes = emailOtpTtlMinutes;
@@ -105,23 +108,34 @@ public class AuthService {
         if (requireEmailVerification) {
             sendEmailOtp(user);
             audit.log(user, "auth.registered.pending_email", "User", user.id, user.email);
+            activity.userRegistered(user, organization, subscription, true);
             return emailVerificationPayload(user, organization, subscription);
         }
         audit.log(user, "auth.registered", "User", user.id, user.email);
+        activity.userRegistered(user, organization, subscription, false);
         String token = tokenService.createToken(user, "register");
         Map<String, Object> payload = authPayload(user, organization, token);
         payload.put("subscription", ApiMappers.subscription(subscription));
         return payload;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = ApiException.class)
     public Map<String, Object> login(String email, String password) {
-        UserEntity user = users.findByEmailIgnoreCase(normalizeEmail(email))
-                .orElseThrow(() -> ApiException.unauthorized("Identifiants invalides"));
+        String normalizedEmail = normalizeEmail(email);
+        UserEntity user = users.findByEmailIgnoreCase(normalizedEmail).orElse(null);
+        if (user == null) {
+            audit.log(null, "auth.login.failed", "User", null, "email=" + normalizedEmail + "; reason=unknown_account");
+            activity.loginFailed(null, normalizedEmail, "compte introuvable");
+            throw ApiException.unauthorized("Identifiants invalides");
+        }
         if (!passwordEncoder.matches(password, user.passwordHash)) {
+            audit.log(user, "auth.login.failed", "User", user.id, "reason=bad_password");
+            activity.loginFailed(user, normalizedEmail, "mot de passe invalide");
             throw ApiException.unauthorized("Identifiants invalides");
         }
         if (!user.active) {
+            audit.log(user, "auth.login.failed", "User", user.id, "reason=disabled_account");
+            activity.loginFailed(user, normalizedEmail, "compte desactive");
             throw ApiException.forbidden("Compte desactive");
         }
         if (requireEmailVerification && !user.emailVerified) {
@@ -153,10 +167,12 @@ public class AuthService {
             body.put("requiresTwoFactor", true);
             body.put("email", user.email);
             body.put("expiresAt", user.twoFactorCodeExpiresAt);
+            audit.log(user, "auth.2fa.requested", "User", user.id, user.email);
             return body;
         }
         String token = tokenService.createToken(user, "login");
         audit.log(user, "auth.login", "User", user.id, user.email);
+        activity.loginSuccess(user, "directe");
         alertAdminLogin(user, "Connexion directe");
         return authPayload(user, organizationService.currentOrganization(user), token);
     }
@@ -174,6 +190,7 @@ public class AuthService {
         users.save(user);
         String token = tokenService.createToken(user, "2fa");
         audit.log(user, "auth.2fa.verified", "User", user.id, user.email);
+        activity.loginSuccess(user, "2FA");
         alertAdminLogin(user, "Connexion 2FA validee");
         return authPayload(user, organizationService.currentOrganization(user), token);
     }
@@ -223,6 +240,8 @@ public class AuthService {
                         emailOtpTtlMinutes
                 )
         );
+        audit.log(user, "auth.password.reset.requested", "User", user.id, user.email);
+        activity.passwordResetRequested(user);
     }
 
     @Transactional
@@ -233,6 +252,7 @@ public class AuthService {
         user.resetOtpExpiresAt = null;
         users.save(user);
         audit.log(user, "auth.password.reset", "User", user.id, user.email);
+        activity.passwordResetCompleted(user);
         alertAdminSecurity(user, "Mot de passe admin reinitialise", "Reset par code email");
     }
 
