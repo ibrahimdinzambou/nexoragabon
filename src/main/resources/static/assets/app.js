@@ -15,6 +15,7 @@ const HERO_MAX_SLIDES = 6;
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.net";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
+const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const launchParams = new URLSearchParams(window.location.search);
 const WATCH_REQUIRES_AUTH = launchParams.get("demo") !== "1";
 const titleCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
@@ -81,6 +82,7 @@ const state = {
     activePlayerItem: null,
     activeProxyUrl: null,
     activeEmbedUrl: null,
+    embedRequiresUserLaunch: false,
     embedLoadCount: 0,
     embedReloading: false,
     activePlaybackMode: null,
@@ -214,11 +216,15 @@ const elements = {
     playerModal: document.querySelector("#playerModal"),
     streamPlayer: document.querySelector("#streamPlayer"),
     embedPlayer: document.querySelector("#embedPlayer"),
+    embedLaunchPanel: document.querySelector("#embedLaunchPanel"),
+    embedLaunchInlineButton: document.querySelector("#embedLaunchInlineButton"),
+    embedOpenExternalButton: document.querySelector("#embedOpenExternalButton"),
     playerPlaceholder: document.querySelector("#playerPlaceholder"),
     playerTitle: document.querySelector("#playerTitle"),
     playerBadge: document.querySelector("#playerBadge"),
     playerQuality: document.querySelector("#playerQuality"),
     playerFullscreenButton: document.querySelector("#playerFullscreenButton"),
+    playerEmbedOpenButton: document.querySelector("#playerEmbedOpenButton"),
     playerMessage: document.querySelector("#playerMessage"),
     toast: document.querySelector("#toast")
 };
@@ -2464,7 +2470,11 @@ async function playTmdbItem(item) {
             "Injection automatique du code TMDB dans Videasy."
         );
         await startStreamPlayback(item, playerUrl, "embed");
-        elements.playerMessage.textContent = "Lecture Videasy ouverte. Si le lecteur affiche une erreur, la source n'est pas disponible chez Videasy.";
+        if (state.embedRequiresUserLaunch) {
+            elements.playerMessage.textContent = "Lecteur TMDB pret. Lancez-le depuis le bouton affiche.";
+        } else {
+            elements.playerMessage.textContent = "Lecture Videasy ouverte. Si le lecteur affiche une erreur, la source n'est pas disponible chez Videasy.";
+        }
     } catch (error) {
         detachPlayerMedia();
         showPlayerError(error.message || "Impossible d'ouvrir le lecteur Videasy.");
@@ -2597,11 +2607,16 @@ async function startStreamPlayback(item, proxyUrl, playbackMode) {
         state.playerGeneration = generation;
         state.activeProxyUrl = proxyUrl;
         state.activePlaybackMode = playbackMode;
+        prepareEmbedPlayer(streamUrl);
         elements.streamPlayer.hidden = true;
-        elements.embedPlayer.hidden = false;
-        secureEmbedPlayer(streamUrl);
         elements.playerQuality.disabled = true;
-        setEmbedPlayerOpened();
+        if (shouldGateEmbedLaunch(item)) {
+            showEmbedLaunchPanel();
+            setEmbedPlayerAwaitingLaunch();
+        } else {
+            launchEmbedInline();
+        }
+        syncEmbedActionButtons();
         return;
     }
     elements.embedPlayer.hidden = true;
@@ -2660,15 +2675,58 @@ async function startStreamPlayback(item, proxyUrl, playbackMode) {
     await elements.streamPlayer.play();
 }
 
-function secureEmbedPlayer(streamUrl) {
+function shouldGateEmbedLaunch(item) {
+    const hasCoarsePointer = window.matchMedia?.(MOBILE_EMBED_QUERY).matches;
+    const isMobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+    return isTmdbPlayable(item) && (hasCoarsePointer || isMobileUserAgent);
+}
+
+function prepareEmbedPlayer(streamUrl) {
     state.activeEmbedUrl = streamUrl;
+    state.embedRequiresUserLaunch = false;
     state.embedLoadCount = 0;
     state.embedReloading = false;
     elements.embedPlayer.removeAttribute("sandbox");
     elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
     elements.embedPlayer.setAttribute("allowfullscreen", "");
     elements.embedPlayer.referrerPolicy = "no-referrer";
-    elements.embedPlayer.src = streamUrl;
+    elements.embedPlayer.removeAttribute("src");
+    elements.embedPlayer.hidden = true;
+    elements.embedLaunchPanel.hidden = true;
+}
+
+function showEmbedLaunchPanel() {
+    state.embedRequiresUserLaunch = true;
+    elements.embedPlayer.hidden = true;
+    elements.embedPlayer.removeAttribute("src");
+    elements.embedLaunchPanel.hidden = false;
+}
+
+function launchEmbedInline() {
+    if (!state.activeEmbedUrl) return;
+    state.embedRequiresUserLaunch = false;
+    elements.embedLaunchPanel.hidden = true;
+    elements.embedPlayer.hidden = false;
+    elements.embedPlayer.src = state.activeEmbedUrl;
+    setEmbedPlayerOpened(
+        "Lecteur TMDB ouvert. Si le chargement reste bloque sur mobile, utilisez Ouvrir."
+    );
+    syncEmbedActionButtons();
+}
+
+function openActiveEmbedExternally() {
+    if (!state.activeEmbedUrl) return;
+    const opened = window.open(state.activeEmbedUrl, "_blank", "noopener,noreferrer");
+    if (!opened) {
+        showToast("Autorisez l'ouverture du lecteur externe pour continuer.", true);
+    }
+}
+
+function syncEmbedActionButtons() {
+    const hasEmbed = state.activePlaybackMode === "embed" && Boolean(state.activeEmbedUrl);
+    elements.embedOpenExternalButton.disabled = !hasEmbed;
+    elements.playerEmbedOpenButton.hidden = !hasEmbed;
+    elements.playerEmbedOpenButton.disabled = !hasEmbed;
 }
 
 async function requestPlayerFullscreen() {
@@ -2721,7 +2779,7 @@ function setPlayerPlaying() {
     elements.playerMessage.textContent = "Lecture en cours.";
 }
 
-function setEmbedPlayerOpened() {
+function setEmbedPlayerAwaitingLaunch() {
     state.playerHasStarted = true;
     state.playerLastProgressAt = Date.now();
     clearPlayerRecoveryTimer();
@@ -2729,7 +2787,18 @@ function setEmbedPlayerOpened() {
     state.playerRecoveryShouldFailover = false;
     elements.playerPlaceholder.classList.remove("error");
     elements.playerPlaceholder.hidden = true;
-    elements.playerMessage.textContent = "Lecteur externe ouvert.";
+    elements.playerMessage.textContent = "Lecteur TMDB pret. Lancez-le depuis le bouton affiche.";
+}
+
+function setEmbedPlayerOpened(message = "Lecteur externe ouvert.") {
+    state.playerHasStarted = true;
+    state.playerLastProgressAt = Date.now();
+    clearPlayerRecoveryTimer();
+    clearPlayerStartupTimer();
+    state.playerRecoveryShouldFailover = false;
+    elements.playerPlaceholder.classList.remove("error");
+    elements.playerPlaceholder.hidden = true;
+    elements.playerMessage.textContent = message;
 }
 
 function setPlayerBuffering(placeholderText, statusText) {
@@ -2901,12 +2970,15 @@ function detachPlayerMedia() {
     elements.embedPlayer.removeAttribute("src");
     elements.embedPlayer.hidden = true;
     state.activeEmbedUrl = null;
+    state.embedRequiresUserLaunch = false;
     state.embedLoadCount = 0;
     state.embedReloading = false;
+    elements.embedLaunchPanel.hidden = true;
     elements.streamPlayer.hidden = false;
     elements.streamPlayer.pause();
     elements.streamPlayer.removeAttribute("src");
     elements.streamPlayer.load();
+    syncEmbedActionButtons();
 }
 
 function destroyMpegtsPlayer(player) {
@@ -3343,6 +3415,9 @@ elements.settingsTwoFactor.addEventListener("change", toggleTwoFactor);
 elements.logoutAllButton.addEventListener("click", logoutAllDevices);
 elements.logoutButton.addEventListener("click", logout);
 elements.playerFullscreenButton.addEventListener("click", requestPlayerFullscreen);
+elements.embedLaunchInlineButton.addEventListener("click", launchEmbedInline);
+elements.embedOpenExternalButton.addEventListener("click", openActiveEmbedExternally);
+elements.playerEmbedOpenButton.addEventListener("click", openActiveEmbedExternally);
 
 document.addEventListener("click", (event) => {
     if (!elements.searchShell.contains(event.target)) {
