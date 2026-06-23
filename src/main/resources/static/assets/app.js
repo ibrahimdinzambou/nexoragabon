@@ -2559,9 +2559,12 @@ async function openSeries(item) {
     openModal("seriesModal");
 
     try {
-        const series = await api(
-            `/catalog/series/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.name || "")}`
-        );
+        const nodeSeries = (item.externalPlayback || isFrenchSource(item)) && tmdbIdFromItem(item);
+        const series = nodeSeries
+            ? await nodeApi(`/catalog/series/${encodeURIComponent(nodeSeries)}`)
+            : await api(
+                `/catalog/series/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.name || "")}`
+            );
         state.activeSeries = series;
         renderSeriesDetails(series, item.image);
     } catch (error) {
