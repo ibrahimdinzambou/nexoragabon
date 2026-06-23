@@ -2368,6 +2368,16 @@ async function openMovieDetails(item) {
     renderMovieDetails(item, true);
     openModal("detailModal");
 
+    if (item.externalPlayback || isFrenchSource(item)) {
+        state.activeDetail = {
+            ...item,
+            summary: item.summary || item.description || "Ce film est disponible via les sources FR connectees a Nexora.",
+            streamAvailable: item.streamAvailable !== false
+        };
+        renderMovieDetails(state.activeDetail, false);
+        return;
+    }
+
     try {
         const details = await api(`/catalog/items/${encodeURIComponent(item.id)}`);
         state.activeDetail = {
