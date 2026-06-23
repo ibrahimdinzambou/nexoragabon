@@ -332,6 +332,11 @@ async function nodeApi(path, options = {}) {
     return body;
 }
 
+async function nodeCatalogApi(path, options = {}) {
+    const body = await nodeApi(path, options);
+    return Array.isArray(body) ? body : (body.data || body.items || []);
+}
+
 async function fetchWithRetry(url, options) {
     const method = String(options.method || "GET").toUpperCase();
     const retryDelays = options.retryTransient === true
@@ -672,7 +677,7 @@ async function loadCatalog() {
             ? ["live", "movie", "series"]
             : [state.activeType];
         const resultSets = await Promise.all(
-            types.map((type) => {
+            types.map(async (type) => {
                 const movieLibrary = !query && state.activeType === "movie" && type === "movie";
                 const requestedLimit = query
                     ? searchCatalogLimit(type)
@@ -690,15 +695,29 @@ async function loadCatalog() {
                 params.set("addonPages", query ? "3" : String(state.addonPages));
                 if (!query && state.activeLanguage) params.set("language", state.activeLanguage);
                 if (movieLibrary) params.set("sort", state.movieSort);
-                return api(`/catalog/items?${params}`, { signal: abortController.signal });
+                const springItemsPromise = api(`/catalog/items?${params}`, { signal: abortController.signal })
+                    .catch(() => []);
+                const nodeItemsPromise = nodeApiEnabled() && ["movie", "series"].includes(type)
+                    ? nodeCatalogApi(`/catalog/items?${params}`, { signal: abortController.signal })
+                        .catch(() => [])
+                    : Promise.resolve([]);
+                const [springItems, nodeItems] = await Promise.all([springItemsPromise, nodeItemsPromise]);
+                return [...(springItems || []), ...(nodeItems || [])];
             })
         );
         if (requestId !== state.catalogRequestId) return;
 
+        const seenCatalogItems = new Set();
         const apiItems = resultSets.flatMap((items, typeIndex) => {
             const type = types[typeIndex];
             return (items || []).map((item, index) => normalizeItem(item, type, index));
-        }).filter((item) => types.includes(item.type));
+        }).filter((item) => {
+            if (!types.includes(item.type)) return false;
+            const dedupeKey = `${item.type}:${item.tmdbId || item.id}`;
+            if (seenCatalogItems.has(dedupeKey)) return false;
+            seenCatalogItems.add(dedupeKey);
+            return true;
+        });
 
         state.catalog = apiItems;
         const activeCategory = state.categories.find((category) => category.id === state.activeCategory);
