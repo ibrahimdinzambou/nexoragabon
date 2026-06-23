@@ -75,6 +75,7 @@ const state = {
     recentlyWatched: loadRecentlyWatched(),
     hiddenCatalogCards: new Set(),
     movieSort: localStorage.getItem(MOVIE_SORT_KEY) || "title-asc",
+    homeShuffleSalt: Math.floor(Math.random() * 1000000),
     query: "",
     authMode: "login",
     authRequired: WATCH_REQUIRES_AUTH,
@@ -927,7 +928,7 @@ function renderCatalog() {
             : searching
                 ? Math.max(searchCatalogLimit(row.type), state.visibleCatalog[row.type])
                 : state.visibleCatalog[row.type];
-        const visibleItems = rowItems.slice(0, visibleLimit);
+        const visibleItems = (homePreview ? balancedHomeItems(rowItems, visibleLimit, ["anime", row.type]) : rowItems.slice(0, visibleLimit));
         const shelves = buildCatalogShelves(rowDefinition, rowItems, visibleItems, searching)
             .map((shelf) => ({ ...shelf, homePreview }));
         const remoteMore = state.addonHasMore
@@ -979,16 +980,8 @@ function renderCatalogLoadingBanner(searching) {
 
 function renderHomeShowcase(items) {
     const unique = uniqueCatalogItems(items);
-    const posterItems = [
-        ...unique.filter((item) => item.type === "series"),
-        ...unique.filter((item) => item.type === "movie"),
-        ...unique.filter((item) => item.type === "live")
-    ].slice(0, HOME_SHOWCASE_LIMIT);
-    const orbitItems = [
-        ...unique.filter((item) => item.type === "movie"),
-        ...unique.filter((item) => item.type === "series"),
-        ...unique.filter((item) => item.type === "live")
-    ].slice(0, HOME_SHOWCASE_LIMIT);
+    const posterItems = balancedHomeItems(unique, HOME_SHOWCASE_LIMIT, ["anime", "series", "movie", "live"]);
+    const orbitItems = balancedHomeItems(unique, HOME_SHOWCASE_LIMIT, ["movie", "anime", "series", "live"]);
 
     if (!posterItems.length && !orbitItems.length) return "";
 
@@ -997,7 +990,7 @@ function renderHomeShowcase(items) {
             <div class="watch-showcase-heading">
                 <div>
                     <p class="section-kicker">SELECTION NEXORA</p>
-                    <h3 id="watchShowcaseTitle">Nouvelles series sur Nexora</h3>
+                    <h3 id="watchShowcaseTitle">Decouvertes du moment</h3>
                 </div>
                 <div class="watch-showcase-controls">
                     <button class="row-arrow" type="button" data-row-scroll="-1" data-row-target="watchPosterRail" aria-label="Faire défiler la sélection vers la gauche">
@@ -1024,6 +1017,68 @@ function renderHomeShowcase(items) {
 
 function uniqueCatalogItems(items) {
     return [...new Map(items.map((item) => [`${item.type}:${item.id}`, item])).values()];
+}
+
+function isAnimeItem(item) {
+    const haystack = normalizeSearchText([
+        item?.name,
+        item?.categoryName,
+        item?.categoryId,
+        item?.source,
+        item?.languageName
+    ].filter(Boolean).join(" "));
+    return /\b(anime|animation|manga|japanimation|shonen|seinen)\b/.test(haystack);
+}
+
+function homeBucket(item) {
+    if (isAnimeItem(item)) return "anime";
+    return item.type || "other";
+}
+
+function stableHomeScore(item, offset = 0) {
+    const raw = `${state.homeShuffleSalt}:${offset}:${item.type}:${item.id}:${item.name}`;
+    let hash = 0;
+    for (let index = 0; index < raw.length; index += 1) {
+        hash = ((hash << 5) - hash + raw.charCodeAt(index)) | 0;
+    }
+    return Math.abs(hash);
+}
+
+function shuffledForHome(items, offset = 0) {
+    return [...items].sort((left, right) => stableHomeScore(left, offset) - stableHomeScore(right, offset));
+}
+
+function balancedHomeItems(items, limit, order) {
+    const buckets = new Map();
+    shuffledForHome(items).forEach((item) => {
+        const bucket = homeBucket(item);
+        if (!buckets.has(bucket)) buckets.set(bucket, []);
+        buckets.get(bucket).push(item);
+    });
+
+    const selected = [];
+    const seen = new Set();
+    const rounds = Math.max(...order.map((bucket) => buckets.get(bucket)?.length || 0), 0);
+    for (let round = 0; round < rounds && selected.length < limit; round += 1) {
+        for (const bucket of order) {
+            const item = buckets.get(bucket)?.[round];
+            if (!item) continue;
+            const key = `${item.type}:${item.id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            selected.push(item);
+            if (selected.length >= limit) break;
+        }
+    }
+
+    shuffledForHome(items, 37).forEach((item) => {
+        if (selected.length >= limit) return;
+        const key = `${item.type}:${item.id}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        selected.push(item);
+    });
+    return selected;
 }
 
 function findCatalogItem(id, type) {
@@ -1084,9 +1139,8 @@ function renderHeroCarousel(items = state.catalog) {
 
 function buildHeroSlides(items) {
     const unique = uniqueCatalogItems(items || [])
-        .filter((item) => item?.name && item?.image)
-        .sort((left, right) => heroTypeScore(right) - heroTypeScore(left));
-    const selected = unique.slice(0, HERO_MAX_SLIDES);
+        .filter((item) => item?.name && item?.image);
+    const selected = balancedHomeItems(unique, HERO_MAX_SLIDES, ["anime", "series", "movie", "live"]);
     if (!selected.length) {
         return [{
             key: "fallback-hero",
@@ -1107,6 +1161,7 @@ function buildHeroSlides(items) {
 }
 
 function heroTypeScore(item) {
+    if (isAnimeItem(item)) return 4;
     return { series: 3, movie: 2, live: 1 }[item.type] || 0;
 }
 
