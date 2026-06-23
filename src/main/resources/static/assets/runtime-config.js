@@ -14,14 +14,7 @@
         const explicit = trimSlash(window.NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
         const host = String(window.location.hostname || "").toLowerCase();
-        if (
-            localHosts.has(host)
-            || proxiedFrontHosts.has(host)
-            || host === railwayHost
-            || host.endsWith(".up.railway.app")
-            || host.endsWith(".netlify.app")
-            || host.endsWith(".vercel.app")
-        ) {
+        if (localHosts.has(host) || host === railwayHost || host.endsWith(".up.railway.app")) {
             return "";
         }
         return railwayApiBase;
