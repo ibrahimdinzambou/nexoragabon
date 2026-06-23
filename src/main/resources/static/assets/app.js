@@ -740,7 +740,8 @@ async function loadCatalog() {
         const apiItems = [];
         mergedItems.forEach((item) => {
             if (!types.includes(item.type)) return false;
-            const dedupeKey = `${item.type}:${item.tmdbId || item.id}`;
+            const sourceKey = item.sourceCode || item.playbackProvider || item.provider || item.source || "catalog";
+            const dedupeKey = `${item.type}:${sourceKey}:${item.id}`;
             const existingIndex = seenCatalogItems.get(dedupeKey);
             if (existingIndex === undefined) {
                 seenCatalogItems.set(dedupeKey, apiItems.length);
