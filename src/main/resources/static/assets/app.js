@@ -866,13 +866,14 @@ function renderLanguageFilter() {
 function filteredCatalog() {
     const query = normalizeSearchText(state.query);
     const searching = Boolean(query);
+    const usingRemoteSearchResults = searching && state.searchResultQuery === query;
 
     const filtered = state.catalog.filter((item) => {
         if (isCatalogCardHidden(item)) return false;
         const matchesType = searching || state.activeType === "all" || item.type === state.activeType;
         const matchesCategory = searching || !state.activeCategory || item.categoryId === state.activeCategory;
         const matchesLanguage = searching || !state.activeLanguage || item.language === state.activeLanguage;
-        const matchesQuery = !query || normalizeSearchText(
+        const matchesQuery = !query || usingRemoteSearchResults || normalizeSearchText(
             `${item.name} ${item.categoryName} ${item.languageName || ""} ${typeLabel(item.type)}`
         ).includes(query);
         return matchesType && matchesCategory && matchesLanguage && matchesQuery;
@@ -896,6 +897,17 @@ function renderCatalog() {
         if (!rowItems.length) {
             return "";
         }
+        const rowDefinition = searching
+            ? {
+                ...row,
+                title: row.type === "movie"
+                    ? `Films pour « ${state.query.trim()} »`
+                    : row.type === "series"
+                        ? `Series pour « ${state.query.trim()} »`
+                        : `Direct pour « ${state.query.trim()} »`,
+                label: `${rowItems.length} resultat${rowItems.length > 1 ? "s" : ""} ${typeLabel(row.type).toLowerCase()}`
+            }
+            : row;
 
         const homePreview = !searching && state.activeType === "all";
         const visibleLimit = homePreview
@@ -904,7 +916,7 @@ function renderCatalog() {
                 ? Math.max(searchCatalogLimit(row.type), state.visibleCatalog[row.type])
                 : state.visibleCatalog[row.type];
         const visibleItems = rowItems.slice(0, visibleLimit);
-        const shelves = buildCatalogShelves(row, rowItems, visibleItems, searching)
+        const shelves = buildCatalogShelves(rowDefinition, rowItems, visibleItems, searching)
             .map((shelf) => ({ ...shelf, homePreview }));
         const remoteMore = state.addonHasMore
             && row.type === state.activeType
