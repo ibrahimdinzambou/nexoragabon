@@ -610,6 +610,29 @@ function normalizeItem(item, type, index) {
     };
 }
 
+function mergeCatalogCategories(items) {
+    const known = new Set(state.categories.map((category) => String(category.id)));
+    const generated = [];
+    items.forEach((item) => {
+        if (!["movie", "series", "live"].includes(item.type)) return;
+        const id = String(item.categoryId || "");
+        if (!id || known.has(id)) return;
+        known.add(id);
+        generated.push({
+            id,
+            name: item.categoryName || typeLabel(item.type),
+            type: item.type,
+            source: item.source || item.provider || "",
+            sourceCode: item.sourceCode || "",
+            playbackProvider: item.playbackProvider || "",
+            streamAvailable: item.streamAvailable
+        });
+    });
+    if (generated.length) {
+        state.categories = [...state.categories, ...generated];
+    }
+}
+
 function defaultCatalogLimit(type) {
     return DEFAULT_VISIBLE_CATALOG[type] || 160;
 }
@@ -720,6 +743,11 @@ async function loadCatalog() {
         });
 
         state.catalog = apiItems;
+        if (!query) {
+            mergeCatalogCategories(apiItems);
+            renderCategories();
+            renderAddonFilter();
+        }
         const activeCategory = state.categories.find((category) => category.id === state.activeCategory);
         const activeAddonItems = apiItems.filter((item) => item.categoryId === state.activeCategory);
         state.addonHasMore = Boolean(
