@@ -897,6 +897,10 @@ button {
     border-color: rgba(90, 186, 255, 0.45);
 }
 
+.genre-chip.french-category {
+    border-color: rgba(255, 255, 255, 0.52);
+}
+
 .addon-badge {
     display: inline-flex;
     align-items: center;
@@ -921,6 +925,13 @@ button {
     border-color: rgba(145, 211, 255, 0.65);
     background: linear-gradient(135deg, #99dcff, #55a7ff);
     box-shadow: 0 4px 14px rgba(85, 167, 255, 0.24);
+}
+
+.french-badge {
+    color: #111319;
+    border-color: rgba(255, 255, 255, 0.78);
+    background: linear-gradient(90deg, #3166f6 0 30%, #f7f8fb 30% 68%, #ec4054 68% 100%);
+    box-shadow: 0 4px 16px rgba(236, 64, 84, 0.28), 0 0 0 1px rgba(49, 102, 246, 0.14);
 }
 
 .catalog-selectors,
@@ -1134,6 +1145,7 @@ button {
 }
 
 .watch-poster-card {
+    position: relative;
     display: grid;
     min-width: 0;
     padding: 0;
@@ -1161,6 +1173,45 @@ button {
     filter: saturate(1.12) contrast(1.05);
     box-shadow: 0 24px 58px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.16);
     transform: translateY(-5px);
+}
+
+.card-remove-action {
+    position: absolute;
+    z-index: 6;
+    top: 8px;
+    left: 8px;
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+    background: rgba(9, 10, 12, 0.82);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38);
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 160ms ease, transform 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.watch-poster-card:hover .card-remove-action,
+.watch-poster-card:focus-within .card-remove-action,
+.media-card:hover .card-remove-action,
+.media-card:focus-within .card-remove-action,
+.card-remove-action:focus-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.card-remove-action:hover,
+.card-remove-action:focus-visible {
+    color: #111;
+    outline: 0;
+    background: var(--accent);
 }
 
 .watch-poster-card:focus-visible,
@@ -1283,6 +1334,23 @@ button {
 
 .content-row {
     min-width: 0;
+}
+
+.content-row-recent {
+    position: relative;
+    padding-top: 4px;
+}
+
+.content-row-recent .row-heading-copy h3 {
+    color: #ffffff;
+}
+
+.content-row-recent .row-heading-copy span {
+    color: #d9b85d;
+}
+
+.content-row-recent .poster-media-card img {
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(231, 195, 109, 0.12);
 }
 
 .row-heading {
@@ -2952,6 +3020,26 @@ body.compact-catalog .card-copy strong {
     aspect-ratio: 16 / 9;
     border: 0;
     background: #000;
+}
+
+.player-card:fullscreen,
+.player-card:-webkit-full-screen {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+    flex-direction: column;
+    border: 0;
+}
+
+.player-card:fullscreen video,
+.player-card:fullscreen iframe,
+.player-card:fullscreen .embed-launch-panel,
+.player-card:-webkit-full-screen video,
+.player-card:-webkit-full-screen iframe,
+.player-card:-webkit-full-screen .embed-launch-panel {
+    flex: 1;
+    min-height: 0;
+    aspect-ratio: auto;
 }
 
 .player-card iframe[hidden],

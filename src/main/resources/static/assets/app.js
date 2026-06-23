@@ -1,21 +1,36 @@
 const API_ROOT = window.NexoraApi?.root?.() || "/api";
+const NODE_API_ROOT = window.NexoraNodeApi?.root?.() || "";
 const TOKEN_KEY = "nexora_access_token";
 const MOVIE_SORT_KEY = "nexora_movie_sort";
 const SETTINGS_KEY = "nexora_profile_settings";
+const RECENTLY_WATCHED_KEY = "nexora_recently_watched";
 const NETWORK_RETRY_DELAYS = [700, 1800, 4000];
 const STREAM_OPEN_RETRY_DELAYS = [500, 1200];
 const IMAGE_RETRY_LIMIT = 2;
 const PLAYER_RECOVERY_DELAY_MS = 6000;
 const PLAYER_STARTUP_TIMEOUT_MS = 10000;
+const PLAYER_VISUAL_WATCHDOG_MS = 4500;
+const PLAYER_VISUAL_WATCHDOG_MAX_MS = 14000;
 const PLAYER_MAX_RECOVERY_ATTEMPTS = 4;
+const PLAYER_MANUAL_PAUSE_WINDOW_MS = 1400;
+const PLAYER_PAUSE_RESUME_DELAY_MS = 900;
+const DASH_MANIFEST_TIMEOUT_MS = 10000;
+const DASH_PLAY_PROMISE_TIMEOUT_MS = 3500;
 const SEARCH_DEBOUNCE_MS = 550;
 const MIN_REMOTE_SEARCH_LENGTH = 2;
 const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
+const HOME_PREVIEW_LIMIT = 24;
+const HOME_SHOWCASE_LIMIT = 20;
+const LOAD_MORE_INCREMENT = 360;
+const RECENTLY_WATCHED_LIMIT = 24;
+const DEFAULT_VISIBLE_CATALOG = { live: 160, movie: 480, series: 480 };
+const SEARCH_VISIBLE_CATALOG = { live: 240, movie: 480, series: 480 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
+const NODE_MOVIE_PROVIDER = "auto";
 const launchParams = new URLSearchParams(window.location.search);
 const WATCH_REQUIRES_AUTH = launchParams.get("demo") !== "1";
 const titleCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
@@ -56,7 +71,9 @@ const state = {
     addonPages: 1,
     addonHasMore: false,
     activeLanguage: "",
-    visibleCatalog: { live: 120, movie: 120, series: 120 },
+    visibleCatalog: { ...DEFAULT_VISIBLE_CATALOG },
+    recentlyWatched: loadRecentlyWatched(),
+    hiddenCatalogCards: new Set(),
     movieSort: localStorage.getItem(MOVIE_SORT_KEY) || "title-asc",
     query: "",
     authMode: "login",
@@ -71,6 +88,8 @@ const state = {
     playerOpening: false,
     heartbeatId: null,
     mpegtsPlayer: null,
+    dashPlayer: null,
+    hlsPlayer: null,
     playerHasStarted: false,
     playerErrorShown: false,
     playerRecoveryTimer: null,
@@ -79,17 +98,30 @@ const state = {
     playerRecovering: false,
     playerRecoveryShouldFailover: false,
     playerLastProgressAt: 0,
+    playerVisualWatchTimer: null,
+    playerPauseResumeTimer: null,
+    playerLastUserIntentAt: 0,
+    playerDetaching: false,
+    playerVisualWatchStartedAt: 0,
+    playerVisualFallbackPending: false,
     activePlayerItem: null,
     activeProxyUrl: null,
     activeEmbedUrl: null,
+    activeEmbedFallbackUrl: null,
+    activeEmbedFallbackLabel: "",
+    activeVisualWatchdogEnabled: false,
+    activeCanFailover: false,
     embedRequiresUserLaunch: false,
     embedAssistTimer: null,
     embedAssistShown: false,
     embedManualRetryUsed: false,
     embedLoadCount: 0,
     embedReloading: false,
+    pendingNonFrenchConfirmation: null,
     activePlaybackMode: null,
     activePlaybackQuality: null,
+    activePreferredAudioLanguage: null,
+    activePreferredSubtitleLanguage: null,
     playerGeneration: 0,
     catalogLoading: false,
     catalogIsFallback: true,
@@ -261,10 +293,43 @@ function apiUrl(path) {
     return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
 }
 
+function nodeApiUrl(path) {
+    return window.NexoraNodeApi?.url ? window.NexoraNodeApi.url(path) : "";
+}
+
 function resolveApiResourceUrl(value) {
     return window.NexoraApi?.resolve
         ? window.NexoraApi.resolve(value)
         : new URL(value, window.location.origin).href;
+}
+
+function resolveNodeApiResourceUrl(value) {
+    return window.NexoraNodeApi?.resolve
+        ? window.NexoraNodeApi.resolve(value)
+        : resolveApiResourceUrl(value);
+}
+
+function nodeApiEnabled() {
+    return Boolean(NODE_API_ROOT || window.NexoraNodeApi?.enabled?.());
+}
+
+async function nodeApi(path, options = {}) {
+    const url = nodeApiUrl(path);
+    if (!url) {
+        throw new Error("API Node FR non configurée.");
+    }
+
+    const headers = new Headers(options.headers || {});
+    headers.set("Accept", "application/json");
+    const response = await fetchWithRetry(url, { ...options, headers });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok || body.ok === false) {
+        const error = new Error(body.erreur || body.message || "Source FR indisponible.");
+        error.status = response.status;
+        throw error;
+    }
+    return body;
 }
 
 async function fetchWithRetry(url, options) {
@@ -367,6 +432,108 @@ function saveProfileSettings(nextSettings) {
     applyProfileSettings();
 }
 
+function loadRecentlyWatched() {
+    try {
+        const values = JSON.parse(localStorage.getItem(RECENTLY_WATCHED_KEY) || "[]");
+        if (!Array.isArray(values)) return [];
+        return values
+            .map((item, index) => normalizeRecentItem(item, index))
+            .filter(Boolean)
+            .slice(0, RECENTLY_WATCHED_LIMIT);
+    } catch {
+        return [];
+    }
+}
+
+function normalizeRecentItem(item, index = 0) {
+    if (!item || !item.id || !item.type || !item.name) return null;
+    const type = ["live", "movie", "series"].includes(item.type) ? item.type : "movie";
+    return normalizeItem({
+        ...item,
+        watchedAt: Number(item.watchedAt || 0),
+        isEpisode: Boolean(item.isEpisode)
+    }, type, index);
+}
+
+function saveRecentlyWatched() {
+    localStorage.setItem(
+        RECENTLY_WATCHED_KEY,
+        JSON.stringify(state.recentlyWatched.slice(0, RECENTLY_WATCHED_LIMIT))
+    );
+}
+
+function catalogCardKey(type, id) {
+    return `${type}:${id}`;
+}
+
+function isRemovableCatalogItem(item) {
+    return ["movie", "series"].includes(item?.type);
+}
+
+function isCatalogCardHidden(item) {
+    return isRemovableCatalogItem(item)
+        && state.hiddenCatalogCards.has(catalogCardKey(item.type, item.id));
+}
+
+function hideCatalogCard(type, id) {
+    if (!["movie", "series"].includes(type) || !id) return;
+    const key = catalogCardKey(type, id);
+    state.hiddenCatalogCards.add(key);
+    state.recentlyWatched = state.recentlyWatched.filter((item) => catalogCardKey(item.type, item.id) !== key);
+    saveRecentlyWatched();
+    renderCatalog();
+    renderSearchSuggestions();
+    renderHeroCarousel(filteredCatalog());
+    showToast("Carte masquée temporairement.");
+}
+
+function clearHiddenCatalogCards() {
+    state.hiddenCatalogCards.clear();
+}
+
+function recentItemPayload(item) {
+    return {
+        id: String(item.id),
+        type: item.type,
+        name: item.name,
+        isEpisode: Boolean(item.isEpisode),
+        tmdbId: item.tmdbId || undefined,
+        season: item.season || undefined,
+        episode: item.episode || undefined,
+        categoryId: item.categoryId || "",
+        categoryName: item.categoryName || typeLabel(item.type),
+        image: item.image || item.poster || item.logo || "",
+        poster: item.poster || item.image || "",
+        backdrop: item.backdrop || "",
+        releaseYear: item.releaseYear || item.year || "",
+        year: item.year || item.releaseYear || "",
+        source: item.source || "",
+        sourceCode: item.sourceCode || "",
+        provider: item.provider || "",
+        playbackProvider: item.playbackProvider || "",
+        playbackProviderName: item.playbackProviderName || "",
+        externalPlayback: Boolean(item.externalPlayback),
+        streamAvailable: item.streamAvailable,
+        streamUnavailableReason: item.streamUnavailableReason || "",
+        language: item.language || "",
+        languageName: item.languageName || "",
+        watchedAt: Date.now()
+    };
+}
+
+function trackRecentlyWatched(item) {
+    if (!item?.id || !item?.type || !item?.name) return;
+    const payload = recentItemPayload(item);
+    state.recentlyWatched = [
+        payload,
+        ...state.recentlyWatched.filter((entry) => (
+            `${entry.type}:${entry.id}` !== `${payload.type}:${payload.id}`
+        ))
+    ].slice(0, RECENTLY_WATCHED_LIMIT);
+    saveRecentlyWatched();
+    if (!state.query.trim()) renderCatalog();
+}
+
 function avatarColor(tone) {
     return {
         gold: "linear-gradient(135deg, #f7d77f, #c18b2f)",
@@ -438,6 +605,14 @@ function normalizeItem(item, type, index) {
     };
 }
 
+function defaultCatalogLimit(type) {
+    return DEFAULT_VISIBLE_CATALOG[type] || 160;
+}
+
+function searchCatalogLimit(type) {
+    return SEARCH_VISIBLE_CATALOG[type] || 240;
+}
+
 async function loadCatalog() {
     const requestId = ++state.catalogRequestId;
     if (state.catalogAbortController) {
@@ -500,8 +675,11 @@ async function loadCatalog() {
             types.map((type) => {
                 const movieLibrary = !query && state.activeType === "movie" && type === "movie";
                 const requestedLimit = query
-                    ? 240
-                    : Math.max(state.visibleCatalog[type] || 120, movieLibrary ? 240 : 120);
+                    ? searchCatalogLimit(type)
+                    : Math.max(
+                        state.visibleCatalog[type] || defaultCatalogLimit(type),
+                        movieLibrary ? defaultCatalogLimit("movie") : defaultCatalogLimit(type)
+                    );
                 const params = new URLSearchParams({
                     type,
                     limit: String(requestedLimit)
@@ -643,6 +821,7 @@ function filteredCatalog() {
     const searching = Boolean(query);
 
     const filtered = state.catalog.filter((item) => {
+        if (isCatalogCardHidden(item)) return false;
         const matchesType = searching || state.activeType === "all" || item.type === state.activeType;
         const matchesCategory = searching || !state.activeCategory || item.categoryId === state.activeCategory;
         const matchesLanguage = searching || !state.activeLanguage || item.language === state.activeLanguage;
@@ -673,9 +852,9 @@ function renderCatalog() {
 
         const homePreview = !searching && state.activeType === "all";
         const visibleLimit = homePreview
-            ? 12
+            ? HOME_PREVIEW_LIMIT
             : searching
-                ? Math.max(240, state.visibleCatalog[row.type])
+                ? Math.max(searchCatalogLimit(row.type), state.visibleCatalog[row.type])
                 : state.visibleCatalog[row.type];
         const visibleItems = rowItems.slice(0, visibleLimit);
         const shelves = buildCatalogShelves(row, rowItems, visibleItems, searching)
@@ -707,9 +886,10 @@ function renderCatalog() {
     const homeShowcase = !searching && state.activeType === "all"
         ? renderHomeShowcase(items)
         : "";
+    const recentlyWatched = renderRecentlyWatchedSection(items, searching);
     const loadingBanner = loading && rows ? renderCatalogLoadingBanner(searching) : "";
-    elements.catalogRows.innerHTML = homeShowcase + loadingBanner + rows;
-    elements.emptyState.hidden = Boolean(rows);
+    elements.catalogRows.innerHTML = recentlyWatched + homeShowcase + loadingBanner + rows;
+    elements.emptyState.hidden = Boolean(recentlyWatched || rows);
     updateCatalogHeading(items.length, loading);
     renderHeroCarousel(items);
 }
@@ -732,12 +912,12 @@ function renderHomeShowcase(items) {
         ...unique.filter((item) => item.type === "series"),
         ...unique.filter((item) => item.type === "movie"),
         ...unique.filter((item) => item.type === "live")
-    ].slice(0, 12);
+    ].slice(0, HOME_SHOWCASE_LIMIT);
     const orbitItems = [
         ...unique.filter((item) => item.type === "movie"),
         ...unique.filter((item) => item.type === "series"),
         ...unique.filter((item) => item.type === "live")
-    ].slice(0, 14);
+    ].slice(0, HOME_SHOWCASE_LIMIT);
 
     if (!posterItems.length && !orbitItems.length) return "";
 
@@ -773,6 +953,45 @@ function renderHomeShowcase(items) {
 
 function uniqueCatalogItems(items) {
     return [...new Map(items.map((item) => [`${item.type}:${item.id}`, item])).values()];
+}
+
+function findCatalogItem(id, type) {
+    const key = `${type}:${id}`;
+    return [...state.catalog, ...state.browseCatalog, ...state.searchResults, ...state.recentlyWatched]
+        .find((entry) => `${entry.type}:${entry.id}` === key);
+}
+
+function recentlyWatchedItems(items = state.catalog) {
+    const lookup = new Map(
+        [...state.browseCatalog, ...state.searchResults, ...items]
+            .filter((item) => !isCatalogCardHidden(item))
+            .map((item) => [`${item.type}:${item.id}`, item])
+    );
+    return state.recentlyWatched
+        .map((recent, index) => {
+            const key = `${recent.type}:${recent.id}`;
+            const matched = lookup.get(key);
+            return normalizeRecentItem({
+                ...recent,
+                ...matched,
+                watchedAt: recent.watchedAt,
+                isEpisode: recent.isEpisode || Boolean(matched?.isEpisode)
+            }, index);
+        })
+        .filter((item) => item && !isCatalogCardHidden(item) && (state.activeType === "all" || item.type === state.activeType));
+}
+
+function renderRecentlyWatchedSection(items, searching) {
+    if (searching) return "";
+    const recentItems = recentlyWatchedItems(items).slice(0, state.activeType === "all" ? 18 : RECENTLY_WATCHED_LIMIT);
+    if (!recentItems.length) return "";
+    return renderCatalogShelf({
+        type: "recent",
+        title: "Regard\u00e9 r\u00e9cemment",
+        label: `${recentItems.length} titre${recentItems.length > 1 ? "s" : ""} repris depuis cet appareil`,
+        items: recentItems,
+        posterLayout: true
+    }, 0);
 }
 
 function renderHeroCarousel(items = state.catalog) {
@@ -993,11 +1212,23 @@ function padHeroNumber(value) {
     return String(value).padStart(2, "0");
 }
 
+function removeCardControl(item) {
+    if (!isRemovableCatalogItem(item)) return "";
+    return `
+        <span class="card-remove-action" role="button" tabindex="0" data-remove-card data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}" aria-label="${escapeHtml(`Supprimer ${item.name}`)}">
+            ×
+        </span>
+    `;
+}
+
 function watchPosterCard(item) {
     const year = item.releaseYear || item.year || (item.type === "live" ? "Live" : "2026");
     const genre = item.categoryName || typeLabel(item.type);
+    const addonBadge = sourceBadge(item, "card");
     return `
         <button class="watch-poster-card" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}" aria-label="${escapeHtml(`Ouvrir ${item.name}`)}">
+            ${addonBadge}
+            ${removeCardControl(item)}
             <img src="${escapeHtml(item.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/poster-1.jpg')">
             <span class="watch-poster-year">${escapeHtml(year)}</span>
             <strong>${escapeHtml(item.name)}</strong>
@@ -1107,7 +1338,7 @@ function chunkCatalogItems(items, size) {
 
 function renderCatalogShelf(shelf, index) {
     const rowId = `catalog-row-${shelf.type}-${index}`;
-    const posterLayout = ["movie", "series"].includes(shelf.type);
+    const posterLayout = shelf.posterLayout ?? ["movie", "series"].includes(shelf.type);
     const hasShortcut = Boolean(shelf.homePreview);
     const endCard = hasShortcut ? renderShelfMoreCard(shelf.type) : "";
     const trackItems = posterLayout
@@ -1174,6 +1405,7 @@ function posterMediaCard(item) {
     return `
         <button class="media-card poster-media-card ${item.type}" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}" aria-label="${escapeHtml(actionLabel)}">
             ${addonBadge}
+            ${removeCardControl(item)}
             <img src="${escapeHtml(item.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/poster-1.jpg')">
             <span class="poster-card-copy">
                 <strong>${escapeHtml(item.name)}</strong>
@@ -1202,6 +1434,7 @@ function mediaCard(item) {
         <button class="media-card ${item.type === "series" ? "series" : ""}" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}" aria-label="${escapeHtml(actionLabel)}">
             ${live}
             ${addonBadge}
+            ${removeCardControl(item)}
             <img src="${escapeHtml(item.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')">
             <span class="card-content">
                 <span class="card-copy">
@@ -1229,8 +1462,21 @@ function isTmdbSource(value) {
     return value?.sourceCode === "tmdb" || value?.source === "TMDB";
 }
 
+function isFrenchSource(value) {
+    const sourceCode = String(value?.sourceCode || "").toLowerCase();
+    const playbackProvider = String(value?.playbackProvider || "").toLowerCase();
+    const categoryId = String(value?.categoryId || value?.id || "").toLowerCase();
+    const source = String(value?.source || value?.provider || "").toLowerCase();
+    return sourceCode === "orion"
+        || playbackProvider.startsWith("orion")
+        || categoryId.startsWith("orion~")
+        || categoryId.startsWith("orion-french-")
+        || source.includes("orion");
+}
+
 function sourceClass(value) {
     if (isAsaAddon(value)) return "asa-category";
+    if (isFrenchSource(value)) return "french-category";
     if (isTmdbSource(value)) return "tmdb-category";
     return "";
 }
@@ -1239,6 +1485,9 @@ function sourceBadge(value, placement = "inline") {
     const placementClass = placement === "card" ? "addon-badge-card" : "addon-badge-inline";
     if (isAsaAddon(value)) {
         return `<span class="addon-badge ${placementClass}" aria-label="Contenu provenant de l'add-on ASA">ASA</span>`;
+    }
+    if (isFrenchSource(value)) {
+        return `<span class="addon-badge french-badge ${placementClass}" aria-label="Contenu français via l'API Node">FR</span>`;
     }
     if (isTmdbSource(value)) {
         return `<span class="addon-badge tmdb-badge ${placementClass}" aria-label="Contenu provenant de TMDB">TMDB</span>`;
@@ -1324,7 +1573,8 @@ function searchCandidateItems() {
         : state.browseCatalog.length
             ? state.browseCatalog
             : state.catalog;
-    const unique = [...new Map(source.map((item) => [`${item.type}:${item.id}`, item])).values()];
+    const unique = [...new Map(source.map((item) => [`${item.type}:${item.id}`, item])).values()]
+        .filter((item) => !isCatalogCardHidden(item));
 
     if (!query) return unique.slice(0, 6);
 
@@ -1440,6 +1690,7 @@ function updateSearchChrome() {
 
 function resetSearchQuery(focusInput = false) {
     window.clearTimeout(searchTimer);
+    clearHiddenCatalogCards();
     state.query = "";
     state.searchResults = [];
     state.searchResultQuery = "";
@@ -1508,12 +1759,13 @@ async function setFilter(type) {
         return;
     }
     resetSearchQuery(false);
+    clearHiddenCatalogCards();
     state.activeType = type;
     state.activeCategory = "";
     state.activeAddonFilter = "";
     state.addonPages = 1;
     state.addonHasMore = false;
-    if (type !== "all") state.visibleCatalog[type] = 120;
+    if (type !== "all") state.visibleCatalog[type] = defaultCatalogLimit(type);
     renderLanguageFilter();
     elements.navLinks.forEach((link) => link.classList.toggle("active", link.dataset.filter === type));
     renderCategories();
@@ -2334,6 +2586,7 @@ async function playItem(item, options = {}) {
         return;
     }
     if (state.playerOpening) return;
+    trackRecentlyWatched(item);
     state.playerOpening = true;
     setPlayerControlsBusy(true);
     state.playerErrorShown = false;
@@ -2354,6 +2607,17 @@ async function playItem(item, options = {}) {
     try {
         if (state.activeSessionToken) {
             await stopPlayer();
+        }
+        if (shouldUseNodeFrenchPlayback(item)) {
+            try {
+                await playNodeFrenchItem(item);
+                return;
+            } catch (directError) {
+                console.warn("Source FR directe indisponible:", directError);
+                detachPlayerMedia();
+                showPlayerError(directError.message || "Source FR directe indisponible.");
+                return;
+            }
         }
         const stream = await api("/stream/open", {
             method: "POST",
@@ -2432,10 +2696,148 @@ function setPlayerControlsBusy(isBusy) {
     elements.playerQuality.disabled = Boolean(isBusy) || state.activePlaybackMode === "embed";
 }
 
+function hasActivePlayback() {
+    return Boolean(state.activeSessionToken || state.activePlaybackMode || state.activeProxyUrl || state.activeEmbedUrl);
+}
+
 function requestedPlaybackQuality(item, options = {}) {
     if (options.quality) return options.quality;
     const savedQuality = state.profileSettings.quality || "auto";
     return item?.type === "live" ? savedQuality : "auto";
+}
+
+function shouldUseNodeFrenchPlayback(item) {
+    return isFrenchSource(item) && ["movie", "series"].includes(item?.type);
+}
+
+function isNodeFrenchPlayerItem(item = state.activePlayerItem) {
+    return item?.playbackProvider === "node-fr" || item?.playbackProvider === "node-fr-embed";
+}
+
+function nodeFrenchEndpointForItem(item) {
+    const tmdbId = tmdbIdFromItem(item);
+    if (!tmdbId) return "";
+    if (item.type === "movie") {
+        return `/sources/movie/${tmdbId}?provider=${encodeURIComponent(NODE_MOVIE_PROVIDER)}`;
+    }
+    if (item.type === "series") {
+        const season = positiveInteger(item.season);
+        const episode = positiveInteger(item.episode);
+        if (!season || !episode) return "";
+        return `/sources/series/${tmdbId}/${season}/${episode}`;
+    }
+    return "";
+}
+
+function nodeTmdbEmbedFallbackEndpointForItem(item) {
+    const tmdbId = tmdbIdFromItem(item);
+    if (!tmdbId) return "";
+    if (item.type === "movie") {
+        return `/sources/movie/${tmdbId}?provider=tmdbembed&allowNonFrench=1`;
+    }
+    if (item.type === "series") {
+        const season = positiveInteger(item.season);
+        const episode = positiveInteger(item.episode);
+        if (!season || !episode) return "";
+        return `/sources/series/${tmdbId}/${season}/${episode}?provider=tmdbembed&allowNonFrench=1`;
+    }
+    return "";
+}
+
+function bestNodeFrenchHoster(hosters) {
+    if (!Array.isArray(hosters)) return null;
+    const usable = hosters.filter((hoster) => (
+        hoster?.proxyM3U8 || hoster?.proxyM3u8 || hoster?.m3u8 || hoster?.directUrl || hoster?.embedUrl
+    ));
+    return usable.find((hoster) => (
+        /truefrench|vf|fr/i.test(`${hoster.lang || ""} ${hoster.nom || ""}`)
+    )) || usable[0] || null;
+}
+
+function nodeFrenchStreamFromSource(source) {
+    const hoster = bestNodeFrenchHoster(source?.hosters);
+    if (!hoster) {
+        throw new Error(source?.erreur || "Aucune source FR exploitable.");
+    }
+    const embedUrl = hoster.embedUrl || "";
+    const directUrl = hoster.directUrl || hoster.videoUrl || "";
+    let hlsUrl = hoster.proxyM3U8 || hoster.proxyM3u8 || "";
+    if (!hlsUrl && hoster.m3u8) {
+        const params = new URLSearchParams({ url: hoster.m3u8 });
+        if (embedUrl) params.set("referer", embedUrl);
+        hlsUrl = `/api/proxy/m3u8?${params}`;
+    }
+    const selectedUrl = hlsUrl || directUrl || embedUrl;
+    if (!selectedUrl) {
+        throw new Error("La source FR ne fournit pas d'URL de lecture.");
+    }
+    return {
+        proxyUrl: hlsUrl ? resolveNodeApiResourceUrl(hlsUrl) : directUrl || embedUrl,
+        playbackMode: hlsUrl ? "hls" : directUrl ? "direct" : "embed",
+        embedUrl: embedUrl ? resolveNodeApiResourceUrl(embedUrl) : "",
+        preferredAudioLanguage: hoster.preferredAudioLanguage || (hoster.canSelectFrenchAudio ? "fr" : ""),
+        preferredSubtitleLanguage: hoster.preferredSubtitleLanguage || (hoster.canSelectFrenchSubtitles ? "fr" : ""),
+        hoster
+    };
+}
+
+async function playNodeFrenchItem(item) {
+    if (!nodeApiEnabled()) {
+        throw new Error("API Node FR non configurée.");
+    }
+    const endpoint = nodeFrenchEndpointForItem(item);
+    if (!endpoint) {
+        throw new Error("Identifiant TMDB FR incomplet.");
+    }
+
+    state.activeSessionToken = null;
+    state.activeCanFailover = false;
+    state.activePlaybackQuality = "auto";
+    elements.playerQuality.value = "auto";
+    stopHeartbeat();
+    elements.playerBadge.textContent = "FR";
+    setPlayerLoading(
+        "Recherche de la source FR...",
+        "Connexion directe a l'API Node: Orion puis Aether."
+    );
+
+    let source;
+    try {
+        source = await nodeApi(endpoint);
+    } catch (strictError) {
+        const fallbackEndpoint = nodeTmdbEmbedFallbackEndpointForItem(item);
+        if (!fallbackEndpoint) throw strictError;
+        source = await nodeApi(fallbackEndpoint);
+        await confirmNonFrenchPlayback(source);
+    }
+    elements.playerBadge.textContent = source.requiresLanguageConfirmation ? "VO" : "FR";
+    const stream = nodeFrenchStreamFromSource(source);
+    const sourceLabel = [
+        stream.hoster.nom || "Source FR",
+        stream.hoster.lang || ""
+    ].filter(Boolean).join(" - ");
+
+    setPlayerLoading(
+        "Ouverture de la source FR...",
+        sourceLabel || "Lecture directe depuis l'API Node."
+    );
+    await startStreamPlayback(
+        { ...item, playbackProvider: "node-fr", playbackProviderName: sourceLabel },
+        stream.proxyUrl,
+        stream.playbackMode,
+        {
+            embedFallbackUrl: stream.playbackMode === "hls" ? stream.embedUrl : "",
+            embedFallbackLabel: sourceLabel,
+            preferredAudioLanguage: stream.preferredAudioLanguage,
+            preferredSubtitleLanguage: stream.preferredSubtitleLanguage,
+            visualWatch: true
+        }
+    );
+    if (stream.playbackMode === "embed") {
+        elements.playerMessage.textContent = "Lecteur FR ouvert depuis l'API Node.";
+    } else {
+        elements.playerMessage.textContent = "Lecture FR via l'API Node.";
+    }
 }
 
 async function playTmdbItem(item) {
@@ -2520,7 +2922,7 @@ function isTmdbPlayable(value) {
 function tmdbIdFromItem(value) {
     const directId = positiveInteger(value?.tmdbId);
     if (directId) return directId;
-    const match = String(value?.id || "").match(/^tmdb~(?:movie|series)~(\d+)/);
+    const match = String(value?.id || "").match(/^(?:tmdb|orion)~(?:movie|series)~(\d+)/);
     return match ? positiveInteger(match[1]) : 0;
 }
 
@@ -2572,6 +2974,9 @@ async function startStreamFromPayload(item, stream, requestedQuality) {
 
 function applyStreamPayload(stream, requestedQuality) {
     state.activeSessionToken = stream.token || state.activeSessionToken;
+    if (stream.session) {
+        state.activeCanFailover = Boolean(stream.session.iptvAccountId);
+    }
     state.activePlaybackQuality = stream.quality || requestedQuality || "auto";
     elements.playerQuality.value = state.activePlaybackQuality;
     if (requestedQuality && state.activePlaybackQuality !== requestedQuality) {
@@ -2601,12 +3006,120 @@ function qualityLabel(quality) {
     }[quality] || "mode automatique";
 }
 
-async function startStreamPlayback(item, proxyUrl, playbackMode) {
+function dashElementsByLocalName(root, localName) {
+    return Array.from(root.getElementsByTagName("*"))
+        .filter((element) => element.localName === localName || element.nodeName === localName);
+}
+
+function dashCodecLooksVideo(codec) {
+    return /^(avc1|avc3|hev1|hvc1|vp09|av01)/i.test(codec || "");
+}
+
+function dashCodecLabel(codec) {
+    if (/^(hev1|hvc1)/i.test(codec || "")) return "HEVC/H.265";
+    if (/^(avc1|avc3)/i.test(codec || "")) return "H.264";
+    if (/^vp09/i.test(codec || "")) return "VP9";
+    if (/^av01/i.test(codec || "")) return "AV1";
+    return codec || "codec inconnu";
+}
+
+function dashVideoTracks(manifest) {
+    const adaptationSets = dashElementsByLocalName(manifest, "AdaptationSet");
+    const tracks = [];
+    adaptationSets.forEach((set) => {
+        const setMime = set.getAttribute("mimeType") || "";
+        const setCodecs = set.getAttribute("codecs") || "";
+        const representations = dashElementsByLocalName(set, "Representation");
+        const looksVideo = set.getAttribute("contentType") === "video"
+            || setMime.startsWith("video/")
+            || dashCodecLooksVideo(setCodecs)
+            || representations.some((representation) => dashCodecLooksVideo(
+                representation.getAttribute("codecs") || setCodecs
+            ));
+        if (!looksVideo) return;
+        const values = representations.length ? representations : [set];
+        values.forEach((representation) => {
+            const mimeType = representation.getAttribute("mimeType") || setMime || "video/mp4";
+            const codecs = representation.getAttribute("codecs") || setCodecs;
+            if (mimeType && codecs) {
+                tracks.push({ mimeType, codecs });
+            }
+        });
+    });
+    return tracks;
+}
+
+async function assertDashPlaybackSupported(streamUrl) {
+    if (!window.MediaSource?.isTypeSupported) {
+        throw new Error("Ce navigateur ne prend pas en charge le lecteur DASH requis pour ce flux.");
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), DASH_MANIFEST_TIMEOUT_MS);
+    let response;
+    let manifestText;
+    try {
+        response = await fetch(streamUrl, {
+            cache: "no-store",
+            credentials: "same-origin",
+            signal: controller.signal
+        });
+        if (!response.ok) {
+            throw new Error(`Le manifeste DASH ne repond pas (HTTP ${response.status}).`);
+        }
+        manifestText = await response.text();
+    } catch (error) {
+        if (error?.name === "AbortError") {
+            throw new Error("Le manifeste DASH met trop de temps a repondre.");
+        }
+        throw error;
+    } finally {
+        window.clearTimeout(timeout);
+    }
+    const manifest = new DOMParser().parseFromString(manifestText, "application/xml");
+    if (manifest.querySelector("parsererror")) {
+        throw new Error("Le manifeste DASH renvoye par le fournisseur est illisible.");
+    }
+    const tracks = dashVideoTracks(manifest);
+    if (!tracks.length) return;
+    if (tracks.some((track) => window.MediaSource.isTypeSupported(
+        `${track.mimeType}; codecs="${track.codecs}"`
+    ))) {
+        return;
+    }
+    const codecNames = Array.from(new Set(tracks.map((track) => dashCodecLabel(track.codecs))));
+    throw new Error(
+        `Ce flux video utilise ${codecNames.join(", ")}, un format que ce navigateur ne sait pas lire ici.`
+    );
+}
+
+async function waitForDashPlayAttempt(playPromise, generation) {
+    if (!playPromise || typeof playPromise.then !== "function") return;
+    let timedOut = false;
+    playPromise.catch((error) => {
+        if (!timedOut || generation !== state.playerGeneration || state.playerHasStarted || state.playerErrorShown) {
+            return;
+        }
+        showPlayerError(error.message || "Impossible de demarrer le flux video.");
+    });
+    const result = await Promise.race([
+        playPromise.then(() => "settled"),
+        delay(DASH_PLAY_PROMISE_TIMEOUT_MS).then(() => "timeout")
+    ]);
+    timedOut = result === "timeout";
+}
+
+async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     const streamUrl = resolveApiResourceUrl(proxyUrl);
     const generation = state.playerGeneration + 1;
     state.playerGeneration = generation;
     state.activeProxyUrl = proxyUrl;
     state.activePlaybackMode = playbackMode;
+    state.activeEmbedFallbackUrl = playbackMode === "hls" ? options.embedFallbackUrl || null : null;
+    state.activeEmbedFallbackLabel = playbackMode === "hls" ? options.embedFallbackLabel || "" : "";
+    state.activeVisualWatchdogEnabled = playbackMode === "hls" && Boolean(options.visualWatch);
+    state.activePreferredAudioLanguage = options.preferredAudioLanguage || null;
+    state.activePreferredSubtitleLanguage = options.preferredSubtitleLanguage || null;
+    state.playerVisualFallbackPending = false;
     state.playerLastProgressAt = Date.now();
     if (playbackMode === "embed") {
         detachPlayerMedia();
@@ -2629,7 +3142,76 @@ async function startStreamPlayback(item, proxyUrl, playbackMode) {
     elements.streamPlayer.hidden = false;
     elements.streamPlayer.preload = "auto";
     schedulePlayerStartupWatchdog(generation);
+    schedulePlayerVisualWatchdog(generation);
     const useMpegTs = playbackMode === "mpegts";
+    if (playbackMode === "dash") {
+        if (!window.dashjs?.MediaPlayer) {
+            throw new Error("Lecteur DASH indisponible dans ce navigateur.");
+        }
+        await assertDashPlaybackSupported(streamUrl);
+        const player = window.dashjs.MediaPlayer().create();
+        state.dashPlayer = player;
+        player.updateSettings({
+            streaming: {
+                buffer: {
+                    fastSwitchEnabled: true
+                }
+            }
+        });
+        player.on(window.dashjs.MediaPlayer.events?.ERROR || "error", (event) => {
+            if (generation !== state.playerGeneration) return;
+            schedulePlayerRecovery(
+                event?.error?.message || "Le flux DASH a ete interrompu.",
+                true,
+                false
+            );
+        });
+        player.initialize(elements.streamPlayer, streamUrl, false);
+        try {
+            await waitForDashPlayAttempt(elements.streamPlayer.play(), generation);
+        } catch (error) {
+            destroyDashPlayer(player);
+            throw error;
+        }
+        return;
+    }
+    if (playbackMode === "hls") {
+        if (elements.streamPlayer.canPlayType("application/vnd.apple.mpegurl")) {
+            elements.streamPlayer.src = streamUrl;
+            await elements.streamPlayer.play();
+            return;
+        }
+        if (!window.Hls?.isSupported?.()) {
+            throw new Error("Lecteur HLS indisponible dans ce navigateur.");
+        }
+        const player = new window.Hls({
+            enableWorker: true,
+            lowLatencyMode: item.type === "live",
+            backBufferLength: item.type === "live" ? 30 : 90
+        });
+        let mediaRecoveries = 0;
+        state.hlsPlayer = player;
+        player.on(window.Hls.Events.ERROR, (event, data) => {
+            if (generation !== state.playerGeneration || !data?.fatal) return;
+            if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 1) {
+                mediaRecoveries += 1;
+                player.recoverMediaError();
+                return;
+            }
+            schedulePlayerRecovery(hlsErrorMessage(data), true, data.type === window.Hls.ErrorTypes.NETWORK_ERROR);
+        });
+        try {
+            await attachHlsPlayer(player, elements.streamPlayer, streamUrl, {
+                preferredAudioLanguage: state.activePreferredAudioLanguage,
+                preferredSubtitleLanguage: state.activePreferredSubtitleLanguage
+            });
+            await waitForDashPlayAttempt(elements.streamPlayer.play(), generation);
+        } catch (error) {
+            destroyHlsPlayer(player);
+            throw error;
+        }
+        return;
+    }
     if (useMpegTs && window.mpegts?.getFeatureList().mseLivePlayback) {
         const sourceIsLive = item.type === "live";
         const player = window.mpegts.createPlayer({
@@ -2723,11 +3305,57 @@ function launchEmbedInline() {
     elements.embedLaunchPanel.hidden = true;
     elements.embedPlayer.hidden = false;
     elements.embedPlayer.src = state.activeEmbedUrl;
-    setEmbedPlayerOpened(
-        "Lecteur TMDB ouvert. Si le chargement reste bloque sur mobile, utilisez Ouvrir."
+    setEmbedPlayerOpened(isNodeFrenchPlayerItem()
+        ? "Lecteur FR ouvert. Si le chargement reste bloque, utilisez Ouvrir."
+        : "Lecteur TMDB ouvert. Si le chargement reste bloque sur mobile, utilisez Ouvrir."
     );
     scheduleEmbedAssistMessage();
     syncEmbedActionLinks();
+}
+
+function confirmNonFrenchPlayback(source) {
+    if (!source?.requiresLanguageConfirmation) return Promise.resolve(true);
+    return new Promise((resolve, reject) => {
+        state.pendingNonFrenchConfirmation = { resolve, reject };
+        clearPlayerStartupTimer();
+        clearPlayerVisualWatchdog();
+        elements.streamPlayer.hidden = true;
+        elements.embedPlayer.hidden = true;
+        elements.embedLaunchPanel.hidden = false;
+        elements.embedOpenExternalLink.hidden = true;
+        elements.embedOpenExternalLink.setAttribute("aria-disabled", "true");
+        elements.embedLaunchPanel.querySelector("p").textContent = (
+            source.languageWarning
+            || "Aucune version francaise n'a ete detectee pour ce titre. Vous pouvez lancer une source non francaise."
+        );
+        elements.embedLaunchInlineButton.textContent = "Lancer quand meme";
+        elements.playerPlaceholder.hidden = true;
+        elements.playerMessage.textContent = "Source disponible, mais pas en francais.";
+    });
+}
+
+function resolveNonFrenchPlaybackConfirmation() {
+    const pending = state.pendingNonFrenchConfirmation;
+    if (!pending) return false;
+    state.pendingNonFrenchConfirmation = null;
+    elements.embedLaunchPanel.hidden = true;
+    elements.embedLaunchInlineButton.textContent = "Lancer ici";
+    pending.resolve(true);
+    return true;
+}
+
+function rejectNonFrenchPlaybackConfirmation() {
+    const pending = state.pendingNonFrenchConfirmation;
+    if (!pending) return;
+    state.pendingNonFrenchConfirmation = null;
+    elements.embedLaunchPanel.hidden = true;
+    elements.embedLaunchInlineButton.textContent = "Lancer ici";
+    pending.reject(new Error("Lecture annulee: aucune version francaise detectee."));
+}
+
+function handleEmbedLaunchInlineButtonClick() {
+    if (resolveNonFrenchPlaybackConfirmation()) return;
+    launchEmbedInline();
 }
 
 function retryEmbedInline() {
@@ -2742,7 +3370,9 @@ function retryEmbedInline() {
     elements.playerEmbedRetryButton.hidden = true;
     elements.embedPlayer.hidden = false;
     elements.embedPlayer.removeAttribute("src");
-    elements.playerMessage.textContent = "Relance du lecteur TMDB dans Nexora...";
+    elements.playerMessage.textContent = isNodeFrenchPlayerItem()
+        ? "Relance du lecteur FR dans Nexora..."
+        : "Relance du lecteur TMDB dans Nexora...";
     window.setTimeout(() => {
         if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
         elements.embedPlayer.src = state.activeEmbedUrl;
@@ -2774,7 +3404,9 @@ function scheduleEmbedAssistMessage() {
     state.embedAssistTimer = window.setTimeout(() => {
         if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl || elements.embedPlayer.hidden) return;
         state.embedAssistShown = true;
-        elements.playerMessage.textContent = "Si le lecteur TMDB tourne encore, la source Videasy est probablement indisponible pour ce titre.";
+        elements.playerMessage.textContent = isNodeFrenchPlayerItem()
+            ? "Si le lecteur FR tourne encore, ouvrez-le dans un onglet separe."
+            : "Si le lecteur TMDB tourne encore, la source Videasy est probablement indisponible pour ce titre.";
         elements.playerEmbedRetryButton.hidden = state.embedManualRetryUsed;
         elements.playerEmbedRetryButton.disabled = state.embedManualRetryUsed;
         elements.playerEmbedOpenLink.hidden = false;
@@ -2792,7 +3424,7 @@ async function requestPlayerFullscreen() {
     const playerCard = elements.playerModal.querySelector(".player-card");
     const preferredTarget = state.activePlaybackMode === "embed"
         ? elements.embedPlayer
-        : elements.streamPlayer;
+        : playerCard;
     const target = preferredTarget?.requestFullscreen ? preferredTarget : playerCard;
     try {
         await target?.requestFullscreen?.();
@@ -2826,9 +3458,11 @@ function setPlayerLoading(placeholderText, statusText) {
 
 function setPlayerPlaying() {
     state.playerHasStarted = true;
+    state.playerErrorShown = false;
     state.playerLastProgressAt = Date.now();
     clearPlayerRecoveryTimer();
     clearPlayerStartupTimer();
+    clearPlayerPauseResumeTimer();
     state.playerRecoveryShouldFailover = false;
     if (state.activePlaybackMode !== "embed" && elements.streamPlayer.currentTime > 8) {
         state.playerRecoveryAttempts = 0;
@@ -2884,6 +3518,159 @@ function clearPlayerStartupTimer() {
     }
 }
 
+function clearPlayerVisualWatchdog() {
+    if (state.playerVisualWatchTimer) {
+        window.clearTimeout(state.playerVisualWatchTimer);
+        state.playerVisualWatchTimer = null;
+    }
+}
+
+function clearPlayerPauseResumeTimer() {
+    if (state.playerPauseResumeTimer) {
+        window.clearTimeout(state.playerPauseResumeTimer);
+        state.playerPauseResumeTimer = null;
+    }
+}
+
+function markPlayerUserIntent() {
+    state.playerLastUserIntentAt = Date.now();
+}
+
+function isLikelyManualPause() {
+    return Date.now() - state.playerLastUserIntentAt < PLAYER_MANUAL_PAUSE_WINDOW_MS;
+}
+
+function schedulePausedPlaybackResume() {
+    clearPlayerPauseResumeTimer();
+    if (!hasActivePlayback()
+        || state.activePlaybackMode === "embed"
+        || state.playerErrorShown
+        || state.playerRecovering
+        || elements.streamPlayer.ended) {
+        return;
+    }
+
+    elements.playerPlaceholder.hidden = false;
+    elements.playerPlaceholder.classList.remove("error");
+    elements.playerPlaceholder.querySelector("p").textContent = "Reprise de la lecture...";
+    elements.playerMessage.textContent = "La lecture s'est interrompue, tentative de reprise.";
+
+    const generation = state.playerGeneration;
+    state.playerPauseResumeTimer = window.setTimeout(async () => {
+        state.playerPauseResumeTimer = null;
+        if (generation !== state.playerGeneration
+            || !hasActivePlayback()
+            || state.activePlaybackMode === "embed"
+            || state.playerErrorShown
+            || !elements.streamPlayer.paused
+            || elements.streamPlayer.ended) {
+            return;
+        }
+        try {
+            await elements.streamPlayer.play();
+            window.setTimeout(() => {
+                if (generation !== state.playerGeneration
+                    || !hasActivePlayback()
+                    || state.activePlaybackMode === "embed"
+                    || state.playerErrorShown
+                    || !elements.streamPlayer.paused) {
+                    return;
+                }
+                schedulePlayerRecovery("La lecture reste bloquee en pause, redemarrage du flux.", true, false);
+            }, PLAYER_PAUSE_RESUME_DELAY_MS);
+        } catch (error) {
+            schedulePlayerRecovery(
+                error?.message || "La lecture s'est arretee, tentative de reprise.",
+                true,
+                false
+            );
+        }
+    }, PLAYER_PAUSE_RESUME_DELAY_MS);
+}
+
+function schedulePlayerVisualWatchdog(generation) {
+    clearPlayerVisualWatchdog();
+    if (!state.activeVisualWatchdogEnabled || state.activePlaybackMode !== "hls") {
+        return;
+    }
+    state.playerVisualWatchStartedAt = Date.now();
+    state.playerVisualWatchTimer = window.setTimeout(
+        () => inspectPlayerVisualTrack(generation),
+        PLAYER_VISUAL_WATCHDOG_MS
+    );
+}
+
+function inspectPlayerVisualTrack(generation) {
+    state.playerVisualWatchTimer = null;
+    if (generation !== state.playerGeneration
+        || state.activePlaybackMode !== "hls"
+        || !state.activeVisualWatchdogEnabled
+        || state.playerErrorShown
+        || state.playerVisualFallbackPending
+        || !hasActivePlayback()) {
+        return;
+    }
+
+    const video = elements.streamPlayer;
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+        return;
+    }
+
+    const hasAudioProgress = video.currentTime > 1
+        && !video.paused
+        && !video.ended
+        && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+    const watchedFor = Date.now() - state.playerVisualWatchStartedAt;
+    if (!hasAudioProgress && watchedFor < PLAYER_VISUAL_WATCHDOG_MAX_MS) {
+        state.playerVisualWatchTimer = window.setTimeout(
+            () => inspectPlayerVisualTrack(generation),
+            1500
+        );
+        return;
+    }
+
+    if (state.activeEmbedFallbackUrl) {
+        void switchToEmbedFallback(
+            "Le flux FR donne du son sans image; bascule vers le lecteur du provider."
+        );
+        return;
+    }
+
+    detachPlayerMedia();
+    showPlayerError("Ce flux FR renvoie du son, mais aucune image lisible dans ce navigateur.");
+}
+
+async function switchToEmbedFallback(reason) {
+    const fallbackUrl = state.activeEmbedFallbackUrl;
+    const item = state.activePlayerItem;
+    if (!fallbackUrl || !item || state.activePlaybackMode === "embed") return false;
+
+    state.playerVisualFallbackPending = true;
+    const fallbackItem = {
+        ...item,
+        playbackProvider: "node-fr-embed",
+        playbackProviderName: state.activeEmbedFallbackLabel || "Source FR"
+    };
+
+    try {
+        setPlayerControlsBusy(true);
+        setPlayerLoading("Bascule vers le lecteur FR...", reason);
+        detachPlayerMedia();
+        await settleDetachedPlayer();
+        state.activePlayerItem = fallbackItem;
+        await startStreamPlayback(fallbackItem, fallbackUrl, "embed");
+        elements.playerMessage.textContent = "Lecteur FR ouvert: le flux direct donnait du son sans image.";
+        return true;
+    } catch (error) {
+        detachPlayerMedia();
+        showPlayerError(error.message || "Impossible d'ouvrir le lecteur FR alternatif.");
+        return false;
+    } finally {
+        state.playerVisualFallbackPending = false;
+        setPlayerControlsBusy(false);
+    }
+}
+
 function schedulePlayerStartupWatchdog(generation) {
     clearPlayerStartupTimer();
     state.playerStartupTimer = window.setTimeout(() => {
@@ -2891,7 +3678,11 @@ function schedulePlayerStartupWatchdog(generation) {
             || state.playerHasStarted
             || state.playerRecovering
             || state.playerErrorShown
-            || !state.activeSessionToken) {
+            || !hasActivePlayback()) {
+            return;
+        }
+        if (!state.activeSessionToken) {
+            showPlayerError("La source FR ne produit aucune image lisible pour le moment.");
             return;
         }
         const quality = state.activePlaybackQuality || "auto";
@@ -2957,7 +3748,7 @@ async function recoverPlayer(reason) {
             if (fallback) return;
         }
 
-        if (preferFailover || state.playerRecoveryAttempts > 1) {
+        if (state.activeCanFailover && (preferFailover || state.playerRecoveryAttempts > 1)) {
             const failover = await tryFailoverPlayer();
             if (failover) {
                 await restartPlaybackFromPayload(failover);
@@ -2985,7 +3776,7 @@ async function recoverPlayer(reason) {
 }
 
 async function tryFailoverPlayer() {
-    if (!state.activeSessionToken) return null;
+    if (!state.activeSessionToken || !state.activeCanFailover) return null;
     try {
         return await api(`/stream/failover/${state.activeSessionToken}`, {
             method: "POST",
@@ -3019,13 +3810,33 @@ async function restartCurrentPlayback(proxyUrl = state.activeProxyUrl, playbackM
 }
 
 function detachPlayerMedia() {
+    state.playerDetaching = true;
     state.playerGeneration += 1;
+    rejectNonFrenchPlaybackConfirmation();
     clearPlayerRecoveryTimer();
     clearPlayerStartupTimer();
+    clearPlayerVisualWatchdog();
+    clearPlayerPauseResumeTimer();
     clearEmbedAssistTimer();
+    state.playerVisualWatchStartedAt = 0;
+    state.playerLastUserIntentAt = 0;
+    state.playerVisualFallbackPending = false;
+    state.activeEmbedFallbackUrl = null;
+    state.activeEmbedFallbackLabel = "";
+    state.activeVisualWatchdogEnabled = false;
+    state.activePreferredAudioLanguage = null;
+    state.activePreferredSubtitleLanguage = null;
     if (state.mpegtsPlayer) {
         destroyMpegtsPlayer(state.mpegtsPlayer);
         state.mpegtsPlayer = null;
+    }
+    if (state.dashPlayer) {
+        destroyDashPlayer(state.dashPlayer);
+        state.dashPlayer = null;
+    }
+    if (state.hlsPlayer) {
+        destroyHlsPlayer(state.hlsPlayer);
+        state.hlsPlayer = null;
     }
     elements.embedPlayer.removeAttribute("src");
     elements.embedPlayer.hidden = true;
@@ -3036,10 +3847,12 @@ function detachPlayerMedia() {
     state.embedLoadCount = 0;
     state.embedReloading = false;
     elements.embedLaunchPanel.hidden = true;
+    elements.embedLaunchInlineButton.textContent = "Lancer ici";
     elements.streamPlayer.hidden = false;
     elements.streamPlayer.pause();
     elements.streamPlayer.removeAttribute("src");
     elements.streamPlayer.load();
+    state.playerDetaching = false;
     syncPlayerEmbedMode(false);
     syncEmbedActionLinks();
 }
@@ -3058,11 +3871,126 @@ function destroyMpegtsPlayer(player) {
     }
 }
 
+function destroyDashPlayer(player) {
+    try {
+        player.reset();
+    } catch {
+        // The player may already be detached after a network error.
+    }
+    if (state.dashPlayer === player) {
+        state.dashPlayer = null;
+    }
+}
+
+function destroyHlsPlayer(player) {
+    try {
+        player.destroy();
+    } catch {
+        // The player may already be detached after a network error.
+    }
+    if (state.hlsPlayer === player) {
+        state.hlsPlayer = null;
+    }
+}
+
+function hlsAudioTrackMatchesLanguage(track, language) {
+    if (!language) return false;
+    const wanted = String(language).toLowerCase();
+    const text = `${track?.lang || ""} ${track?.name || ""}`.toLowerCase();
+    if (wanted === "fr") {
+        return /\b(fr|fra|fre|french|francais|fran[cç]ais|vf)\b/i.test(text);
+    }
+    return text.includes(wanted);
+}
+
+function hlsSubtitleTrackMatchesLanguage(track, language) {
+    if (!language) return false;
+    const wanted = String(language).toLowerCase();
+    const text = `${track?.lang || ""} ${track?.name || ""} ${track?.label || ""}`.toLowerCase();
+    if (wanted === "fr") {
+        return /\b(fr|fra|fre|french|francais|fran[cÃ§]ais|vostfr|sous[\s-]?titres?)\b/i.test(text);
+    }
+    return text.includes(wanted);
+}
+
+function selectPreferredHlsAudioTrack(player, language) {
+    if (!language || !Array.isArray(player.audioTracks)) return false;
+    const index = player.audioTracks.findIndex((track) => hlsAudioTrackMatchesLanguage(track, language));
+    if (index < 0) return false;
+    player.audioTrack = index;
+    elements.playerMessage.textContent = "Piste audio francaise selectionnee.";
+    return true;
+}
+
+function selectPreferredHlsSubtitleTrack(player, language) {
+    if (!language || !Array.isArray(player.subtitleTracks)) return false;
+    const index = player.subtitleTracks.findIndex((track) => hlsSubtitleTrackMatchesLanguage(track, language));
+    if (index < 0) return false;
+    player.subtitleDisplay = true;
+    player.subtitleTrack = index;
+    elements.playerMessage.textContent = "Sous-titres francais selectionnes.";
+    return true;
+}
+
+function attachHlsPlayer(player, video, streamUrl, options = {}) {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timeout = window.setTimeout(() => {
+            fail(new Error("Le manifeste HLS met trop longtemps a repondre."));
+        }, DASH_MANIFEST_TIMEOUT_MS);
+        const cleanup = () => {
+            window.clearTimeout(timeout);
+            player.off(window.Hls.Events.MANIFEST_PARSED, onParsed);
+            player.off(window.Hls.Events.ERROR, onError);
+        };
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve();
+        };
+        const fail = (error) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(error);
+        };
+        const onParsed = () => {
+            const audioSelected = selectPreferredHlsAudioTrack(player, options.preferredAudioLanguage);
+            if (!audioSelected) {
+                selectPreferredHlsSubtitleTrack(player, options.preferredSubtitleLanguage);
+            }
+            finish();
+        };
+        const onError = (event, data) => {
+            if (data?.fatal) {
+                fail(new Error(hlsErrorMessage(data)));
+            }
+        };
+        player.on(window.Hls.Events.MANIFEST_PARSED, onParsed);
+        player.on(window.Hls.Events.ERROR, onError);
+        player.loadSource(streamUrl);
+        player.attachMedia(video);
+    });
+}
+
+function hlsErrorMessage(data) {
+    if (data?.response?.code) {
+        return `Le flux HLS a ete interrompu (HTTP ${data.response.code}).`;
+    }
+    if (data?.details) {
+        return `Le flux HLS a ete interrompu: ${data.details}.`;
+    }
+    return "Le flux HLS a ete interrompu.";
+}
+
 function showPlayerError(message) {
     if (state.playerErrorShown) return;
     state.playerErrorShown = true;
     clearPlayerRecoveryTimer();
     clearPlayerStartupTimer();
+    clearPlayerVisualWatchdog();
+    clearPlayerPauseResumeTimer();
     elements.playerPlaceholder.hidden = false;
     elements.playerPlaceholder.classList.add("error");
     elements.playerPlaceholder.querySelector("p").textContent = message;
@@ -3151,6 +4079,9 @@ async function stopPlayer() {
     state.activeProxyUrl = null;
     state.activePlaybackMode = null;
     state.activePlaybackQuality = null;
+    state.activePreferredAudioLanguage = null;
+    state.activePreferredSubtitleLanguage = null;
+    state.activeCanFailover = false;
     stopHeartbeat();
     detachPlayerMedia();
 
@@ -3174,7 +4105,15 @@ function releasePlayerSession() {
     state.activeProxyUrl = null;
     state.activePlaybackMode = null;
     state.activePlaybackQuality = null;
+    state.activePreferredAudioLanguage = null;
+    state.activePreferredSubtitleLanguage = null;
+    state.activeEmbedFallbackUrl = null;
+    state.activeEmbedFallbackLabel = "";
+    state.activeVisualWatchdogEnabled = false;
+    state.activeCanFailover = false;
     clearPlayerRecoveryTimer();
+    clearPlayerStartupTimer();
+    clearPlayerVisualWatchdog();
     stopHeartbeat();
     fetch(apiUrl(`/stream/close/${encodeURIComponent(sessionToken)}`), {
         method: "DELETE",
@@ -3248,6 +4187,7 @@ elements.searchShell.addEventListener("click", (event) => {
 });
 
 elements.searchInput.addEventListener("input", (event) => {
+    clearHiddenCatalogCards();
     state.query = event.target.value;
     const normalizedQuery = normalizeSearchText(state.query);
     state.searchResults = [];
@@ -3338,7 +4278,7 @@ elements.genreList.addEventListener("click", async (event) => {
     state.addonHasMore = false;
     if (category) {
         state.activeType = category.type;
-        state.visibleCatalog[category.type] = 120;
+        state.visibleCatalog[category.type] = defaultCatalogLimit(category.type);
         elements.navLinks.forEach((link) => (
             link.classList.toggle("active", link.dataset.filter === category.type)
         ));
@@ -3378,6 +4318,14 @@ elements.movieSort.addEventListener("change", async (event) => {
 });
 
 elements.catalogRows.addEventListener("click", async (event) => {
+    const removeCard = event.target.closest("[data-remove-card]");
+    if (removeCard) {
+        event.preventDefault();
+        event.stopPropagation();
+        hideCatalogCard(removeCard.dataset.itemType, removeCard.dataset.itemId);
+        return;
+    }
+
     const filterShortcut = event.target.closest("[data-filter-shortcut]");
     if (filterShortcut) {
         await setFilter(filterShortcut.dataset.filterShortcut || "all");
@@ -3399,20 +4347,26 @@ elements.catalogRows.addEventListener("click", async (event) => {
     if (loadMore) {
         if (state.addonHasMore && state.activeCategory) {
             state.addonPages += 1;
-            state.visibleCatalog[loadMore.dataset.loadMore] += 240;
+            state.visibleCatalog[loadMore.dataset.loadMore] += LOAD_MORE_INCREMENT;
             await loadCatalog();
             return;
         }
-        state.visibleCatalog[loadMore.dataset.loadMore] += 240;
+        state.visibleCatalog[loadMore.dataset.loadMore] += LOAD_MORE_INCREMENT;
         await loadCatalog();
         return;
     }
     const card = event.target.closest("[data-item-id]");
     if (!card) return;
-    const item = state.catalog.find((entry) => (
-        entry.id === card.dataset.itemId && entry.type === card.dataset.itemType
-    ));
+    const item = findCatalogItem(card.dataset.itemId, card.dataset.itemType);
     if (item) selectCatalogItem(item);
+});
+
+elements.catalogRows.addEventListener("keydown", (event) => {
+    const removeCard = event.target.closest("[data-remove-card]");
+    if (!removeCard || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    hideCatalogCard(removeCard.dataset.itemType, removeCard.dataset.itemId);
 });
 
 elements.seriesSeasonSelect.addEventListener("change", (event) => {
@@ -3478,7 +4432,7 @@ elements.settingsTwoFactor.addEventListener("change", toggleTwoFactor);
 elements.logoutAllButton.addEventListener("click", logoutAllDevices);
 elements.logoutButton.addEventListener("click", logout);
 elements.playerFullscreenButton.addEventListener("click", requestPlayerFullscreen);
-elements.embedLaunchInlineButton.addEventListener("click", launchEmbedInline);
+elements.embedLaunchInlineButton.addEventListener("click", handleEmbedLaunchInlineButtonClick);
 elements.playerEmbedRetryButton.addEventListener("click", retryEmbedInline);
 
 document.addEventListener("click", (event) => {
@@ -3501,20 +4455,24 @@ elements.embedPlayer.addEventListener("load", () => {
     state.embedLoadCount += 1;
 });
 
+elements.streamPlayer.addEventListener("pointerdown", markPlayerUserIntent);
+elements.streamPlayer.addEventListener("keydown", markPlayerUserIntent);
+elements.streamPlayer.addEventListener("touchstart", markPlayerUserIntent, { passive: true });
+
 elements.streamPlayer.addEventListener("playing", () => {
-    if (state.activeSessionToken) {
+    if (hasActivePlayback()) {
         setPlayerPlaying();
     }
 });
 
 elements.streamPlayer.addEventListener("loadstart", () => {
-    if (state.activeSessionToken) {
+    if (hasActivePlayback()) {
         setPlayerBuffering("Chargement du programme...", "Ouverture du flux vidéo.");
     }
 });
 
 elements.streamPlayer.addEventListener("waiting", () => {
-    if (state.activeSessionToken) {
+    if (hasActivePlayback()) {
         const text = state.playerHasStarted
             ? "Mise en mémoire tampon..."
             : "Chargement des premières images...";
@@ -3524,7 +4482,7 @@ elements.streamPlayer.addEventListener("waiting", () => {
 });
 
 elements.streamPlayer.addEventListener("stalled", () => {
-    if (state.activeSessionToken) {
+    if (hasActivePlayback()) {
         setPlayerBuffering(
             "Le fournisseur met plus de temps à répondre...",
             "Chargement du flux en cours."
@@ -3534,7 +4492,7 @@ elements.streamPlayer.addEventListener("stalled", () => {
 });
 
 elements.streamPlayer.addEventListener("canplay", () => {
-    if (!state.activeSessionToken) return;
+    if (!hasActivePlayback()) return;
     if (state.playerHasStarted && !elements.streamPlayer.paused) {
         setPlayerPlaying();
     } else if (!state.playerHasStarted) {
@@ -3543,14 +4501,14 @@ elements.streamPlayer.addEventListener("canplay", () => {
 });
 
 elements.streamPlayer.addEventListener("timeupdate", () => {
-    if (state.activeSessionToken && !elements.streamPlayer.paused && elements.streamPlayer.currentTime > 0) {
+    if (hasActivePlayback() && !elements.streamPlayer.paused && elements.streamPlayer.currentTime > 0) {
         state.playerLastProgressAt = Date.now();
         setPlayerPlaying();
     }
 });
 
 elements.streamPlayer.addEventListener("progress", () => {
-    if (state.activeSessionToken && state.playerHasStarted
+    if (hasActivePlayback() && state.playerHasStarted
         && !elements.streamPlayer.paused && elements.streamPlayer.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         state.playerLastProgressAt = Date.now();
         setPlayerPlaying();
@@ -3558,17 +4516,23 @@ elements.streamPlayer.addEventListener("progress", () => {
 });
 
 elements.streamPlayer.addEventListener("pause", () => {
-    if (state.activeSessionToken && state.playerHasStarted && !elements.streamPlayer.ended) {
+    if (state.playerDetaching) return;
+    if (hasActivePlayback() && state.playerHasStarted && !elements.streamPlayer.ended) {
         elements.playerPlaceholder.hidden = true;
-        elements.playerMessage.textContent = "Lecture en pause.";
+        if (isLikelyManualPause()) {
+            clearPlayerPauseResumeTimer();
+            elements.playerMessage.textContent = "Lecture en pause.";
+            return;
+        }
+        schedulePausedPlaybackResume();
     }
 });
 
 elements.streamPlayer.addEventListener("error", () => {
-    if (state.activeSessionToken && !state.playerOpening && !state.playerRecovering) {
+    if (hasActivePlayback() && !state.playerOpening && !state.playerRecovering) {
         const code = elements.streamPlayer.error?.code;
-        if (code === 2 || code === 3) {
-            schedulePlayerRecovery("Le flux a été interrompu, tentative de reprise.", false, code === 2);
+        if (code === 2 || code === 3 || isNodeFrenchPlayerItem()) {
+            schedulePlayerRecovery("Le flux a été interrompu, tentative de reprise.", true, code === 2);
             return;
         }
         showPlayerError("Le flux ne répond pas ou son codec n’est pas pris en charge par ce navigateur.");
