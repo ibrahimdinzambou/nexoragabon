@@ -352,6 +352,8 @@ tbody tr:hover td { background: rgba(255,255,255,.018); }
 .row-action.negative { color: var(--admin-red); }
 .row-action.danger { color: var(--admin-red); border-color: rgba(239,106,100,.35); }
 .row-action.danger:hover { background: rgba(239,106,100,.08); }
+.row-action.adult-access { color: #f0b7bd; border-color: rgba(239,106,100,.35); background: rgba(239,106,100,.055); }
+.row-action.adult-access.enabled { color: #ffe0ad; border-color: rgba(231,195,109,.5); background: rgba(231,195,109,.09); }
 .empty-row { height: 110px; color: var(--admin-muted); text-align: center; }
 .billing-summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
 .billing-table-heading { padding: 20px 20px 12px; }
@@ -555,6 +557,10 @@ tbody tr:hover td { background: rgba(255,255,255,.018); }
 .choice-card.live:has(input:checked) { border-color: rgba(89,212,146,.48); background: rgba(89,212,146,.055); }
 .choice-card.movie:has(input:checked) { border-color: rgba(110,168,221,.46); background: rgba(110,168,221,.055); }
 .choice-card.series:has(input:checked) { border-color: rgba(245,163,183,.38); background: rgba(245,163,183,.05); }
+.choice-card.adult { border-color: rgba(239,106,100,.28); background: linear-gradient(145deg, rgba(36,17,18,.92), rgba(15,14,13,.98)); }
+.choice-card.adult .choice-symbol { color: #ffe0ad; background: rgba(239,106,100,.12); }
+.choice-card.adult:has(input:checked) { border-color: rgba(239,106,100,.66); background: linear-gradient(145deg, rgba(76,25,29,.74), rgba(22,18,15,.98)); }
+.choice-card.adult:has(input:checked) .choice-check { color: #150c0d; border-color: #f36b75; background: #f36b75; }
 .addon-choice-card.approved:has(input:checked), .connector-choice-card.configured:has(input:checked) { border-color: rgba(89,212,146,.48); background: rgba(89,212,146,.055); }
 .addon-choice-card.disabled { opacity: .58; }
 .connector-choice-card.incomplete { border-style: dashed; }

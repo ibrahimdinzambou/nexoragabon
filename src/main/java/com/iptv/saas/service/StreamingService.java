@@ -32,6 +32,7 @@ public class StreamingService {
     private final IptvCatalogService catalogService;
     private final CommunityAddonService addons;
     private final ConsumetContentService consumet;
+    private final EpornerContentService eporner;
     private final SubscriptionAccessService access;
     private final TelegramAlertService telegram;
     private final AuditService audit;
@@ -60,6 +61,7 @@ public class StreamingService {
                 catalogService,
                 addons,
                 null,
+                null,
                 access,
                 telegram,
                 audit,
@@ -76,6 +78,7 @@ public class StreamingService {
             IptvCatalogService catalogService,
             CommunityAddonService addons,
             ConsumetContentService consumet,
+            EpornerContentService eporner,
             SubscriptionAccessService access,
             TelegramAlertService telegram,
             AuditService audit,
@@ -88,6 +91,7 @@ public class StreamingService {
         this.catalogService = catalogService;
         this.addons = addons;
         this.consumet = consumet;
+        this.eporner = eporner;
         this.access = access;
         this.telegram = telegram;
         this.audit = audit;
@@ -109,6 +113,7 @@ public class StreamingService {
         String sessionItemId = itemId;
         boolean addonItem = addons.isAddonItem(itemId);
         boolean consumetItem = hasConsumet() && consumet.isConsumetItem(itemId);
+        boolean epornerItem = hasEporner() && eporner.isEpornerItem(itemId);
         String categoryId;
         String categoryName;
         String accessType;
@@ -124,6 +129,15 @@ public class StreamingService {
             categoryName = descriptor.categoryName();
             accessType = descriptor.contentType() == null ? normalizedType : descriptor.contentType();
             adult = descriptor.adult();
+        } else if (epornerItem) {
+            if (!eporner.hasAccess(user)) {
+                throw ApiException.forbidden("Cette categorie adults n'est pas autorisee pour votre compte");
+            }
+            EpornerContentService.CatalogAccessDescriptor descriptor = eporner.accessForItem(itemId);
+            categoryId = descriptor.categoryId();
+            categoryName = descriptor.categoryName();
+            accessType = descriptor.contentType() == null ? normalizedType : descriptor.contentType();
+            adult = descriptor.adult();
         } else {
             IptvCatalogService.CatalogAccessDescriptor descriptor = catalogService.accessForItem(itemId);
             categoryId = descriptor.categoryId();
@@ -131,7 +145,8 @@ public class StreamingService {
             accessType = descriptor.contentType() == null ? normalizedType : descriptor.contentType();
             adult = descriptor.adult();
         }
-        boolean privateAccess = addonItem && addons.hasPrivateAccess(itemId, user);
+        boolean privateAccess = addonItem && addons.hasPrivateAccess(itemId, user)
+                || epornerItem && eporner.hasAccess(user);
         boolean permitted = SecurityUtils.isAdminLike(user)
                 || privateAccess
                 || access.permits(user, subscription, accessType, categoryId, categoryName, adult);
@@ -171,6 +186,10 @@ public class StreamingService {
             streamHeaders = StreamRequestHeaders.encode(resolution.headers());
         } else if (consumetItem) {
             ConsumetContentService.StreamResolution resolution = consumet.selectStream(itemId);
+            streamUrl = resolution.streamUrl();
+            streamHeaders = StreamRequestHeaders.encode(resolution.headers());
+        } else if (epornerItem) {
+            EpornerContentService.StreamResolution resolution = eporner.selectStream(itemId);
             streamUrl = resolution.streamUrl();
             streamHeaders = StreamRequestHeaders.encode(resolution.headers());
         } else {
@@ -346,6 +365,10 @@ public class StreamingService {
 
     private boolean hasConsumet() {
         return consumet != null && consumet.isEnabled();
+    }
+
+    private boolean hasEporner() {
+        return eporner != null && eporner.isEnabled();
     }
 
     @Transactional(readOnly = true)

@@ -4,6 +4,7 @@ import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.security.SecurityUtils;
 import com.iptv.saas.service.CommunityAddonService;
 import com.iptv.saas.service.ConsumetContentService;
+import com.iptv.saas.service.EpornerContentService;
 import com.iptv.saas.service.IptvCatalogService;
 import com.iptv.saas.service.SubscriptionAccessService;
 import com.iptv.saas.service.TmdbCatalogService;
@@ -25,10 +26,21 @@ public class CatalogController {
     private final CommunityAddonService addons;
     private final ConsumetContentService consumet;
     private final TmdbCatalogService tmdb;
+    private final EpornerContentService eporner;
     private final SubscriptionAccessService access;
 
     public CatalogController(IptvCatalogService catalog, CommunityAddonService addons, SubscriptionAccessService access) {
-        this(catalog, addons, null, null, access);
+        this(catalog, addons, null, null, null, access);
+    }
+
+    public CatalogController(
+            IptvCatalogService catalog,
+            CommunityAddonService addons,
+            ConsumetContentService consumet,
+            TmdbCatalogService tmdb,
+            SubscriptionAccessService access
+    ) {
+        this(catalog, addons, consumet, tmdb, null, access);
     }
 
     @Autowired
@@ -37,12 +49,14 @@ public class CatalogController {
             CommunityAddonService addons,
             ConsumetContentService consumet,
             TmdbCatalogService tmdb,
+            EpornerContentService eporner,
             SubscriptionAccessService access
     ) {
         this.catalog = catalog;
         this.addons = addons;
         this.consumet = consumet;
         this.tmdb = tmdb;
+        this.eporner = eporner;
         this.access = access;
     }
 
@@ -58,6 +72,9 @@ public class CatalogController {
         }
         if (hasTmdb()) {
             values.addAll(tmdb.categories(type));
+        }
+        if (hasEporner() && eporner.hasAccess(user)) {
+            values.addAll(eporner.categories(type));
         }
         values.addAll(addons.categories(type, user));
         List<Map<String, Object>> uniqueValues = unique(values, "id");
@@ -77,12 +94,13 @@ public class CatalogController {
             @RequestParam(required = false) String language,
             @RequestParam(required = false, defaultValue = "default") String sort,
             @RequestParam(required = false, defaultValue = "0") int limit,
+            @RequestParam(required = false, defaultValue = "1") int page,
             @RequestParam(required = false) String addonFilter,
             @RequestParam(required = false, defaultValue = "1") int addonPages
     ) {
         UserEntity user = currentUser();
         List<List<Map<String, Object>>> resultSets = new ArrayList<>();
-        if (shouldIncludeNativeCatalog(user)) {
+        if (shouldIncludeNativeCatalog(user) && shouldQueryNativeCatalog(categoryId)) {
             addResultSet(resultSets, catalog.items(type, q, categoryId, language, sort, limit));
         }
         if (hasConsumet()) {
@@ -90,6 +108,9 @@ public class CatalogController {
         }
         if (hasTmdb()) {
             addResultSet(resultSets, tmdb.items(type, q, categoryId, language, sort, limit));
+        }
+        if (hasEporner() && eporner.hasAccess(user)) {
+            addResultSet(resultSets, eporner.items(type, q, categoryId, language, sort, limit, page));
         }
         if (resultSets.isEmpty() || shouldLoadAddons(q, categoryId, addonFilter)) {
             addResultSet(resultSets, addons.items(type, q, categoryId, sort, limit, addonFilter, addonPages, user));
@@ -103,6 +124,19 @@ public class CatalogController {
             values = new ArrayList<>(values.subList(0, limit));
         }
         return Responses.ok(values);
+    }
+
+    public Object items(
+            String type,
+            String q,
+            String categoryId,
+            String language,
+            String sort,
+            int limit,
+            String addonFilter,
+            int addonPages
+    ) {
+        return items(type, q, categoryId, language, sort, limit, 1, addonFilter, addonPages);
     }
 
     @GetMapping("/api/catalog/series/{seriesId}")
@@ -133,6 +167,8 @@ public class CatalogController {
                 ? consumet.itemInfo(itemId)
                 : hasTmdb() && tmdb.isTmdbItem(itemId)
                 ? tmdb.itemInfo(itemId)
+                : hasEporner() && eporner.isEpornerItem(itemId)
+                ? epornerItemInfo(user, itemId)
                 : catalog.itemInfo(itemId);
         if (!permits(user, item)) {
             throw ApiException.forbidden("Cette catégorie n'est pas autorisée pour votre compte");
@@ -203,7 +239,15 @@ public class CatalogController {
     }
 
     private boolean shouldIncludeNativeCatalog(UserEntity user) {
-        return catalog.hasActiveSources() || (!addons.hasApprovedAddons(user) && !hasConsumet() && !hasTmdb());
+        return catalog.hasActiveSources() || (!addons.hasApprovedAddons(user) && !hasConsumet() && !hasTmdb() && !hasEporner());
+    }
+
+    private boolean shouldQueryNativeCatalog(String categoryId) {
+        if (categoryId == null || categoryId.isBlank()) {
+            return true;
+        }
+        String normalized = categoryId.toLowerCase(java.util.Locale.ROOT);
+        return !(normalized.startsWith("adults-eporner") || normalized.startsWith("addon-"));
     }
 
     private boolean hasConsumet() {
@@ -212,6 +256,17 @@ public class CatalogController {
 
     private boolean hasTmdb() {
         return tmdb != null && tmdb.isEnabled();
+    }
+
+    private boolean hasEporner() {
+        return eporner != null && eporner.isEnabled();
+    }
+
+    private Map<String, Object> epornerItemInfo(UserEntity user, String itemId) {
+        if (!eporner.hasAccess(user)) {
+            throw ApiException.forbidden("Cette categorie adults n'est pas autorisee pour votre compte");
+        }
+        return eporner.itemInfo(itemId);
     }
 
     private List<Map<String, Object>> unique(List<Map<String, Object>> values, String key) {

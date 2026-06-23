@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0808">
+    <meta name="robots" content="noindex,nofollow">
+    <title>Nexora Adults</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/adults.css?v=20260623-6">
+</head>
+<body>
+<div class="adult-grain" aria-hidden="true"></div>
+
+<header class="adult-topbar">
+    <a class="adult-brand" href="/watch.html" aria-label="Nexora Watch">
+        <span>N</span>
+        <strong>NEXORA</strong>
+    </a>
+    <nav class="adult-nav" aria-label="Navigation Adults">
+        <a href="/watch.html">Catalogue</a>
+        <a class="active" href="/adults.html">Adults</a>
+        <a href="/admin.html" id="adminLink" hidden>Admin</a>
+    </nav>
+    <div class="adult-user">
+        <span id="userLabel">Connexion requise</span>
+        <button id="logoutButton" type="button" hidden>Sortir</button>
+    </div>
+</header>
+
+<main class="adult-shell">
+    <section class="adult-workbench" aria-labelledby="adultTitle">
+        <div class="adult-toolbar">
+            <div>
+                <p class="adult-kicker">ACCES RESTREINT 18+</p>
+                <h1 id="adultTitle">Adults</h1>
+                <p class="adult-lead">Espace prive, active uniquement par attribution manuelle du provider.</p>
+            </div>
+            <form class="adult-search" id="searchForm">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <path d="m20 20-4-4"></path>
+                </svg>
+                <input id="searchInput" type="search" autocomplete="off" placeholder="Rechercher" aria-label="Rechercher dans Adults">
+                <button type="submit">Chercher</button>
+            </form>
+        </div>
+
+        <div class="adult-status" id="statusBar" role="status">
+            <span></span>
+            <strong>Verrouillage actif</strong>
+        </div>
+
+        <section class="adult-provider-panel" aria-label="Provider Adults">
+            <div><span>Provider</span><strong>Eporner API</strong></div>
+            <div><span>Categorie</span><strong>adults-eporner</strong></div>
+            <div><span>Mode</span><strong>Manuel</strong></div>
+            <div><span>Acces</span><strong id="accessLabel">Verrouille</strong></div>
+        </section>
+
+        <section class="adult-discovery" id="discoveryPanel" hidden>
+            <div class="adult-discovery-head">
+                <div>
+                    <p class="adult-kicker">CATALOGUE EPORNER</p>
+                    <h2>Rayons rapides</h2>
+                </div>
+                <label class="adult-sort">
+                    <span>Tri</span>
+                    <select id="sortSelect" aria-label="Trier Adults">
+                        <option value="latest">Nouveautes</option>
+                        <option value="most-popular">Populaires</option>
+                        <option value="top-weekly">Top semaine</option>
+                        <option value="top-monthly">Top mois</option>
+                        <option value="top-rated">Mieux notes</option>
+                        <option value="longest">Longs formats</option>
+                    </select>
+                </label>
+            </div>
+            <div class="adult-rails" id="browseRails" aria-label="Rayons Adults"></div>
+        </section>
+
+        <nav class="adult-category-tabs" id="categoryTabs" aria-label="Categories Adults" hidden></nav>
+
+        <section class="adult-login-panel" id="loginPanel" aria-labelledby="loginTitle">
+            <div>
+                <p class="adult-kicker">SESSION</p>
+                <h2 id="loginTitle">Connectez-vous</h2>
+            </div>
+            <form id="loginForm" class="login-form">
+                <label>
+                    <span>Email</span>
+                    <input name="email" type="email" autocomplete="email" required>
+                </label>
+                <label id="passwordField">
+                    <span>Mot de passe</span>
+                    <input name="password" type="password" autocomplete="current-password" required>
+                </label>
+                <label id="codeField" hidden>
+                    <span>Code 2FA</span>
+                    <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+                </label>
+                <p class="form-error" id="loginError" hidden></p>
+                <button type="submit" id="loginSubmit">Se connecter</button>
+            </form>
+        </section>
+
+        <section class="adult-blocked" id="blockedPanel" hidden>
+            <span>18+</span>
+            <div>
+                <h2>Acces non attribue</h2>
+                <p>Demandez au super-admin d'ajouter la categorie <code>adults-eporner</code> a votre compte depuis Clients & acces.</p>
+            </div>
+        </section>
+
+        <section class="adult-grid" id="adultGrid" aria-live="polite"></section>
+    </section>
+</main>
+
+<div class="age-modal" id="ageModal" hidden>
+    <section class="age-card" role="dialog" aria-modal="true" aria-labelledby="ageTitle">
+        <p class="adult-kicker">VERIFICATION</p>
+        <h2 id="ageTitle">Adults 18+</h2>
+        <p>Confirmez que vous etes majeur et autorise a consulter cette section.</p>
+        <div class="age-actions">
+            <a href="/watch.html">Retour</a>
+            <button id="ageConfirmButton" type="button">Je confirme</button>
+        </div>
+    </section>
+</div>
+
+<div class="adult-player" id="playerModal" hidden>
+    <div class="player-backdrop" data-close-player></div>
+    <section class="player-frame" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
+        <header>
+            <div>
+                <p class="adult-kicker">LECTEUR NEXORA</p>
+                <h2 id="playerTitle">Adults</h2>
+            </div>
+            <div class="player-actions">
+                <button type="button" data-close-player>Fermer</button>
+            </div>
+        </header>
+        <iframe id="embedFrame" title="Lecteur Adults" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen referrerpolicy="no-referrer"></iframe>
+    </section>
+</div>
+
+<div class="adult-toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/assets/runtime-config.js?v=20260620-1" defer></script>
+<script src="/assets/adults.js?v=20260623-6" defer></script>
+</body>
+</html>

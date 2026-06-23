@@ -146,6 +146,14 @@ app:
     timeout-seconds: ${CONSUMET_TIMEOUT_SECONDS:20}
     max-response-bytes: ${CONSUMET_MAX_RESPONSE_BYTES:2097152}
     allowed-stream-hosts: ${CONSUMET_ALLOWED_STREAM_HOSTS:}
+  eporner:
+    enabled: ${EPORNER_ENABLED:false}
+    base-url: ${EPORNER_API_BASE_URL:https://www.eporner.com/api/v2}
+    timeout-seconds: ${EPORNER_TIMEOUT_SECONDS:20}
+    max-response-bytes: ${EPORNER_MAX_RESPONSE_BYTES:4194304}
+    max-per-page: ${EPORNER_MAX_PER_PAGE:60}
+    cache-ttl-seconds: ${EPORNER_CACHE_TTL_SECONDS:300}
+    default-order: ${EPORNER_DEFAULT_ORDER:latest}
   tmdb:
     api-key: ${TMDB_API_KEY:}
     read-access-token: ${TMDB_READ_ACCESS_TOKEN:${TMDB_API_READ_ACCESS_TOKEN:}}

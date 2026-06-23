@@ -161,6 +161,26 @@ button {
     transform: scaleX(1);
 }
 
+.adult-nav-entry {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 12px;
+    color: #ffe7bd;
+    border: 1px solid rgba(236, 92, 100, 0.38);
+    background: rgba(236, 92, 100, 0.08);
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.adult-nav-entry:hover {
+    color: #fff;
+    border-color: rgba(236, 92, 100, 0.68);
+    background: rgba(236, 92, 100, 0.16);
+}
+
 .topbar-actions {
     display: flex;
     align-items: center;
@@ -901,6 +921,10 @@ button {
     border-color: rgba(255, 255, 255, 0.52);
 }
 
+.genre-chip.adult-category {
+    border-color: rgba(235, 93, 93, 0.52);
+}
+
 .addon-badge {
     display: inline-flex;
     align-items: center;
@@ -932,6 +956,13 @@ button {
     border-color: rgba(255, 255, 255, 0.78);
     background: linear-gradient(90deg, #3166f6 0 30%, #f7f8fb 30% 68%, #ec4054 68% 100%);
     box-shadow: 0 4px 16px rgba(236, 64, 84, 0.28), 0 0 0 1px rgba(49, 102, 246, 0.14);
+}
+
+.adult-badge {
+    color: #fff7f2;
+    border-color: rgba(235, 93, 93, 0.65);
+    background: linear-gradient(135deg, #e23f4f, #2b0e13);
+    box-shadow: 0 4px 16px rgba(226, 63, 79, 0.28);
 }
 
 .catalog-selectors,

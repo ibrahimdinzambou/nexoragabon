@@ -4,6 +4,7 @@ import com.iptv.saas.security.SecurityUtils;
 import com.iptv.saas.domain.UserSession;
 import com.iptv.saas.service.CommunityAddonService;
 import com.iptv.saas.service.ConsumetContentService;
+import com.iptv.saas.service.EpornerContentService;
 import com.iptv.saas.service.StreamRelayService;
 import com.iptv.saas.service.StreamRequestHeaders;
 import com.iptv.saas.service.StreamingService;
@@ -50,6 +51,7 @@ public class StreamController {
     private final VlcRemuxService remux;
     private final CommunityAddonService addons;
     private final ConsumetContentService consumet;
+    private final EpornerContentService eporner;
 
     public StreamController(
             StreamingService streams,
@@ -57,7 +59,17 @@ public class StreamController {
             VlcRemuxService remux,
             CommunityAddonService addons
     ) {
-        this(streams, relay, remux, addons, null);
+        this(streams, relay, remux, addons, null, null);
+    }
+
+    public StreamController(
+            StreamingService streams,
+            StreamRelayService relay,
+            VlcRemuxService remux,
+            CommunityAddonService addons,
+            ConsumetContentService consumet
+    ) {
+        this(streams, relay, remux, addons, consumet, null);
     }
 
     @Autowired
@@ -66,13 +78,15 @@ public class StreamController {
             StreamRelayService relay,
             VlcRemuxService remux,
             CommunityAddonService addons,
-            ConsumetContentService consumet
+            ConsumetContentService consumet,
+            EpornerContentService eporner
     ) {
         this.streams = streams;
         this.relay = relay;
         this.remux = remux;
         this.addons = addons;
         this.consumet = consumet;
+        this.eporner = eporner;
     }
 
     @PostMapping("/api/stream/open")
@@ -628,8 +642,8 @@ public class StreamController {
 
     private boolean isEmbedSession(UserSession session) {
         return session != null
-                && consumet != null
-                && consumet.isEmbedPlayback(session.itemId, session.streamUrl);
+                && (consumet != null && consumet.isEmbedPlayback(session.itemId, session.streamUrl)
+                || eporner != null && eporner.isEmbedPlayback(session.itemId, session.streamUrl));
     }
 
     private String effectiveQuality(com.iptv.saas.domain.UserSession session) {

@@ -3,6 +3,16 @@ const TOKEN_KEY = "nexora_access_token";
 const NETWORK_RETRY_DELAYS = [300, 900];
 const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT", "OPS"];
 const ACCOUNT_PAGE_SIZES = [12, 24, 48, 96];
+const ADULT_PROVIDER_CATEGORY = {
+    id: "adults-eporner",
+    name: "Adults - Eporner",
+    type: "movie",
+    source: "Eporner API",
+    adult: true,
+    privateUse: true,
+    providerManaged: true,
+    filterRequired: true
+};
 const CONNECTOR_OPTIONS = [
     {
         code: "smtp",
@@ -254,6 +264,7 @@ function icon(name) {
         audit: '<path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/>',
         addon: '<path d="M8 3h8v5h5v8h-5v5H8v-5H3V8h5z"/>',
         connector: '<path d="M9 7H7a4 4 0 0 0 0 8h2M15 7h2a4 4 0 0 1 0 8h-2M8 12h8"/>',
+        lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
         check: '<path d="m5 12 4 4L19 6"/>'
     };
     return `<svg viewBox="0 0 24 24">${paths[name] || paths.server}</svg>`;
@@ -577,7 +588,7 @@ function renderCustomers() {
             <tr data-searchable="${escapeHtml(`${user.name} ${user.email} ${user.role}`)}"><td><span class="cell-main">${escapeHtml(user.name)}</span><span class="cell-sub">${escapeHtml(user.email)}</span></td>
             <td><select class="table-select" data-user-role="${user.id}">${["SUPER_ADMIN","ADMIN","BILLING","SUPPORT","OPS","USER"].map(role => `<option value="${role}" ${role === user.role ? "selected" : ""}>${role.replaceAll("_"," ")}</option>`).join("")}</select></td>
             <td>#${escapeHtml(user.currentOrganizationId)}</td><td><button class="row-action ${user.active ? "positive" : "negative"}" data-user-toggle="${user.id}" data-active="${user.active}">${user.active ? "Actif" : "Inactif"}</button></td><td>${dateLabel(user.createdAt)}</td>
-            <td><div class="row-actions"><button class="row-action" data-user-categories="${user.id}">Catégories (${user.allowedCategories?.length || 0})</button>${canDeleteUsers && state.user?.id !== user.id ? `<button class="row-action danger" data-user-delete="${user.id}" data-user-email="${escapeHtml(user.email)}">Supprimer</button>` : ""}</div></td></tr>
+            <td><div class="row-actions"><button class="row-action adult-access ${hasAdultProviderAccess(user) ? "enabled" : ""}" data-user-adults="${user.id}">${hasAdultProviderAccess(user) ? "Adults ON" : "Adults OFF"}</button><button class="row-action" data-user-categories="${user.id}">Catégories (${user.allowedCategories?.length || 0})</button>${canDeleteUsers && state.user?.id !== user.id ? `<button class="row-action danger" data-user-delete="${user.id}" data-user-email="${escapeHtml(user.email)}">Supprimer</button>` : ""}</div></td></tr>
         `).join("") : emptyRow(6);
     } else {
         el.customersHead.innerHTML = "<tr><th>ID</th><th>Organisation</th><th>Formule</th><th>Droits</th><th>Statut</th><th>Fin de période</th></tr>";
@@ -1060,7 +1071,10 @@ function categoryLane(type, categories, selectedIds, name) {
 }
 
 function categoryCard(category, checked, name) {
-    const meta = categoryTypeMeta(category.type);
+    const isAdultProvider = isAdultProviderCategory(category);
+    const meta = isAdultProvider
+        ? { label: "Adults 18+", tone: "adult", iconName: "lock" }
+        : categoryTypeMeta(category.type);
     const details = [
         category.source || "Catalogue IPTV",
         category.addonKey ? `Add-on ${category.addonKey}` : null,
@@ -1077,7 +1091,7 @@ function categoryCard(category, checked, name) {
         iconName: meta.iconName,
         eyebrow: meta.label,
         title: category.name,
-        description: category.searchOnly ? "Catalogue disponible via recherche." : "Disponible dans la navigation catalogue.",
+        description: isAdultProvider ? "Provider restreint, attribution manuelle utilisateur par utilisateur." : category.searchOnly ? "Catalogue disponible via recherche." : "Disponible dans la navigation catalogue.",
         meta: details
     });
 }
@@ -1312,6 +1326,27 @@ async function saveUserCategories(form, id) {
     });
 }
 
+function hasAdultProviderAccess(user) {
+    return (user?.allowedCategories || []).includes(ADULT_PROVIDER_CATEGORY.id);
+}
+
+async function toggleAdultProviderAccess(id) {
+    const user = state.users.find(item => item.id === Number(id));
+    if (!user) return;
+    const categories = new Set(user.allowedCategories || []);
+    const enabled = categories.has(ADULT_PROVIDER_CATEGORY.id);
+    if (enabled) categories.delete(ADULT_PROVIDER_CATEGORY.id);
+    else categories.add(ADULT_PROVIDER_CATEGORY.id);
+    const nextCategories = Array.from(categories);
+    await api(`/admin/users/${id}/categories`, {
+        method: "POST",
+        body: JSON.stringify({ categories: nextCategories })
+    });
+    user.allowedCategories = nextCategories;
+    renderCustomers();
+    showToast(enabled ? "Acces Adults retire." : "Acces Adults attribue.");
+}
+
 async function saveAddon(form, id) {
     const payload = {
         manifestUrl: normalizeAddonManifestUrl(form.get("manifestUrl")),
@@ -1423,7 +1458,19 @@ async function openPlanModal(plan = null) {
 async function ensureCatalogCategories() {
     if (state.catalogCategories.length) return;
     const categoryGroups = await Promise.all(["live", "movie", "series"].map(type => api(`/catalog/categories?type=${type}`)));
-    state.catalogCategories = categoryGroups.flat();
+    state.catalogCategories = mergeCatalogCategories(categoryGroups.flat());
+}
+
+function mergeCatalogCategories(categories) {
+    const values = [...(categories || [])];
+    if (!values.some(category => category?.id === ADULT_PROVIDER_CATEGORY.id)) {
+        values.push(ADULT_PROVIDER_CATEGORY);
+    }
+    return values;
+}
+
+function isAdultProviderCategory(category) {
+    return category?.id === ADULT_PROVIDER_CATEGORY.id || Boolean(category?.adult);
 }
 
 async function ensurePlanAssets() {
@@ -1535,6 +1582,8 @@ document.addEventListener("click", async event => {
     }
     const userCategories = event.target.closest("[data-user-categories]");
     if (userCategories) try { await openCategoryModal(state.users.find(user => user.id === Number(userCategories.dataset.userCategories))); } catch (error) { showToast(error.message, true); }
+    const userAdults = event.target.closest("[data-user-adults]");
+    if (userAdults) try { await toggleAdultProviderAccess(userAdults.dataset.userAdults); } catch (error) { showToast(error.message, true); }
     const payment = event.target.closest("[data-payment-action]");
     if (payment) try { await paymentAction(payment.dataset.paymentAction, payment.dataset.id); } catch (error) { showToast(error.message, true); }
     const plan = event.target.closest("[data-plan-edit]");

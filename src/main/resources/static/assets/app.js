@@ -118,6 +118,7 @@ const state = {
     embedManualRetryUsed: false,
     embedLoadCount: 0,
     embedReloading: false,
+    nativePlaybackRequiresUserLaunch: false,
     pendingNonFrenchConfirmation: null,
     activePlaybackMode: null,
     activePlaybackQuality: null,
@@ -1600,8 +1601,21 @@ function isFrenchSource(value) {
         || source.includes("orion");
 }
 
+function isEpornerSource(value) {
+    const sourceCode = String(value?.sourceCode || "").toLowerCase();
+    const playbackProvider = String(value?.playbackProvider || "").toLowerCase();
+    const categoryId = String(value?.categoryId || value?.id || "").toLowerCase();
+    const source = String(value?.source || value?.provider || "").toLowerCase();
+    return sourceCode === "eporner"
+        || playbackProvider === "eporner"
+        || categoryId.startsWith("adults-eporner")
+        || categoryId.startsWith("eporner~")
+        || source.includes("eporner");
+}
+
 function sourceClass(value) {
     if (isAsaAddon(value)) return "asa-category";
+    if (isEpornerSource(value)) return "adult-category";
     if (isFrenchSource(value)) return "french-category";
     if (isTmdbSource(value)) return "tmdb-category";
     return "";
@@ -1614,6 +1628,9 @@ function sourceBadge(value, placement = "inline") {
     }
     if (isFrenchSource(value)) {
         return `<span class="addon-badge french-badge ${placementClass}" aria-label="Contenu français via l'API Node">FR</span>`;
+    }
+    if (isEpornerSource(value)) {
+        return `<span class="addon-badge adult-badge ${placementClass}" aria-label="Provider Adults restreint">18+</span>`;
     }
     if (isTmdbSource(value)) {
         return `<span class="addon-badge tmdb-badge ${placementClass}" aria-label="Contenu provenant de TMDB">TMDB</span>`;
@@ -2739,7 +2756,9 @@ async function playItem(item, options = {}) {
 
     openModal("playerModal");
     elements.playerTitle.textContent = item.name;
-    elements.playerBadge.textContent = item.type === "live" ? "DIRECT" : typeLabel(item.type).toUpperCase();
+    elements.playerBadge.textContent = isEpornerSource(item)
+        ? "18+"
+        : item.type === "live" ? "DIRECT" : typeLabel(item.type).toUpperCase();
     state.playerHasStarted = false;
     setPlayerLoading("Préparation de votre programme...", "Connexion au flux sécurisé Nexora.");
 
@@ -3246,6 +3265,42 @@ async function waitForDashPlayAttempt(playPromise, generation) {
     timedOut = result === "timeout";
 }
 
+function isPlaybackPermissionError(error) {
+    const message = String(error?.message || "").toLowerCase();
+    return error?.name === "NotAllowedError"
+        || message.includes("request is not allowed")
+        || message.includes("not allowed by the user")
+        || message.includes("denied permission")
+        || message.includes("user denied permission")
+        || message.includes("current context")
+        || message.includes("user didn't interact")
+        || message.includes("user did not interact");
+}
+
+async function attemptPlaybackPromise(playPromise, generation, options = {}) {
+    try {
+        if (typeof playPromise === "function") {
+            playPromise = playPromise();
+        }
+        if (options.waitForAttempt) {
+            await waitForDashPlayAttempt(playPromise, generation);
+        } else if (playPromise && typeof playPromise.then === "function") {
+            await playPromise;
+        }
+        return true;
+    } catch (error) {
+        if (isPlaybackPermissionError(error)) {
+            showNativePlaybackLaunchPanel();
+            return false;
+        }
+        throw error;
+    }
+}
+
+function attemptStreamPlayerPlay(generation, options = {}) {
+    return attemptPlaybackPromise(() => elements.streamPlayer.play(), generation, options);
+}
+
 async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     const streamUrl = resolveApiResourceUrl(proxyUrl);
     const generation = state.playerGeneration + 1;
@@ -3259,6 +3314,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     state.activePreferredSubtitleLanguage = options.preferredSubtitleLanguage || null;
     state.playerVisualFallbackPending = false;
     state.playerLastProgressAt = Date.now();
+    state.nativePlaybackRequiresUserLaunch = false;
     if (playbackMode === "embed") {
         detachPlayerMedia();
         state.playerGeneration = generation;
@@ -3306,7 +3362,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
         });
         player.initialize(elements.streamPlayer, streamUrl, false);
         try {
-            await waitForDashPlayAttempt(elements.streamPlayer.play(), generation);
+            await attemptStreamPlayerPlay(generation, { waitForAttempt: true });
         } catch (error) {
             destroyDashPlayer(player);
             throw error;
@@ -3316,7 +3372,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     if (playbackMode === "hls") {
         if (elements.streamPlayer.canPlayType("application/vnd.apple.mpegurl")) {
             elements.streamPlayer.src = streamUrl;
-            await elements.streamPlayer.play();
+            await attemptStreamPlayerPlay(generation);
             return;
         }
         if (!window.Hls?.isSupported?.()) {
@@ -3343,9 +3399,11 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
                 preferredAudioLanguage: state.activePreferredAudioLanguage,
                 preferredSubtitleLanguage: state.activePreferredSubtitleLanguage
             });
-            await waitForDashPlayAttempt(elements.streamPlayer.play(), generation);
+            await attemptStreamPlayerPlay(generation, { waitForAttempt: true });
         } catch (error) {
-            destroyHlsPlayer(player);
+            if (!isPlaybackPermissionError(error)) {
+                destroyHlsPlayer(player);
+            }
             throw error;
         }
         return;
@@ -3389,7 +3447,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
         });
         try {
             player.load();
-            await player.play();
+            await attemptPlaybackPromise(() => player.play(), generation);
         } catch (error) {
             destroyMpegtsPlayer(player);
             throw error;
@@ -3398,7 +3456,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     }
 
     elements.streamPlayer.src = streamUrl;
-    await elements.streamPlayer.play();
+    await attemptStreamPlayerPlay(generation);
 }
 
 function isMobileEmbedEnvironment() {
@@ -3414,6 +3472,7 @@ function shouldGateEmbedLaunch(item) {
 function prepareEmbedPlayer(streamUrl) {
     state.activeEmbedUrl = streamUrl;
     state.embedRequiresUserLaunch = false;
+    state.nativePlaybackRequiresUserLaunch = false;
     state.embedAssistShown = false;
     state.embedManualRetryUsed = false;
     state.embedLoadCount = 0;
@@ -3426,15 +3485,35 @@ function prepareEmbedPlayer(streamUrl) {
     elements.embedPlayer.removeAttribute("src");
     elements.embedPlayer.hidden = true;
     elements.embedLaunchPanel.hidden = true;
+    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
+    elements.embedLaunchInlineButton.textContent = "Lancer ici";
     syncPlayerEmbedMode(true);
     syncEmbedActionLinks();
 }
 
 function showEmbedLaunchPanel() {
     state.embedRequiresUserLaunch = true;
+    state.nativePlaybackRequiresUserLaunch = false;
     elements.embedPlayer.hidden = true;
     elements.embedPlayer.removeAttribute("src");
+    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
+    elements.embedLaunchInlineButton.textContent = "Lancer ici";
     elements.embedLaunchPanel.hidden = false;
+}
+
+function showNativePlaybackLaunchPanel() {
+    state.nativePlaybackRequiresUserLaunch = true;
+    clearPlayerStartupTimer();
+    clearPlayerPauseResumeTimer();
+    elements.streamPlayer.hidden = true;
+    elements.embedPlayer.hidden = true;
+    elements.embedLaunchPanel.hidden = false;
+    elements.embedOpenExternalLink.hidden = true;
+    elements.embedOpenExternalLink.setAttribute("aria-disabled", "true");
+    elements.embedLaunchPanel.querySelector("p").textContent = "Votre telephone demande une action directe pour lancer la lecture.";
+    elements.embedLaunchInlineButton.textContent = "Lancer la lecture";
+    elements.playerPlaceholder.hidden = true;
+    elements.playerMessage.textContent = "Touchez Lancer la lecture pour demarrer le flux.";
 }
 
 function launchEmbedInline() {
@@ -3443,12 +3522,19 @@ function launchEmbedInline() {
     elements.embedLaunchPanel.hidden = true;
     elements.embedPlayer.hidden = false;
     elements.embedPlayer.src = state.activeEmbedUrl;
-    setEmbedPlayerOpened(isNodeFrenchPlayerItem()
-        ? "Lecteur FR ouvert. Si le chargement reste bloque, utilisez Ouvrir."
-        : "Lecteur TMDB ouvert. Si le chargement reste bloque sur mobile, utilisez Ouvrir."
-    );
+    setEmbedPlayerOpened(embedOpenedMessage());
     scheduleEmbedAssistMessage();
     syncEmbedActionLinks();
+}
+
+function embedOpenedMessage() {
+    if (isNodeFrenchPlayerItem()) {
+        return "Lecteur FR ouvert. Si le chargement reste bloque, utilisez Ouvrir.";
+    }
+    if (isEpornerSource(state.activePlayerItem)) {
+        return "Lecteur Adults ouvert. Si le chargement reste bloque, utilisez Ouvrir.";
+    }
+    return "Lecteur TMDB ouvert. Si le chargement reste bloque sur mobile, utilisez Ouvrir.";
 }
 
 function confirmNonFrenchPlayback(source) {
@@ -3478,7 +3564,32 @@ function resolveNonFrenchPlaybackConfirmation() {
     state.pendingNonFrenchConfirmation = null;
     elements.embedLaunchPanel.hidden = true;
     elements.embedLaunchInlineButton.textContent = "Lancer ici";
+    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
     pending.resolve(true);
+    return true;
+}
+
+function resolveNativePlaybackLaunch() {
+    if (!state.nativePlaybackRequiresUserLaunch) return false;
+    state.nativePlaybackRequiresUserLaunch = false;
+    elements.embedLaunchPanel.hidden = true;
+    elements.embedLaunchInlineButton.textContent = "Lancer ici";
+    elements.streamPlayer.hidden = false;
+    elements.playerPlaceholder.hidden = false;
+    elements.playerPlaceholder.classList.remove("error");
+    elements.playerPlaceholder.querySelector("p").textContent = "Demarrage de la lecture...";
+    elements.playerMessage.textContent = "Ouverture du flux video.";
+    if (state.activeVisualWatchdogEnabled) {
+        schedulePlayerVisualWatchdog(state.playerGeneration);
+    }
+    attemptStreamPlayerPlay(state.playerGeneration)
+        .catch((error) => {
+            if (isPlaybackPermissionError(error)) {
+                showNativePlaybackLaunchPanel();
+                return;
+            }
+            showPlayerError(error.message || "Impossible de demarrer le flux video.");
+        });
     return true;
 }
 
@@ -3488,11 +3599,13 @@ function rejectNonFrenchPlaybackConfirmation() {
     state.pendingNonFrenchConfirmation = null;
     elements.embedLaunchPanel.hidden = true;
     elements.embedLaunchInlineButton.textContent = "Lancer ici";
+    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
     pending.reject(new Error("Lecture annulee: aucune version francaise detectee."));
 }
 
 function handleEmbedLaunchInlineButtonClick() {
     if (resolveNonFrenchPlaybackConfirmation()) return;
+    if (resolveNativePlaybackLaunch()) return;
     launchEmbedInline();
 }
 
@@ -3508,9 +3621,7 @@ function retryEmbedInline() {
     elements.playerEmbedRetryButton.hidden = true;
     elements.embedPlayer.hidden = false;
     elements.embedPlayer.removeAttribute("src");
-    elements.playerMessage.textContent = isNodeFrenchPlayerItem()
-        ? "Relance du lecteur FR dans Nexora..."
-        : "Relance du lecteur TMDB dans Nexora...";
+    elements.playerMessage.textContent = embedRetryMessage();
     window.setTimeout(() => {
         if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
         elements.embedPlayer.src = state.activeEmbedUrl;
@@ -3542,9 +3653,7 @@ function scheduleEmbedAssistMessage() {
     state.embedAssistTimer = window.setTimeout(() => {
         if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl || elements.embedPlayer.hidden) return;
         state.embedAssistShown = true;
-        elements.playerMessage.textContent = isNodeFrenchPlayerItem()
-            ? "Si le lecteur FR tourne encore, ouvrez-le dans un onglet separe."
-            : "Si le lecteur TMDB tourne encore, la source Videasy est probablement indisponible pour ce titre.";
+        elements.playerMessage.textContent = embedAssistMessage();
         elements.playerEmbedRetryButton.hidden = state.embedManualRetryUsed;
         elements.playerEmbedRetryButton.disabled = state.embedManualRetryUsed;
         elements.playerEmbedOpenLink.hidden = false;
@@ -3556,6 +3665,26 @@ function clearEmbedAssistTimer() {
         window.clearTimeout(state.embedAssistTimer);
         state.embedAssistTimer = null;
     }
+}
+
+function embedRetryMessage() {
+    if (isNodeFrenchPlayerItem()) {
+        return "Relance du lecteur FR dans Nexora...";
+    }
+    if (isEpornerSource(state.activePlayerItem)) {
+        return "Relance du lecteur Adults dans Nexora...";
+    }
+    return "Relance du lecteur TMDB dans Nexora...";
+}
+
+function embedAssistMessage() {
+    if (isNodeFrenchPlayerItem()) {
+        return "Si le lecteur FR tourne encore, ouvrez-le dans un onglet separe.";
+    }
+    if (isEpornerSource(state.activePlayerItem)) {
+        return "Si le lecteur Adults tourne encore, ouvrez-le dans un onglet separe.";
+    }
+    return "Si le lecteur TMDB tourne encore, la source Videasy est probablement indisponible pour ce titre.";
 }
 
 async function requestPlayerFullscreen() {
@@ -3959,6 +4088,7 @@ function detachPlayerMedia() {
     state.playerVisualWatchStartedAt = 0;
     state.playerLastUserIntentAt = 0;
     state.playerVisualFallbackPending = false;
+    state.nativePlaybackRequiresUserLaunch = false;
     state.activeEmbedFallbackUrl = null;
     state.activeEmbedFallbackLabel = "";
     state.activeVisualWatchdogEnabled = false;
@@ -3986,6 +4116,7 @@ function detachPlayerMedia() {
     state.embedReloading = false;
     elements.embedLaunchPanel.hidden = true;
     elements.embedLaunchInlineButton.textContent = "Lancer ici";
+    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
     elements.streamPlayer.hidden = false;
     elements.streamPlayer.pause();
     elements.streamPlayer.removeAttribute("src");
