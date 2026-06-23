@@ -725,20 +725,31 @@ async function loadCatalog() {
                         .catch(() => [])
                     : Promise.resolve([]);
                 const [springItems, nodeItems] = await Promise.all([springItemsPromise, nodeItemsPromise]);
-                return [...(springItems || []), ...(nodeItems || [])];
+                return ["movie", "series"].includes(type)
+                    ? [...(nodeItems || []), ...(springItems || [])]
+                    : [...(springItems || []), ...(nodeItems || [])];
             })
         );
         if (requestId !== state.catalogRequestId) return;
 
-        const seenCatalogItems = new Set();
-        const apiItems = resultSets.flatMap((items, typeIndex) => {
+        const seenCatalogItems = new Map();
+        const mergedItems = resultSets.flatMap((items, typeIndex) => {
             const type = types[typeIndex];
             return (items || []).map((item, index) => normalizeItem(item, type, index));
-        }).filter((item) => {
+        }).filter((item) => types.includes(item.type));
+        const apiItems = [];
+        mergedItems.forEach((item) => {
             if (!types.includes(item.type)) return false;
             const dedupeKey = `${item.type}:${item.tmdbId || item.id}`;
-            if (seenCatalogItems.has(dedupeKey)) return false;
-            seenCatalogItems.add(dedupeKey);
+            const existingIndex = seenCatalogItems.get(dedupeKey);
+            if (existingIndex === undefined) {
+                seenCatalogItems.set(dedupeKey, apiItems.length);
+                apiItems.push(item);
+                return true;
+            }
+            if (isFrenchSource(item) && !isFrenchSource(apiItems[existingIndex])) {
+                apiItems[existingIndex] = item;
+            }
             return true;
         });
 
