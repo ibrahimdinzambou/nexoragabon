@@ -22,10 +22,10 @@ const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
 const HOME_PREVIEW_LIMIT = 24;
 const HOME_SHOWCASE_LIMIT = 20;
-const LOAD_MORE_INCREMENT = 360;
+const LOAD_MORE_INCREMENT = 480;
 const RECENTLY_WATCHED_LIMIT = 24;
-const DEFAULT_VISIBLE_CATALOG = { live: 160, movie: 480, series: 480 };
-const SEARCH_VISIBLE_CATALOG = { live: 240, movie: 480, series: 480 };
+const DEFAULT_VISIBLE_CATALOG = { live: 160, movie: 720, series: 720 };
+const SEARCH_VISIBLE_CATALOG = { live: 240, movie: 900, series: 900 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
@@ -2670,7 +2670,6 @@ async function playItem(item, options = {}) {
                 await playNodeFrenchItem(item);
                 return;
             } catch (directError) {
-                console.warn("Source FR directe indisponible:", directError);
                 detachPlayerMedia();
                 showPlayerError(directError.message || "Source FR directe indisponible.");
                 return;
