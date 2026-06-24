@@ -51,7 +51,6 @@ public class EpornerContentService {
     private final ObjectMapper mapper;
     private final CatalogImageService images;
     private final HttpClient httpClient;
-    private final boolean enabled;
     private final URI baseUri;
     private final Duration timeout;
     private final int maxResponseBytes;
@@ -103,7 +102,6 @@ public class EpornerContentService {
     ) {
         this.mapper = mapper;
         this.images = images;
-        this.enabled = enabled;
         this.baseUri = normalizeBaseUri(baseUrl);
         this.timeout = Duration.ofSeconds(Math.max(2, timeoutSeconds));
         this.maxResponseBytes = Math.max(65_536, maxResponseBytes);
@@ -114,7 +112,7 @@ public class EpornerContentService {
     }
 
     public boolean isEnabled() {
-        return enabled && baseUri != null;
+        return baseUri != null;
     }
 
     public boolean isEpornerItem(String itemId) {
@@ -186,12 +184,7 @@ public class EpornerContentService {
                 "lq", "1",
                 "format", "json"
         ));
-        JsonNode response;
-        try {
-            response = cachedJson(uri);
-        } catch (ApiException exception) {
-            return List.of();
-        }
+        JsonNode response = cachedJson(uri);
         JsonNode videos = response.path("videos");
         if (!videos.isArray()) {
             return List.of();
