@@ -4,6 +4,7 @@ import com.iptv.saas.domain.Enums;
 import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.repository.SubscriptionRepository;
 import com.iptv.saas.service.CommunityAddonService;
+import com.iptv.saas.service.EpornerContentService;
 import com.iptv.saas.service.IptvCatalogService;
 import com.iptv.saas.service.OrganizationService;
 import com.iptv.saas.service.SubscriptionAccessService;
@@ -171,6 +172,38 @@ class CatalogControllerTests {
 
         assertEquals(1, values.size());
         assertEquals("tmdb-movie-popular", values.get(0).get("id"));
+    }
+
+    @Test
+    void superAdminCanSeeAdultsCategoryEvenWhenProviderIsDisabled() {
+        IptvCatalogService catalog = mock(IptvCatalogService.class);
+        CommunityAddonService addons = mock(CommunityAddonService.class);
+        EpornerContentService eporner = mock(EpornerContentService.class);
+        SubscriptionAccessService access = new SubscriptionAccessService(
+                mock(SubscriptionRepository.class),
+                mock(OrganizationService.class)
+        );
+        CatalogController controller = new CatalogController(catalog, addons, null, null, eporner, access);
+        UserEntity admin = new UserEntity();
+        admin.id = 1L;
+        admin.role = Enums.UserRole.SUPER_ADMIN;
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(admin, null, List.of())
+        );
+        when(catalog.hasActiveSources()).thenReturn(false);
+        when(addons.hasApprovedAddons(admin)).thenReturn(false);
+        when(eporner.isEnabled()).thenReturn(false);
+        when(eporner.hasAccess(admin)).thenReturn(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> response = (Map<String, Object>) controller.categories("movie");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> values = (List<Map<String, Object>>) response.get("data");
+
+        assertEquals(1, values.size());
+        assertEquals("adults-eporner", values.get(0).get("id"));
+        assertEquals(true, values.get(0).get("adult"));
     }
 
     @Test

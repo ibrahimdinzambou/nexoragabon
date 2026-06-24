@@ -73,8 +73,8 @@ public class CatalogController {
         if (hasTmdb()) {
             values.addAll(tmdb.categories(type));
         }
-        if (hasEporner() && eporner.hasAccess(user)) {
-            values.addAll(eporner.categories(type));
+        if (shouldExposeEpornerCategory(user, type)) {
+            values.addAll(hasEporner() ? eporner.categories(type) : List.of(epornerCategory()));
         }
         values.addAll(addons.categories(type, user));
         List<Map<String, Object>> uniqueValues = unique(values, "id");
@@ -260,6 +260,31 @@ public class CatalogController {
 
     private boolean hasEporner() {
         return eporner != null && eporner.isEnabled();
+    }
+
+    private boolean shouldExposeEpornerCategory(UserEntity user, String type) {
+        return matchesEpornerType(type)
+                && eporner != null
+                && eporner.hasAccess(user);
+    }
+
+    private boolean matchesEpornerType(String type) {
+        return type == null || type.isBlank() || "movie".equalsIgnoreCase(type);
+    }
+
+    private Map<String, Object> epornerCategory() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", EpornerContentService.CATEGORY_ADULTS);
+        payload.put("name", "Adults");
+        payload.put("type", "movie");
+        payload.put("source", "Eporner");
+        payload.put("sourceCode", "eporner");
+        payload.put("metadataAvailable", true);
+        payload.put("streamAvailable", true);
+        payload.put("privateUse", true);
+        payload.put("privateAccess", true);
+        payload.put("adult", true);
+        return payload;
     }
 
     private Map<String, Object> epornerItemInfo(UserEntity user, String itemId) {

@@ -362,12 +362,22 @@ function syncChrome() {
     }
 }
 
+function isAdminUser(user) {
+    return ["SUPER_ADMIN", "ADMIN", "OPS", "SUPPORT", "BILLING"].includes(String(user?.role || ""));
+}
+
+function hasAdultCategoryGrant(user) {
+    return Array.isArray(user?.allowedCategories) && user.allowedCategories.includes(CATEGORY_ID);
+}
+
 async function verifyAdultsAccess() {
     if (state.accessChecked) {
         return state.hasAccess;
     }
     const categories = await api("/catalog/categories?type=movie");
-    state.hasAccess = categories.some((category) => category.id === CATEGORY_ID);
+    state.hasAccess = isAdminUser(state.user)
+        || hasAdultCategoryGrant(state.user)
+        || categories.some((category) => category.id === CATEGORY_ID);
     state.accessChecked = true;
     el.blockedPanel.hidden = state.hasAccess;
     syncChrome();
