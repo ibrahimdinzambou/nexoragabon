@@ -1,6 +1,6 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "sh ./mvnw -DskipTests package"
+buildCommand = "./mvnw -DskipTests package"
 
 [deploy]
 startCommand = "java -jar target/iptv-saas-api-0.1.0.jar"

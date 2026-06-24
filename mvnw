@@ -6,6 +6,10 @@ MAVEN_VERSION=3.9.10
 MAVEN_HOME="$BASE_DIR/.mvn/apache-maven-$MAVEN_VERSION"
 MAVEN_URL="https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.tar.gz"
 
+if command -v mvn >/dev/null 2>&1; then
+  exec mvn "$@"
+fi
+
 if [ ! -x "$MAVEN_HOME/bin/mvn" ]; then
   echo "Downloading Apache Maven $MAVEN_VERSION..."
   mkdir -p "$BASE_DIR/.mvn"
