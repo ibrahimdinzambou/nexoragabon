@@ -207,6 +207,57 @@ class CatalogControllerTests {
     }
 
     @Test
+    void assignedUserReceivesEpornerItems() {
+        IptvCatalogService catalog = mock(IptvCatalogService.class);
+        CommunityAddonService addons = mock(CommunityAddonService.class);
+        EpornerContentService eporner = mock(EpornerContentService.class);
+        SubscriptionAccessService access = new SubscriptionAccessService(
+                mock(SubscriptionRepository.class),
+                mock(OrganizationService.class)
+        );
+        CatalogController controller = new CatalogController(catalog, addons, null, null, eporner, access);
+        UserEntity user = new UserEntity();
+        user.id = 9L;
+        user.role = Enums.UserRole.USER;
+        user.allowedCategories = "[\"adults-eporner\"]";
+        List<Map<String, Object>> epornerItems = List.of(Map.of(
+                "id", "eporner~video~abc123",
+                "type", "movie",
+                "name", "Adults video",
+                "categoryId", "adults-eporner",
+                "adult", true,
+                "privateUse", true,
+                "privateAccess", true
+        ));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(user, null, List.of())
+        );
+        when(catalog.hasActiveSources()).thenReturn(false);
+        when(addons.hasApprovedAddons(user)).thenReturn(false);
+        when(eporner.isEnabled()).thenReturn(true);
+        when(eporner.hasAccess(user)).thenReturn(true);
+        when(eporner.items("movie", null, "adults-eporner", null, "latest", 10, 1)).thenReturn(epornerItems);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> response = (Map<String, Object>) controller.items(
+                "movie",
+                null,
+                "adults-eporner",
+                null,
+                "latest",
+                10,
+                null,
+                1
+        );
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> values = (List<Map<String, Object>>) response.get("data");
+
+        assertEquals(1, values.size());
+        assertEquals("eporner~video~abc123", values.get(0).get("id"));
+    }
+
+    @Test
     void searchMergesNativeAndTmdbResults() {
         IptvCatalogService catalog = mock(IptvCatalogService.class);
         CommunityAddonService addons = mock(CommunityAddonService.class);

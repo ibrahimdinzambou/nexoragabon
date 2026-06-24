@@ -37,6 +37,7 @@ public class EpornerContentService {
     private static final String ITEM_PREFIX = "eporner";
     private static final String TYPE_MOVIE = "movie";
     private static final String SOURCE = "Eporner";
+    private static final String DEFAULT_BASE_URL = "https://www.eporner.com/api/v2";
     private static final String DEFAULT_QUERY = "all";
     private static final Set<String> SEARCH_ORDERS = Set.of(
             "latest",
@@ -102,7 +103,8 @@ public class EpornerContentService {
     ) {
         this.mapper = mapper;
         this.images = images;
-        this.baseUri = normalizeBaseUri(baseUrl);
+        URI configuredBaseUri = normalizeBaseUri(baseUrl);
+        this.baseUri = configuredBaseUri == null ? normalizeBaseUri(DEFAULT_BASE_URL) : configuredBaseUri;
         this.timeout = Duration.ofSeconds(Math.max(2, timeoutSeconds));
         this.maxResponseBytes = Math.max(65_536, maxResponseBytes);
         this.maxPerPage = Math.max(1, Math.min(1000, maxPerPage));

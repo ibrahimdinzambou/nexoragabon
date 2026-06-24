@@ -22,7 +22,15 @@ import static org.mockito.Mockito.when;
 class EpornerContentServiceTests {
     @Test
     void legacyDisabledFlagDoesNotHideAdultsCategoryWhenApiUrlIsConfigured() {
-        EpornerContentService service = service(false, mock(HttpClient.class));
+        EpornerContentService service = service(false, "https://www.eporner.com/api/v2", mock(HttpClient.class));
+
+        assertTrue(service.isEnabled());
+        assertFalse(service.categories("movie").isEmpty());
+    }
+
+    @Test
+    void blankApiUrlFallsBackToDefaultProvider() {
+        EpornerContentService service = service(false, "", mock(HttpClient.class));
 
         assertTrue(service.isEnabled());
         assertFalse(service.categories("movie").isEmpty());
@@ -54,7 +62,7 @@ class EpornerContentServiceTests {
         when(response.body()).thenReturn(new ByteArrayInputStream(payload.getBytes(StandardCharsets.UTF_8)));
         when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(response);
 
-        List<Map<String, Object>> items = service(false, client)
+        List<Map<String, Object>> items = service(false, "https://www.eporner.com/api/v2", client)
                 .items("movie", null, EpornerContentService.CATEGORY_ADULTS, null, "latest", 20, 1);
 
         assertEquals(1, items.size());
@@ -63,11 +71,15 @@ class EpornerContentServiceTests {
     }
 
     private EpornerContentService service(boolean enabled, HttpClient client) {
+        return service(enabled, "https://www.eporner.com/api/v2", client);
+    }
+
+    private EpornerContentService service(boolean enabled, String baseUrl, HttpClient client) {
         return new EpornerContentService(
                 new ObjectMapper(),
                 new CatalogImageService(1_048_576, 16),
                 enabled,
-                "https://www.eporner.com/api/v2",
+                baseUrl,
                 5,
                 1_048_576,
                 60,
