@@ -3,20 +3,32 @@ const TOKEN_KEY = "nexora_access_token";
 const AGE_KEY = "nexora_adults_age_confirmed";
 const CATEGORY_ID = "adults-eporner";
 const SEARCH_DELAY_MS = 750;
-const INITIAL_LIMIT = 32;
-const PAGE_LIMIT = 32;
+const INITIAL_LIMIT = 36;
+const PAGE_LIMIT = 36;
 const BROWSE_RAILS = [
     { key: "all", label: "Tout", query: "", note: "Flux global" },
-    { key: "hd", label: "HD", query: "hd", note: "Images nettes" },
+    { key: "4k", label: "4K", query: "4k", note: "Ultra HD" },
+    { key: "hd", label: "HD", query: "hd", note: "1080p et 720p" },
     { key: "amateur", label: "Amateur", query: "amateur", note: "Selection amateur" },
+    { key: "homemade", label: "Homemade", query: "homemade", note: "Maison" },
     { key: "asian", label: "Asian", query: "asian", note: "Rayon asiatique" },
     { key: "mature", label: "Mature", query: "mature", note: "Mature" },
     { key: "latina", label: "Latina", query: "latina", note: "Latina" },
     { key: "french", label: "French", query: "french", note: "Recherche FR" },
     { key: "long", label: "Longs", query: "", sort: "longest", note: "Durees longues" },
     { key: "rated", label: "Mieux notes", query: "", sort: "top-rated", note: "Top notes" },
-    { key: "weekly", label: "Top semaine", query: "", sort: "top-weekly", note: "Tendance" }
+    { key: "weekly", label: "Top semaine", query: "", sort: "top-weekly", note: "Tendance" },
+    { key: "popular", label: "Most viewed", query: "", sort: "most-popular", note: "Populaires" }
 ];
+const SORT_LABELS = {
+    latest: "Nouveautes",
+    "most-popular": "Populaires",
+    "top-weekly": "Top semaine",
+    "top-monthly": "Top mois",
+    "top-rated": "Mieux notes",
+    longest: "Longs formats",
+    shortest: "Formats courts"
+};
 
 const state = {
     token: localStorage.getItem(TOKEN_KEY),
@@ -63,6 +75,10 @@ const el = {
     sortSelect: document.querySelector("#sortSelect"),
     categoryTabs: document.querySelector("#categoryTabs"),
     adultGrid: document.querySelector("#adultGrid"),
+    featuredPanel: document.querySelector("#featuredPanel"),
+    videoCount: document.querySelector("#videoCount"),
+    activeRailLabel: document.querySelector("#activeRailLabel"),
+    activeSortLabel: document.querySelector("#activeSortLabel"),
     ageModal: document.querySelector("#ageModal"),
     ageConfirmButton: document.querySelector("#ageConfirmButton"),
     playerModal: document.querySelector("#playerModal"),
@@ -123,6 +139,10 @@ function activeSort() {
     return state.sort || "latest";
 }
 
+function activeRail() {
+    return BROWSE_RAILS.find((rail) => rail.key === state.browseKey) || BROWSE_RAILS[0];
+}
+
 function showToast(message) {
     el.toast.textContent = message;
     el.toast.hidden = false;
@@ -164,12 +184,31 @@ function durationLabel(item) {
     return item.duration || item.lengthMin || "";
 }
 
+function viewsLabel(item) {
+    const views = Number(item.views || 0);
+    return views ? `${views.toLocaleString("fr-FR")} vues` : "";
+}
+
+function ratingLabel(item) {
+    const rating = Number(item.rating || 0);
+    return rating ? `${Math.round(rating * 20)}%` : "";
+}
+
+function qualityLabel(item) {
+    const text = `${item.name || ""} ${(item.genres || []).join(" ")}`.toLowerCase();
+    if (text.includes("4k") || text.includes("2160")) return "4K";
+    if (text.includes("1080")) return "1080p";
+    if (text.includes("720")) return "720p";
+    if (text.includes("hd")) return "HD";
+    return "HD";
+}
+
 function metaChips(item) {
     return [
         "18+",
-        durationLabel(item),
-        item.rating ? `${item.rating}/5` : "",
-        item.views ? `${Number(item.views).toLocaleString("fr-FR")} vues` : ""
+        qualityLabel(item),
+        ratingLabel(item),
+        viewsLabel(item)
     ].filter(Boolean).slice(0, 4);
 }
 
@@ -245,15 +284,79 @@ function renderBrowseRails() {
     }
 }
 
+function updateDashboardStats() {
+    if (el.videoCount) {
+        el.videoCount.textContent = state.items.length.toLocaleString("fr-FR");
+    }
+    if (el.activeRailLabel) {
+        el.activeRailLabel.textContent = state.query ? "Recherche" : activeRail().label;
+    }
+    if (el.activeSortLabel) {
+        el.activeSortLabel.textContent = SORT_LABELS[activeSort()] || activeSort();
+    }
+    if (el.accessLabel) {
+        el.accessLabel.textContent = state.hasAccess ? "Attribue" : "Verrouille";
+    }
+}
+
+function featuredItem() {
+    return [...state.items].sort((left, right) => {
+        const rightScore = Number(right.views || 0) + Number(right.rating || 0) * 10000;
+        const leftScore = Number(left.views || 0) + Number(left.rating || 0) * 10000;
+        return rightScore - leftScore;
+    })[0] || null;
+}
+
+function renderFeatured() {
+    if (!el.featuredPanel || !state.token || !state.hasAccess || state.loading) {
+        if (el.featuredPanel) {
+            el.featuredPanel.hidden = true;
+            el.featuredPanel.innerHTML = "";
+        }
+        return;
+    }
+    const item = featuredItem();
+    if (!item) {
+        el.featuredPanel.hidden = true;
+        el.featuredPanel.innerHTML = "";
+        return;
+    }
+    const categories = itemCategories(item);
+    el.featuredPanel.hidden = false;
+    el.featuredPanel.innerHTML = `
+        <div class="adult-featured-media">
+            <img src="${escapeHtml(imageSource(item.image || item.poster || item.backdrop))}" alt="" loading="lazy" decoding="async">
+            <span class="adult-quality-badge">${escapeHtml(qualityLabel(item))}</span>
+        </div>
+        <div class="adult-featured-copy">
+            <p class="adult-kicker">MISE EN AVANT</p>
+            <h2>${escapeHtml(item.name || "Adults")}</h2>
+            <p>${escapeHtml([durationLabel(item), ratingLabel(item), viewsLabel(item), categories.slice(0, 3).join(" / ")].filter(Boolean).join(" · "))}</p>
+            <span class="adult-chip-line">${metaChips(item).map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</span>
+            <div class="adult-featured-actions">
+                <button type="button" data-item-id="${escapeHtml(item.id)}">Lire maintenant</button>
+            </div>
+        </div>
+    `;
+}
+
 function cardTemplate(item) {
     return `
         <button class="adult-card" type="button" data-item-id="${escapeHtml(item.id)}">
-            <img src="${escapeHtml(imageSource(item.image || item.poster || item.backdrop))}" alt="" loading="lazy" decoding="async">
+            <span class="adult-card-media">
+                <img src="${escapeHtml(imageSource(item.image || item.poster || item.backdrop))}" alt="" loading="lazy" decoding="async">
+                <span class="adult-quality-badge">${escapeHtml(qualityLabel(item))}</span>
+                ${durationLabel(item) ? `<span class="adult-duration">${escapeHtml(durationLabel(item))}</span>` : ""}
+            </span>
             <span class="adult-card-copy">
                 <strong>${escapeHtml(item.name || "Adults")}</strong>
                 <small>${escapeHtml(itemCategories(item)[0] || item.categoryName || "Adults")}</small>
                 <span class="adult-chip-line">
                     ${metaChips(item).map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}
+                </span>
+                <span class="adult-card-stats">
+                    <span>${escapeHtml(viewsLabel(item) || "Nouveau")}</span>
+                    <b>${escapeHtml(ratingLabel(item) || "18+")}</b>
                 </span>
             </span>
         </button>
@@ -284,17 +387,23 @@ function renderGrid() {
         el.adultGrid.innerHTML = "";
         renderBrowseRails();
         renderCategoryTabs();
+        renderFeatured();
+        updateDashboardStats();
         return;
     }
     if (state.loading) {
         renderBrowseRails();
         el.adultGrid.innerHTML = '<div class="adult-skeleton-grid"><span></span><span></span><span></span><span></span><span></span><span></span></div>';
         renderCategoryTabs();
+        renderFeatured();
+        updateDashboardStats();
         return;
     }
     renderBrowseRails();
     syncCategories();
     renderCategoryTabs();
+    renderFeatured();
+    updateDashboardStats();
     const items = visibleItems();
     if (!items.length) {
         el.adultGrid.innerHTML = '<div class="adult-empty">Aucun resultat pour cette recherche.</div>';
@@ -514,6 +623,7 @@ function clearSession() {
     syncChrome();
     renderGrid();
     setStatus("Connexion requise", "");
+    updateDashboardStats();
 }
 
 async function logout() {
@@ -667,6 +777,12 @@ el.adultGrid.addEventListener("click", (event) => {
         loadMoreAdults();
         return;
     }
+    const card = event.target.closest("[data-item-id]");
+    if (card) {
+        playItem(card.dataset.itemId);
+    }
+});
+el.featuredPanel?.addEventListener("click", (event) => {
     const card = event.target.closest("[data-item-id]");
     if (card) {
         playItem(card.dataset.itemId);

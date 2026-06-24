@@ -147,7 +147,7 @@ app:
     max-response-bytes: ${CONSUMET_MAX_RESPONSE_BYTES:2097152}
     allowed-stream-hosts: ${CONSUMET_ALLOWED_STREAM_HOSTS:}
   eporner:
-    enabled: ${EPORNER_ENABLED:false}
+    enabled: ${EPORNER_ENABLED:true}
     base-url: ${EPORNER_API_BASE_URL:https://www.eporner.com/api/v2}
     timeout-seconds: ${EPORNER_TIMEOUT_SECONDS:20}
     max-response-bytes: ${EPORNER_MAX_RESPONSE_BYTES:4194304}

@@ -7,7 +7,7 @@
     <meta name="robots" content="noindex,nofollow">
     <title>Nexora Adults</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/adults.css?v=20260623-6">
+    <link rel="stylesheet" href="/assets/adults.css?v=20260624-4">
 </head>
 <body>
 <div class="adult-grain" aria-hidden="true"></div>
@@ -30,21 +30,26 @@
 
 <main class="adult-shell">
     <section class="adult-workbench" aria-labelledby="adultTitle">
-        <div class="adult-toolbar">
-            <div>
+        <section class="adult-hero">
+            <div class="adult-hero-copy">
                 <p class="adult-kicker">ACCES RESTREINT 18+</p>
-                <h1 id="adultTitle">Adults</h1>
-                <p class="adult-lead">Espace prive, active uniquement par attribution manuelle du provider.</p>
+                <h1 id="adultTitle">Eporner</h1>
+                <p class="adult-lead">Recherche, tendances, categories et lecture embed dans un espace Nexora prive.</p>
+                <form class="adult-search" id="searchForm">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7"></circle>
+                        <path d="m20 20-4-4"></path>
+                    </svg>
+                    <input id="searchInput" type="search" autocomplete="off" placeholder="Rechercher des videos" aria-label="Rechercher dans Adults">
+                    <button type="submit">Chercher</button>
+                </form>
             </div>
-            <form class="adult-search" id="searchForm">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="11" cy="11" r="7"></circle>
-                    <path d="m20 20-4-4"></path>
-                </svg>
-                <input id="searchInput" type="search" autocomplete="off" placeholder="Rechercher" aria-label="Rechercher dans Adults">
-                <button type="submit">Chercher</button>
-            </form>
-        </div>
+            <aside class="adult-hero-panel" aria-label="Etat du catalogue">
+                <div><span>Videos</span><strong id="videoCount">0</strong></div>
+                <div><span>Rayon</span><strong id="activeRailLabel">Tout</strong></div>
+                <div><span>Tri</span><strong id="activeSortLabel">Nouveautes</strong></div>
+            </aside>
+        </section>
 
         <div class="adult-status" id="statusBar" role="status">
             <span></span>
@@ -62,7 +67,7 @@
             <div class="adult-discovery-head">
                 <div>
                     <p class="adult-kicker">CATALOGUE EPORNER</p>
-                    <h2>Rayons rapides</h2>
+                    <h2>Explorer</h2>
                 </div>
                 <label class="adult-sort">
                     <span>Tri</span>
@@ -78,6 +83,8 @@
             </div>
             <div class="adult-rails" id="browseRails" aria-label="Rayons Adults"></div>
         </section>
+
+        <section class="adult-featured" id="featuredPanel" hidden></section>
 
         <nav class="adult-category-tabs" id="categoryTabs" aria-label="Categories Adults" hidden></nav>
 
@@ -147,6 +154,6 @@
 <div class="adult-toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="/assets/runtime-config.js?v=20260620-1" defer></script>
-<script src="/assets/adults.js?v=20260624-2" defer></script>
+<script src="/assets/adults.js?v=20260624-4" defer></script>
 </body>
 </html>

@@ -131,13 +131,73 @@ a {
 }
 
 .adult-shell {
-    width: min(1440px, 100%);
+    width: min(1560px, 100%);
     margin: 0 auto;
-    padding: 36px var(--page-x) 70px;
+    padding: 28px var(--page-x) 70px;
 }
 
 .adult-workbench {
     min-height: calc(100vh - 112px);
+}
+
+.adult-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 430px);
+    gap: 28px;
+    align-items: end;
+    min-height: 330px;
+    margin-bottom: 20px;
+    padding: clamp(26px, 5vw, 56px);
+    border: 1px solid rgba(229, 72, 85, 0.22);
+    background:
+        linear-gradient(120deg, rgba(229, 72, 85, 0.18), transparent 42%),
+        linear-gradient(315deg, rgba(217, 189, 121, 0.12), transparent 38%),
+        #0d0a0a;
+}
+
+.adult-hero-copy {
+    display: grid;
+    gap: 18px;
+}
+
+.adult-hero .adult-search {
+    max-width: 760px;
+}
+
+.adult-hero-panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1px;
+    border: 1px solid var(--line);
+    background: var(--line);
+}
+
+.adult-hero-panel div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    min-height: 72px;
+    padding: 18px;
+    background: rgba(10, 9, 9, 0.9);
+}
+
+.adult-hero-panel span {
+    color: var(--dim);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+}
+
+.adult-hero-panel strong {
+    max-width: 220px;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 20px;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .adult-toolbar {
@@ -240,6 +300,84 @@ h1 {
     overflow: hidden;
     border: 1px solid var(--line);
     background: var(--line);
+}
+
+.adult-featured {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1fr);
+    gap: 1px;
+    margin: 0 0 22px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: var(--line);
+}
+
+.adult-featured-media {
+    position: relative;
+    min-height: 280px;
+    background: #050505;
+}
+
+.adult-featured-media img {
+    width: 100%;
+    height: 100%;
+    min-height: 280px;
+    object-fit: cover;
+    opacity: 0.84;
+}
+
+.adult-featured-media::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, 0.78));
+}
+
+.adult-quality-badge {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    z-index: 1;
+    padding: 7px 9px;
+    color: #130b0b;
+    background: var(--gold);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.adult-featured-copy {
+    display: grid;
+    align-content: center;
+    gap: 16px;
+    padding: clamp(22px, 4vw, 42px);
+    background: #0f0d0d;
+}
+
+.adult-featured-copy h2 {
+    font-size: clamp(30px, 4vw, 56px);
+    line-height: 1;
+}
+
+.adult-featured-copy p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.55;
+}
+
+.adult-featured-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.adult-featured-actions button {
+    min-height: 44px;
+    padding: 0 16px;
+    color: #170c0d;
+    border: 1px solid rgba(229, 72, 85, 0.7);
+    background: linear-gradient(135deg, #ff6a76, var(--red));
+    cursor: pointer;
+    font-weight: 800;
 }
 
 .adult-provider-panel div {
@@ -471,13 +609,13 @@ h1 {
 
 .adult-card-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(214px, 1fr));
     gap: 14px;
 }
 
 .adult-card {
     position: relative;
-    min-height: 268px;
+    min-height: 308px;
     overflow: hidden;
     padding: 0;
     color: var(--text);
@@ -493,6 +631,38 @@ h1 {
     aspect-ratio: 16 / 9;
     object-fit: cover;
     background: #1b1716;
+}
+
+.adult-card-media {
+    position: relative;
+    display: block;
+}
+
+.adult-card-media::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 54%;
+    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.68));
+}
+
+.adult-card-media .adult-quality-badge {
+    top: 9px;
+    left: 9px;
+    padding: 5px 7px;
+    font-size: 10px;
+}
+
+.adult-duration {
+    position: absolute;
+    right: 9px;
+    bottom: 9px;
+    z-index: 1;
+    padding: 5px 7px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.76);
+    font-size: 11px;
+    font-weight: 800;
 }
 
 .adult-card-copy {
@@ -526,6 +696,19 @@ h1 {
     color: var(--gold);
     border: 1px solid rgba(217, 189, 121, 0.24);
     font-size: 10px;
+}
+
+.adult-card-stats {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.adult-card-stats b {
+    color: var(--gold);
+    font-weight: 800;
 }
 
 .adult-empty {
@@ -687,6 +870,16 @@ h1 {
 }
 
 @media (max-width: 840px) {
+    .adult-hero,
+    .adult-featured {
+        grid-template-columns: 1fr;
+    }
+
+    .adult-hero {
+        min-height: 0;
+        padding: 24px;
+    }
+
     .adult-topbar {
         grid-template-columns: 1fr;
         align-items: start;
