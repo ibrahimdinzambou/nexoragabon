@@ -583,6 +583,12 @@ public class IptvCatalogService {
                 .orElseThrow(() -> ApiException.notFound("Compte IPTV introuvable"));
         if (name != null && !name.isBlank()) account.name = name;
         if (type != null) account.accountType = type;
+        if (account.accountType == Enums.IptvAccountType.M3U
+                && (playlistUrl == null || playlistUrl.isBlank())
+                && baseUrl != null
+                && isHttpUrl(baseUrl)) {
+            playlistUrl = baseUrl;
+        }
         if (baseUrl != null && (!update || !baseUrl.isBlank())) account.baseUrl = trimSlash(baseUrl);
         if (username != null && (!update || !username.isBlank())) account.username = username.strip();
         if (password != null && (!update || !password.isBlank())) account.password = password.strip();
@@ -2010,6 +2016,16 @@ public class IptvCatalogService {
             return null;
         }
         return value.replaceAll("/+$", "");
+    }
+
+    private boolean isHttpUrl(String value) {
+        try {
+            URI uri = URI.create(String.valueOf(value).strip());
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            return Set.of("http", "https").contains(scheme) && uri.getHost() != null;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     private record CatalogSource(IptvAccount account, M3uPlaylistService.Playlist playlist) {

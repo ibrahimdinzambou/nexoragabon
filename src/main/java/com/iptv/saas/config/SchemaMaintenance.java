@@ -30,6 +30,42 @@ public class SchemaMaintenance implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         widenColumnIfNeeded("user_sessions", "item_id", 8192);
         widenColumnIfNeeded("user_sessions", "stream_url", 8192);
+        addColumnIfMissing("iptv_accounts", "assigned_user_id", "bigint");
+    }
+
+    private void addColumnIfMissing(String tableName, String columnName, String columnDefinition) {
+        if (columnExists(tableName, columnName)) {
+            return;
+        }
+        try {
+            jdbc.execute("alter table " + tableName + " add column " + columnName + " " + columnDefinition);
+            LOGGER.info("Colonne {}.{} ajoutee", tableName, columnName);
+        } catch (RuntimeException exception) {
+            LOGGER.warn(
+                    "Impossible d'ajouter {}.{}: {}",
+                    tableName,
+                    columnName,
+                    exception.getMessage()
+            );
+        }
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        Integer count = jdbc.query("""
+                select count(*)
+                from information_schema.columns
+                where lower(table_name) = ? and lower(column_name) = ?
+                """,
+                ps -> {
+                    ps.setString(1, tableName.toLowerCase(Locale.ROOT));
+                    ps.setString(2, columnName.toLowerCase(Locale.ROOT));
+                },
+                rs -> {
+                    rs.next();
+                    return rs.getInt(1);
+                }
+        );
+        return count != null && count > 0;
     }
 
     private void widenColumnIfNeeded(String tableName, String columnName, int targetLength) {

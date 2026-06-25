@@ -1245,16 +1245,20 @@ function closeModal() {
 
 async function saveAccount(form, id) {
     const baseUrl = String(form.get("baseUrl") || "").trim();
-    const playlistUrl = String(form.get("playlistUrl") || "").trim();
+    let playlistUrl = String(form.get("playlistUrl") || "").trim();
     const username = String(form.get("username") || "").trim();
     const password = String(form.get("password") || "").trim();
+    const type = String(form.get("type") || "M3U");
+    if (type === "M3U" && !playlistUrl && /^https?:\/\//i.test(baseUrl)) {
+        playlistUrl = baseUrl;
+    }
     const payload = {
-        name: form.get("name"), type: form.get("type"),
+        name: form.get("name"), type,
         maxStreams: Number(form.get("maxStreams") || 0), active: form.has("active"),
         expiresAt: form.get("expiresAt") ? new Date(form.get("expiresAt")).toISOString() : null
     };
     if (!id || baseUrl) payload.baseUrl = baseUrl;
-    if (!id || playlistUrl) payload.playlistUrl = playlistUrl;
+    if (!id || playlistUrl || type === "M3U") payload.playlistUrl = playlistUrl;
     if (!id || username) payload.username = username;
     if (!id || password) payload.password = password;
     payload.assignedUserId = form.get("assignedUserId") ? Number(form.get("assignedUserId")) : 0;

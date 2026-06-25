@@ -87,6 +87,37 @@ class IptvCatalogServiceAccountTests {
     }
 
     @Test
+    void acceptsM3uUrlPastedInBaseUrlField() {
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        M3uPlaylistService playlists = mock(M3uPlaylistService.class);
+        XtreamCatalogService xtream = mock(XtreamCatalogService.class);
+        ProviderMetadataService metadata = mock(ProviderMetadataService.class);
+        CatalogImageService images = mock(CatalogImageService.class);
+        IptvCatalogService catalog = new IptvCatalogService(accounts, playlists, xtream, metadata, images);
+        when(accounts.save(org.mockito.ArgumentMatchers.any(IptvAccount.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        IptvAccount saved = catalog.saveAccount(
+                null,
+                "MISSOU M3U",
+                Enums.IptvAccountType.M3U,
+                "https://provider.test/get.php?username=user&password=pass&type=m3u_plus&output=ts",
+                "",
+                "",
+                "",
+                1,
+                true,
+                null
+        );
+
+        assertEquals(
+                "https://provider.test/get.php?username=user&password=pass&type=m3u_plus&output=ts",
+                saved.playlistUrl
+        );
+        assertEquals("ok", saved.lastHealthStatus);
+    }
+
+    @Test
     void archivesAccountInsteadOfDeletingSessionHistory() {
         IptvAccountRepository accounts = mock(IptvAccountRepository.class);
         M3uPlaylistService playlists = mock(M3uPlaylistService.class);
