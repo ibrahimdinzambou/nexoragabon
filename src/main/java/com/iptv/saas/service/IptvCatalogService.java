@@ -56,9 +56,7 @@ public class IptvCatalogService {
             "expired",
             "misconfigured",
             "stream-failed",
-            "unreachable",
-            "catalog-unavailable",
-            "empty-catalog"
+            "unreachable"
     );
 
     private final IptvAccountRepository accounts;
@@ -112,17 +110,20 @@ public class IptvCatalogService {
                     .toList();
         }
 
-        Map<String, M3uPlaylistService.Category> unique = new LinkedHashMap<>();
+        Map<String, CategorySource> unique = new LinkedHashMap<>();
         for (CatalogSource source : availableSources(catalogAccounts)) {
             for (M3uPlaylistService.Category category : source.playlist().categories()) {
                 if (type == null || type.isBlank() || category.type().equals(type)) {
-                    unique.putIfAbsent(categoryKey(category.type(), category.name()), category);
+                    unique.putIfAbsent(
+                            categoryKey(category.type(), category.name()),
+                            new CategorySource(source.account(), category)
+                    );
                 }
             }
         }
         return unique.values().stream()
-                .sorted(Comparator.comparing(M3uPlaylistService.Category::name, String.CASE_INSENSITIVE_ORDER))
-                .map(this::categoryPayload)
+                .sorted(Comparator.comparing(source -> source.category().name(), String.CASE_INSENSITIVE_ORDER))
+                .map(source -> categoryPayload(source.category(), source.account()))
                 .toList();
     }
 
@@ -218,7 +219,7 @@ public class IptvCatalogService {
                             String.CASE_INSENSITIVE_ORDER
                     ))
                     .limit(limit)
-                    .map(source -> seriesPayload(source.series()))
+                    .map(source -> seriesPayload(source.series(), source.account()))
                     .toList();
         }
 
@@ -261,7 +262,7 @@ public class IptvCatalogService {
                     }
                     if (fastPreview && unique.size() >= requestedLimit) {
                         return unique.values().stream()
-                                .map(entrySource -> entryPayload(entrySource.entry()))
+                                .map(entrySource -> entryPayload(entrySource.entry(), entrySource.account()))
                                 .toList();
                     }
                     continue;
@@ -278,7 +279,7 @@ public class IptvCatalogService {
         return unique.values().stream()
                 .sorted(sourceComparator)
                 .limit(limit)
-                .map(source -> entryPayload(source.entry()))
+                .map(source -> entryPayload(source.entry(), source.account()))
                 .toList();
     }
 
@@ -954,7 +955,7 @@ public class IptvCatalogService {
         IptvAccount account = source.account();
         M3uPlaylistService.Entry entry = source.entry();
         if (!isCatalogAccountUsable(account, account.accountType)) {
-            Map<String, Object> payload = entryPayload(entry);
+            Map<String, Object> payload = entryPayload(entry, account);
             payload.put("metadataAvailable", false);
             payload.put("streamAvailable", false);
             payload.put("streamUnavailableReason", CACHED_ONLY_STREAM_UNAVAILABLE_REASON);
@@ -973,10 +974,11 @@ public class IptvCatalogService {
             Map<String, Object> details = new LinkedHashMap<>(metadata.movieDetails(account, entry));
             details.put("categoryId", canonicalCategoryId(entry.type(), entry.categoryName()));
             applyLanguage(details, entry.categoryName());
+            applyPrivateAccess(details, account);
             images.rewrite(details);
             return details;
         }
-        return entryPayload(entry);
+        return entryPayload(entry, account);
     }
 
     private Optional<EntrySource> activeEquivalentEntry(EntrySource requested, boolean requireCapacity) {
@@ -1632,6 +1634,7 @@ public class IptvCatalogService {
         }
         details.putAll(merged.series().detailPayload());
         applyLanguage(details, merged.series().categoryName());
+        applyPrivateAccess(details, primary.account());
         images.rewrite(details);
         return details;
     }
@@ -1751,24 +1754,48 @@ public class IptvCatalogService {
     }
 
     private Map<String, Object> categoryPayload(M3uPlaylistService.Category category) {
+        return categoryPayload(category, null);
+    }
+
+    private Map<String, Object> categoryPayload(M3uPlaylistService.Category category, IptvAccount account) {
         Map<String, Object> payload = new LinkedHashMap<>(category.apiPayload());
         payload.put("id", canonicalCategoryId(category.type(), category.name()));
+        applyPrivateAccess(payload, account);
         return payload;
     }
 
     private Map<String, Object> entryPayload(M3uPlaylistService.Entry entry) {
+        return entryPayload(entry, null);
+    }
+
+    private Map<String, Object> entryPayload(M3uPlaylistService.Entry entry, IptvAccount account) {
         Map<String, Object> payload = new LinkedHashMap<>(entry.apiPayload());
         payload.put("categoryId", canonicalCategoryId(entry.type(), entry.categoryName()));
         applyLanguage(payload, entry.categoryName());
+        applyPrivateAccess(payload, account);
         images.rewrite(payload);
         return payload;
     }
 
     private Map<String, Object> seriesPayload(M3uPlaylistService.Series series) {
+        return seriesPayload(series, null);
+    }
+
+    private Map<String, Object> seriesPayload(M3uPlaylistService.Series series, IptvAccount account) {
         Map<String, Object> payload = new LinkedHashMap<>(series.apiPayload());
         applyLanguage(payload, series.categoryName());
+        applyPrivateAccess(payload, account);
         images.rewrite(payload);
         return payload;
+    }
+
+    private void applyPrivateAccess(Map<String, Object> payload, IptvAccount account) {
+        if (account == null || account.assignedUser == null) {
+            return;
+        }
+        payload.put("privateUse", true);
+        payload.put("privateAccess", true);
+        payload.put("assignedIptvAccountId", account.id);
     }
 
     private void applyLanguage(Map<String, Object> payload, String categoryName) {
@@ -2029,6 +2056,9 @@ public class IptvCatalogService {
     }
 
     private record CatalogSource(IptvAccount account, M3uPlaylistService.Playlist playlist) {
+    }
+
+    private record CategorySource(IptvAccount account, M3uPlaylistService.Category category) {
     }
 
     private record EntrySource(IptvAccount account, M3uPlaylistService.Entry entry) {

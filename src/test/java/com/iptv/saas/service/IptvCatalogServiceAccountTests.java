@@ -7,6 +7,8 @@ import com.iptv.saas.repository.IptvAccountRepository;
 import com.iptv.saas.web.ApiException;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -168,5 +170,62 @@ class IptvCatalogServiceAccountTests {
 
         assertThrows(ApiException.class, () -> catalog.selectStream(user, "live", "xtream-1-live-99"));
         verify(xtream, never()).load(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void assignedM3uCatalogRetriesAfterCatalogErrorAndMarksItemsPrivate() {
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        M3uPlaylistService playlists = mock(M3uPlaylistService.class);
+        XtreamCatalogService xtream = mock(XtreamCatalogService.class);
+        ProviderMetadataService metadata = mock(ProviderMetadataService.class);
+        CatalogImageService images = mock(CatalogImageService.class);
+        IptvCatalogService catalog = new IptvCatalogService(accounts, playlists, xtream, metadata, images);
+
+        UserEntity user = new UserEntity();
+        user.id = 42L;
+        IptvAccount account = new IptvAccount();
+        account.id = 5L;
+        account.name = "MISSOU M3U";
+        account.accountType = Enums.IptvAccountType.M3U;
+        account.playlistUrl = "https://provider.test/list.m3u";
+        account.active = true;
+        account.disabled = false;
+        account.lastHealthStatus = "catalog-unavailable";
+        account.assignedUser = user;
+
+        M3uPlaylistService.Entry entry = new M3uPlaylistService.Entry(
+                "m3u-5-channel",
+                "",
+                "Test Channel",
+                "live",
+                "m3u-cat-5-news",
+                "News",
+                "",
+                "https://provider.test/live/1.ts",
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+        M3uPlaylistService.Playlist playlist = new M3uPlaylistService.Playlist(
+                List.of(entry),
+                List.of(new M3uPlaylistService.Category("m3u-cat-5-news", "News", "live")),
+                List.of()
+        );
+
+        when(accounts.findByAssignedUser_IdAndActiveTrueAndDisabledFalse(42L)).thenReturn(List.of(account));
+        when(playlists.load(account)).thenReturn(playlist);
+        when(accounts.save(account)).thenReturn(account);
+
+        assertTrue(catalog.hasActiveSources(user));
+        List<Map<String, Object>> items = catalog.items(user, "live", null, null, null, "default", 0);
+
+        assertEquals(1, items.size());
+        assertEquals("Test Channel", items.get(0).get("name"));
+        assertEquals(true, items.get(0).get("privateUse"));
+        assertEquals(true, items.get(0).get("privateAccess"));
+        assertEquals(5L, items.get(0).get("assignedIptvAccountId"));
+        assertEquals("ok", account.lastHealthStatus);
     }
 }
