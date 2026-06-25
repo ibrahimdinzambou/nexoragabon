@@ -32,7 +32,8 @@ public class TmdbCatalogService {
             new Category("tmdb-series-trending", "TMDB - Series tendances", TYPE_SERIES, Kind.TRENDING, "trending"),
             new Category("tmdb-series-popular", "TMDB - Series populaires", TYPE_SERIES, Kind.TV_LIST, "popular"),
             new Category("tmdb-series-on-the-air", "TMDB - En diffusion", TYPE_SERIES, Kind.TV_LIST, "on_the_air"),
-            new Category("tmdb-series-top-rated", "TMDB - Series les mieux notees", TYPE_SERIES, Kind.TV_LIST, "top_rated")
+            new Category("tmdb-series-top-rated", "TMDB - Series les mieux notees", TYPE_SERIES, Kind.TV_LIST, "top_rated"),
+            new Category("tmdb-series-korean-drama", "Drama coreens", TYPE_SERIES, Kind.DISCOVER_TV, "korean_drama")
     );
 
     private final TmdbMetadataService tmdb;
@@ -170,6 +171,13 @@ public class TmdbCatalogService {
             case TRENDING -> tmdb.trending(category.type(), page);
             case MOVIE_LIST -> tmdb.movieList(category.endpoint(), page);
             case TV_LIST -> tmdb.tvList(category.endpoint(), page);
+            case DISCOVER_TV -> tmdb.discoverTv(Map.of(
+                    "sort_by", "popularity.desc",
+                    "with_genres", "18",
+                    "with_origin_country", "KR",
+                    "with_original_language", "ko",
+                    "include_null_first_air_dates", "false"
+            ), page);
         };
     }
 
@@ -637,6 +645,7 @@ public class TmdbCatalogService {
     private enum Kind {
         TRENDING,
         MOVIE_LIST,
-        TV_LIST
+        TV_LIST,
+        DISCOVER_TV
     }
 }

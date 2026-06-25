@@ -28,6 +28,7 @@ const DEFAULT_VISIBLE_CATALOG = { live: 160, movie: 720, series: 720 };
 const SEARCH_VISIBLE_CATALOG = { live: 240, movie: 900, series: 900 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
+const KOREAN_DRAMA_CATEGORY_ID = "tmdb-series-korean-drama";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const NODE_MOVIE_PROVIDER = "auto";
@@ -959,12 +960,32 @@ function renderCatalog() {
     const homeShowcase = !searching && state.activeType === "all"
         ? renderHomeShowcase(items)
         : "";
+    const koreanDrama = renderKoreanDramaRail(items, searching);
     const recentlyWatched = renderRecentlyWatchedSection(items, searching);
     const loadingBanner = loading && rows ? renderCatalogLoadingBanner(searching) : "";
-    elements.catalogRows.innerHTML = recentlyWatched + homeShowcase + loadingBanner + rows;
-    elements.emptyState.hidden = Boolean(recentlyWatched || rows);
+    elements.catalogRows.innerHTML = recentlyWatched + homeShowcase + koreanDrama + loadingBanner + rows;
+    elements.emptyState.hidden = Boolean(recentlyWatched || homeShowcase || koreanDrama || rows);
     updateCatalogHeading(items.length, loading);
     renderHeroCarousel(items);
+}
+
+function renderKoreanDramaRail(items, searching) {
+    if (searching || !["all", "series"].includes(state.activeType)) {
+        return "";
+    }
+    const dramas = uniqueCatalogItems(items)
+        .filter((item) => item.type === "series" && item.categoryId === KOREAN_DRAMA_CATEGORY_ID)
+        .slice(0, 50);
+    if (!dramas.length) {
+        return "";
+    }
+    return renderCatalogShelf({
+        type: "series",
+        title: "Drama coreens",
+        label: "Series TMDB jouables avec le lecteur Videasy",
+        items: dramas,
+        posterLayout: true
+    }, "kdrama");
 }
 
 function renderCatalogLoadingBanner(searching) {

@@ -162,6 +162,20 @@ public class TmdbMetadataService {
         return get("tv/" + normalizeCatalogEndpoint(endpoint, "tv"), defaultCatalogQuery(page));
     }
 
+    public JsonNode discoverTv(Map<String, String> filters, int page) {
+        Map<String, String> parameters = defaultCatalogQuery(page);
+        if (filters != null) {
+            filters.forEach((key, value) -> {
+                String normalizedKey = clean(key);
+                String normalizedValue = clean(value);
+                if (!normalizedKey.isBlank() && !normalizedValue.isBlank()) {
+                    parameters.put(normalizedKey, normalizedValue);
+                }
+            });
+        }
+        return get("discover/tv", parameters);
+    }
+
     public JsonNode trending(String mediaType, int page) {
         String normalizedType = normalizeMediaType(mediaType);
         if ("person".equals(normalizedType)) {

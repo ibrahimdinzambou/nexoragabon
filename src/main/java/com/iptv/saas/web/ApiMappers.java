@@ -168,6 +168,9 @@ public final class ApiMappers {
         m.put("type", account.accountType);
         m.put("baseUrl", account.baseUrl);
         m.put("playlistUrl", account.playlistUrl);
+        m.put("assignedUserId", account.assignedUser == null ? null : account.assignedUser.id);
+        m.put("assignedUserEmail", account.assignedUser == null ? null : account.assignedUser.email);
+        m.put("assignedUserName", account.assignedUser == null ? null : account.assignedUser.name);
         m.put("active", account.active);
         m.put("disabled", account.disabled);
         m.put("expiresAt", account.expiresAt);

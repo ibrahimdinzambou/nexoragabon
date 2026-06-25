@@ -3,8 +3,8 @@ const TOKEN_KEY = "nexora_access_token";
 const AGE_KEY = "nexora_adults_age_confirmed";
 const CATEGORY_ID = "adults-eporner";
 const SEARCH_DELAY_MS = 750;
-const INITIAL_LIMIT = 36;
-const PAGE_LIMIT = 36;
+const INITIAL_LIMIT = 50;
+const PAGE_LIMIT = 50;
 const BROWSE_RAILS = [
     { key: "all", label: "Tout", query: "", note: "Flux global" },
     { key: "4k", label: "4K", query: "4k", note: "Ultra HD" },
@@ -205,7 +205,7 @@ function qualityLabel(item) {
 
 function metaChips(item) {
     return [
-        "18+",
+        "Reserve",
         qualityLabel(item),
         ratingLabel(item),
         viewsLabel(item)
@@ -233,7 +233,7 @@ function syncCategories() {
     const counts = new Map();
     state.items.forEach((item) => {
         const categories = itemCategories(item);
-        (categories.length ? categories : ["Adults"]).forEach((category) => {
+        (categories.length ? categories : ["Reserve"]).forEach((category) => {
             const key = categoryKey(category);
             if (!key) return;
             const current = counts.get(key) || { label: category, count: 0 };
@@ -330,7 +330,7 @@ function renderFeatured() {
         </div>
         <div class="adult-featured-copy">
             <p class="adult-kicker">MISE EN AVANT</p>
-            <h2>${escapeHtml(item.name || "Adults")}</h2>
+            <h2>${escapeHtml(item.name || "Reserve")}</h2>
             <p>${escapeHtml([durationLabel(item), ratingLabel(item), viewsLabel(item), categories.slice(0, 3).join(" / ")].filter(Boolean).join(" · "))}</p>
             <span class="adult-chip-line">${metaChips(item).map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</span>
             <div class="adult-featured-actions">
@@ -349,14 +349,14 @@ function cardTemplate(item) {
                 ${durationLabel(item) ? `<span class="adult-duration">${escapeHtml(durationLabel(item))}</span>` : ""}
             </span>
             <span class="adult-card-copy">
-                <strong>${escapeHtml(item.name || "Adults")}</strong>
-                <small>${escapeHtml(itemCategories(item)[0] || item.categoryName || "Adults")}</small>
+                <strong>${escapeHtml(item.name || "Reserve")}</strong>
+                <small>${escapeHtml(itemCategories(item)[0] || item.categoryName || "Reserve")}</small>
                 <span class="adult-chip-line">
                     ${metaChips(item).map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}
                 </span>
                 <span class="adult-card-stats">
                     <span>${escapeHtml(viewsLabel(item) || "Nouveau")}</span>
-                    <b>${escapeHtml(ratingLabel(item) || "18+")}</b>
+                    <b>${escapeHtml(ratingLabel(item) || "R")}</b>
                 </span>
             </span>
         </button>
@@ -366,7 +366,7 @@ function cardTemplate(item) {
 function renderGroupedItems(items) {
     const groups = new Map();
     items.forEach((item) => {
-        const label = itemCategories(item)[0] || "Adults";
+        const label = itemCategories(item)[0] || "Reserve";
         const key = categoryKey(label);
         if (!groups.has(key)) groups.set(key, { label, items: [] });
         groups.get(key).items.push(item);
@@ -375,9 +375,9 @@ function renderGroupedItems(items) {
         <section class="adult-category-section">
             <div class="adult-category-head">
                 <h2>${escapeHtml(group.label)}</h2>
-                <span>${group.items.length} video(s)</span>
+                <span>${Math.min(group.items.length, PAGE_LIMIT)} video(s)</span>
             </div>
-            <div class="adult-card-grid">${group.items.map(cardTemplate).join("")}</div>
+            <div class="adult-card-grid">${group.items.slice(0, PAGE_LIMIT).map(cardTemplate).join("")}</div>
         </section>
     `).join("");
 }
@@ -513,7 +513,7 @@ async function fetchAdultsPage({ replace = false } = {}) {
     }
     state.loading = replace;
     state.loadingMore = !replace;
-    setStatus("Synchronisation Adults...", "loading");
+    setStatus("Synchronisation Reserve...", "loading");
     renderGrid();
     try {
         if (!state.profileLoaded) {
@@ -542,9 +542,9 @@ async function fetchAdultsPage({ replace = false } = {}) {
             showToast("Session expiree.");
             return;
         }
-        setStatus("Adults indisponible", "");
+        setStatus("Reserve indisponible", "");
         el.adultGrid.innerHTML = `<div class="adult-empty">Provider temporairement indisponible.<button class="adult-retry" type="button" data-retry-adults>Reessayer</button></div>`;
-        showToast(error.message || "Impossible de charger Adults.");
+        showToast(error.message || "Impossible de charger Reserve.");
     } finally {
         state.loading = false;
         state.loadingMore = false;
@@ -639,7 +639,7 @@ async function logout() {
 
 async function playItem(itemId) {
     if (!String(itemId || "").startsWith("eporner~video~")) {
-        showToast("Cette page ouvre uniquement les contenus Adults Eporner.");
+        showToast("Cette page ouvre uniquement les contenus Reserve Eporner.");
         return;
     }
     if (state.openingItemId) return;
@@ -658,14 +658,14 @@ async function playItem(itemId) {
             })
         });
         if (stream.playbackMode !== "embed") {
-            throw new Error("Le provider Adults doit s'ouvrir en iframe.");
+            throw new Error("Le provider Reserve doit s'ouvrir en iframe.");
         }
         state.activeSessionToken = stream.token;
-        el.playerTitle.textContent = item.name || "Adults";
+        el.playerTitle.textContent = item.name || "Reserve";
         el.embedFrame.src = resolveApiResourceUrl(stream.proxyUrl);
         el.playerModal.hidden = false;
         startHeartbeat();
-        setStatus("Lecture Adults ouverte", "ready");
+        setStatus("Lecture Reserve ouverte", "ready");
     } catch (error) {
         setStatus("Lecture refusee", "");
         showToast(error.message || "Impossible d'ouvrir cette video.");
@@ -718,7 +718,7 @@ function boot() {
     renderGrid();
     if (localStorage.getItem(AGE_KEY) !== "1") {
         el.ageModal.hidden = false;
-        setStatus("Verification 18+", "");
+        setStatus("Verification Reserve", "");
         return;
     }
     loadAdults();

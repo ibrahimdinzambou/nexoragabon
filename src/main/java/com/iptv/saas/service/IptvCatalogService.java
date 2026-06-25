@@ -2,11 +2,14 @@ package com.iptv.saas.service;
 
 import com.iptv.saas.domain.Enums;
 import com.iptv.saas.domain.IptvAccount;
+import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.repository.IptvAccountRepository;
+import com.iptv.saas.repository.UserRepository;
 import com.iptv.saas.web.ApiException;
 import com.iptv.saas.web.Responses;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +62,7 @@ public class IptvCatalogService {
     );
 
     private final IptvAccountRepository accounts;
+    private final UserRepository users;
     private final M3uPlaylistService playlists;
     private final XtreamCatalogService xtream;
     private final ProviderMetadataService metadata;
@@ -73,7 +77,20 @@ public class IptvCatalogService {
             ProviderMetadataService metadata,
             CatalogImageService images
     ) {
+        this(accounts, null, playlists, xtream, metadata, images);
+    }
+
+    @Autowired
+    public IptvCatalogService(
+            IptvAccountRepository accounts,
+            UserRepository users,
+            M3uPlaylistService playlists,
+            XtreamCatalogService xtream,
+            ProviderMetadataService metadata,
+            CatalogImageService images
+    ) {
         this.accounts = accounts;
+        this.users = users;
         this.playlists = playlists;
         this.xtream = xtream;
         this.metadata = metadata;
@@ -81,8 +98,15 @@ public class IptvCatalogService {
     }
 
     public List<Map<String, Object>> categories(String type) {
-        List<IptvAccount> catalogAccounts = browsableCatalogAccounts();
+        return categories(null, type);
+    }
+
+    public List<Map<String, Object>> categories(UserEntity user, String type) {
+        List<IptvAccount> catalogAccounts = browsableCatalogAccounts(user);
         if (catalogAccounts.isEmpty()) {
+            if (user != null) {
+                return List.of();
+            }
             return demoCategories().stream()
                     .filter(category -> isType(category, type))
                     .toList();
@@ -106,6 +130,10 @@ public class IptvCatalogService {
         return !browsableCatalogAccounts().isEmpty();
     }
 
+    public boolean hasActiveSources(UserEntity user) {
+        return !browsableCatalogAccounts(user).isEmpty();
+    }
+
     public List<Map<String, Object>> items(String type, String query, String categoryId) {
         return items(type, query, categoryId, "default", 0);
     }
@@ -121,9 +149,8 @@ public class IptvCatalogService {
             String sort,
             int requestedLimit
     ) {
-        return items(type, query, categoryId, null, sort, requestedLimit);
+        return items(null, type, query, categoryId, null, sort, requestedLimit);
     }
-
     public List<Map<String, Object>> items(
             String type,
             String query,
@@ -132,12 +159,40 @@ public class IptvCatalogService {
             String sort,
             int requestedLimit
     ) {
+        return items(null, type, query, categoryId, language, sort, requestedLimit);
+    }
+
+    public List<Map<String, Object>> items(
+            UserEntity user,
+            String type,
+            String query,
+            String categoryId,
+            String language,
+            String sort,
+            int requestedLimit
+    ) {
+        return items(user, type, query, categoryId, language, sort, requestedLimit, true);
+    }
+
+    private List<Map<String, Object>> items(
+            UserEntity user,
+            String type,
+            String query,
+            String categoryId,
+            String language,
+            String sort,
+            int requestedLimit,
+            boolean userScoped
+    ) {
         String normalizedType = type == null || type.isBlank() ? "live" : type;
         String normalizedQuery = normalizeIdentity(query);
         String normalizedSort = normalizedSort(sort);
         long limit = requestedLimit <= 0 ? Long.MAX_VALUE : requestedLimit;
-        List<IptvAccount> catalogAccounts = browsableCatalogAccounts();
+        List<IptvAccount> catalogAccounts = userScoped ? browsableCatalogAccounts(user) : browsableCatalogAccounts();
         if (catalogAccounts.isEmpty()) {
+            if (user != null) {
+                return List.of();
+            }
             return demoItems().stream()
                     .filter(item -> item.get("type").equals(normalizedType))
                     .filter(item -> categoryId == null || categoryId.isBlank() || item.get("categoryId").equals(categoryId))
@@ -228,7 +283,11 @@ public class IptvCatalogService {
     }
 
     public List<Map<String, Object>> languages(String type) {
-        List<IptvAccount> catalogAccounts = browsableCatalogAccounts();
+        return languages(null, type);
+    }
+
+    public List<Map<String, Object>> languages(UserEntity user, String type) {
+        List<IptvAccount> catalogAccounts = browsableCatalogAccounts(user);
         if (catalogAccounts.isEmpty()) {
             return List.of();
         }
@@ -313,10 +372,18 @@ public class IptvCatalogService {
     }
 
     public Map<String, Object> seriesInfo(String seriesId, String titleHint) {
+        return seriesInfo(null, seriesId, titleHint);
+    }
+
+    public Map<String, Object> seriesInfo(UserEntity user, String seriesId, String titleHint) {
         Matcher xtreamMatcher = XTREAM_SERIES_ID.matcher(seriesId == null ? "" : seriesId);
         if (xtreamMatcher.matches()) {
+            if (user != null) {
+                throw ApiException.streamUnavailable("La lecture client accepte uniquement les liens M3U assignes");
+            }
             Long accountId = Long.parseLong(xtreamMatcher.group(1));
             IptvAccount account = findCatalogAccount(accountId, Enums.IptvAccountType.XTREAM);
+            requireUserCatalogAccess(user, account);
             boolean usable = isCatalogAccountUsable(account, Enums.IptvAccountType.XTREAM);
             M3uPlaylistService.Series summary = titleHint == null || titleHint.isBlank()
                     ? seriesSummary(account, seriesId, usable)
@@ -330,7 +397,8 @@ public class IptvCatalogService {
                     );
             return mergedSeriesDetails(
                     new SeriesSource(account, summary),
-                    titleHint != null && !titleHint.isBlank() || !usable
+                    titleHint != null && !titleHint.isBlank() || !usable,
+                    activeCatalogAccounts(user)
             );
         }
 
@@ -338,6 +406,7 @@ public class IptvCatalogService {
         if (matcher.matches()) {
             Long accountId = Long.parseLong(matcher.group(1));
             IptvAccount account = findCatalogAccount(accountId, Enums.IptvAccountType.M3U);
+            requireUserCatalogAccess(user, account);
             boolean usable = isCatalogAccountUsable(account, Enums.IptvAccountType.M3U);
             M3uPlaylistService.Series requested = usable
                     ? playlists.load(account).findSeries(seriesId)
@@ -346,13 +415,14 @@ public class IptvCatalogService {
                     .orElseThrow(() -> ApiException.streamUnavailable(
                             "Cette serie n'est plus disponible sur un compte IPTV actif"
                     ));
-            return mergedSeriesDetails(new SeriesSource(account, requested), !usable);
+            return mergedSeriesDetails(new SeriesSource(account, requested), !usable, activeCatalogAccounts(user));
         }
 
         Matcher episodeMatcher = M3U_ITEM_ID.matcher(seriesId == null ? "" : seriesId);
         if (episodeMatcher.matches()) {
             Long accountId = Long.parseLong(episodeMatcher.group(1));
             IptvAccount account = findCatalogAccount(accountId, Enums.IptvAccountType.M3U);
+            requireUserCatalogAccess(user, account);
             boolean usable = isCatalogAccountUsable(account, Enums.IptvAccountType.M3U);
             M3uPlaylistService.Playlist playlist = usable
                     ? playlists.load(account)
@@ -364,7 +434,8 @@ public class IptvCatalogService {
             if ("series".equals(episode.type()) && episode.seriesId() != null) {
                 return mergedSeriesDetails(
                         new SeriesSource(account, playlist.findSeries(episode.seriesId())),
-                        !usable
+                        !usable,
+                        activeCatalogAccounts(user)
                 );
             }
         }
@@ -389,6 +460,33 @@ public class IptvCatalogService {
     }
 
     public Map<String, Object> itemInfo(String itemId) {
+        return itemInfo(null, itemId);
+    }
+
+    public Map<String, Object> itemInfo(UserEntity user, String itemId) {
+        if (user != null) {
+            String normalizedItemId = itemId == null ? "" : itemId;
+            if (XTREAM_ITEM_ID.matcher(normalizedItemId).matches()
+                    || XTREAM_SERIES_ID.matcher(normalizedItemId).matches()) {
+                throw ApiException.streamUnavailable("La lecture client accepte uniquement les liens M3U assignes");
+            }
+            EntrySource requested = requestedEntry(itemId == null ? "" : itemId, true);
+            if (requested == null) {
+                if (isCatalogPublicItemId(itemId)) {
+                    throw ApiException.streamUnavailable("Ce contenu n'est plus disponible sur votre compte IPTV assigne");
+                }
+                return demoItems().stream()
+                        .filter(item -> String.valueOf(item.get("id")).equals(itemId))
+                        .findFirst()
+                        .map(LinkedHashMap::new)
+                        .orElseThrow(() -> ApiException.notFound("Programme introuvable"));
+            }
+            requireUserCatalogAccess(user, requested.account());
+            if (requested.account().accountType != Enums.IptvAccountType.M3U) {
+                throw ApiException.streamUnavailable("La lecture client accepte uniquement les liens M3U assignes");
+            }
+            return itemInfo(requested);
+        }
         EntrySource source = resolvedItemInfoSource(itemId == null ? "" : itemId);
         if (source != null) {
             return itemInfo(source);
@@ -412,9 +510,21 @@ public class IptvCatalogService {
     }
 
     public CatalogAccessDescriptor accessForItem(String itemId) {
+        return accessForItem(null, itemId);
+    }
+
+    public CatalogAccessDescriptor accessForItem(UserEntity user, String itemId) {
         String normalizedItemId = itemId == null ? "" : itemId;
+        if (user != null && (XTREAM_ITEM_ID.matcher(normalizedItemId).matches()
+                || XTREAM_SERIES_ID.matcher(normalizedItemId).matches())) {
+            throw ApiException.streamUnavailable("La lecture client accepte uniquement les liens M3U assignes");
+        }
         EntrySource requested = requestedEntry(normalizedItemId, true);
         if (requested != null) {
+            requireUserCatalogAccess(user, requested.account());
+            if (user != null && requested.account().accountType != Enums.IptvAccountType.M3U) {
+                throw ApiException.streamUnavailable("La lecture client accepte uniquement les liens M3U assignes");
+            }
             return new CatalogAccessDescriptor(
                     canonicalCategoryId(requested.entry().type(), requested.entry().categoryName()),
                     requested.entry().categoryName(),
@@ -424,6 +534,9 @@ public class IptvCatalogService {
         }
         Matcher xtreamMatcher = XTREAM_ITEM_ID.matcher(normalizedItemId);
         if (xtreamMatcher.matches()) {
+            if (user != null) {
+                throw ApiException.streamUnavailable("La lecture client accepte uniquement les liens M3U assignes");
+            }
             return new CatalogAccessDescriptor(null, null, xtreamMatcher.group(2), false);
         }
         return demoItems().stream()
@@ -442,14 +555,29 @@ public class IptvCatalogService {
         return categories("live");
     }
 
+    public List<Map<String, Object>> liveGroups(UserEntity user) {
+        return categories(user, "live");
+    }
+
     public List<Map<String, Object>> liveChannels() {
         return items("live", null, null);
+    }
+
+    public List<Map<String, Object>> liveChannels(UserEntity user) {
+        return items(user, "live", null, null, null, "default", 0);
     }
 
     @Transactional
     public IptvAccount saveAccount(Long id, String name, Enums.IptvAccountType type, String baseUrl, String username,
                                    String password, String playlistUrl, Integer maxStreams, Boolean active,
                                    Instant expiresAt) {
+        return saveAccount(id, name, type, baseUrl, username, password, playlistUrl, maxStreams, active, expiresAt, null);
+    }
+
+    @Transactional
+    public IptvAccount saveAccount(Long id, String name, Enums.IptvAccountType type, String baseUrl, String username,
+                                   String password, String playlistUrl, Integer maxStreams, Boolean active,
+                                   Instant expiresAt, Long assignedUserId) {
         boolean update = id != null;
         IptvAccount account = id == null ? new IptvAccount() : accounts.findById(id)
                 .orElseThrow(() -> ApiException.notFound("Compte IPTV introuvable"));
@@ -462,6 +590,17 @@ public class IptvCatalogService {
         if (maxStreams != null) account.maxStreams = maxStreams;
         if (active != null) account.active = active;
         if (expiresAt != null) account.expiresAt = expiresAt;
+        if (assignedUserId != null && assignedUserId <= 0) {
+            account.assignedUser = null;
+        } else if (assignedUserId != null) {
+            if (users == null) {
+                throw ApiException.validation("Assignation utilisateur indisponible");
+            }
+            account.assignedUser = users.findById(assignedUserId)
+                    .orElseThrow(() -> ApiException.notFound("Utilisateur introuvable"));
+        } else if (!update) {
+            account.assignedUser = null;
+        }
         if (account.accountType == Enums.IptvAccountType.M3U
                 && (account.playlistUrl == null || account.playlistUrl.isBlank())) {
             throw ApiException.validation("URL de playlist obligatoire pour un compte M3U");
@@ -635,6 +774,46 @@ public class IptvCatalogService {
         }
         IptvAccount account = bestAvailableAccount(excluded);
         return new StreamSelection(account, buildXtreamStreamUrl(account, type, itemId));
+    }
+
+    public StreamSelection selectStream(UserEntity user, String type, String itemId) {
+        return selectStream(user, type, itemId, Set.of());
+    }
+
+    public StreamSelection selectStream(UserEntity user, String type, String itemId, Set<Long> excludedAccountIds) {
+        if (user == null || user.id == null) {
+            throw ApiException.forbidden("Utilisateur requis pour lancer le compte IPTV assigne");
+        }
+        Set<Long> excluded = excludedAccountIds == null ? Set.of() : excludedAccountIds;
+        String normalizedItemId = itemId == null ? "" : itemId;
+        if (M3U_SERIES_ID.matcher(normalizedItemId).matches()) {
+            throw ApiException.validation("Selectionnez un episode avant de lancer la lecture");
+        }
+        if (XTREAM_SERIES_ID.matcher(normalizedItemId).matches()
+                || XTREAM_ITEM_ID.matcher(normalizedItemId).matches()) {
+            throw ApiException.streamUnavailable("La lecture client accepte uniquement les liens M3U assignes");
+        }
+
+        EntrySource requestedSource = requestedEntry(normalizedItemId, true);
+        if (requestedSource != null) {
+            IptvAccount requestedAccount = requestedSource.account();
+            if (!isAssignedToUser(requestedAccount, user)) {
+                throw ApiException.forbidden("Ce compte IPTV n'est pas attribue a votre utilisateur");
+            }
+            if (requestedAccount.accountType != Enums.IptvAccountType.M3U) {
+                throw ApiException.streamUnavailable("La lecture client accepte uniquement les liens M3U assignes");
+            }
+            if (excluded.contains(requestedAccount.id) || !canServeStream(requestedAccount)) {
+                throw ApiException.streamUnavailable("Votre compte IPTV assigne ne peut pas servir ce contenu");
+            }
+            return new StreamSelection(
+                    requestedAccount,
+                    requestedSource.entry().streamUrl(),
+                    requestedSource.entry().id()
+            );
+        }
+
+        throw ApiException.streamUnavailable("Selectionnez un contenu provenant de votre playlist M3U assignee");
     }
 
     private EntrySource requestedEntry(String itemId) {
@@ -986,10 +1165,60 @@ public class IptvCatalogService {
         return tied.get(roundRobinIndex(tied.size()));
     }
 
+    private IptvAccount bestAssignedAccount(UserEntity user, Set<Long> excludedAccountIds) {
+        Set<Long> excluded = excludedAccountIds == null ? Set.of() : excludedAccountIds;
+        List<IptvAccount> assignedAccounts = accounts.findByAssignedUser_IdAndActiveTrueAndDisabledFalse(user.id);
+        if (assignedAccounts == null) {
+            assignedAccounts = List.of();
+        }
+        List<IptvAccount> candidates = assignedAccounts.stream()
+                .filter(account -> !excluded.contains(account.id))
+                .filter(account -> account.expiresAt == null || account.expiresAt.isAfter(Instant.now()))
+                .filter(account -> !isMisconfigured(account))
+                .filter(account -> !hasBlockingHealthStatus(account))
+                .filter(account -> account.maxStreams <= 0 || account.activeStreams < account.maxStreams)
+                .toList();
+        if (candidates.isEmpty()) {
+            throw ApiException.serviceUnavailable("Aucun compte IPTV actif n'est attribue a votre utilisateur");
+        }
+        List<IptvAccount> preferredCandidates = accountsWithoutRecentStreamFailures(candidates);
+        double minimumLoad = preferredCandidates.stream().mapToDouble(this::loadRatio).min().orElse(0);
+        List<IptvAccount> tied = preferredCandidates.stream()
+                .filter(account -> Double.compare(loadRatio(account), minimumLoad) == 0)
+                .sorted(Comparator.comparing(account -> account.id))
+                .toList();
+        return tied.get(roundRobinIndex(tied.size()));
+    }
+
+    private boolean isAssignedToUser(IptvAccount account, UserEntity user) {
+        return account != null
+                && account.assignedUser != null
+                && account.assignedUser.id != null
+                && user != null
+                && Objects.equals(account.assignedUser.id, user.id);
+    }
+
     private List<IptvAccount> activeCatalogAccounts() {
         return accounts.findByActiveTrueAndDisabledFalse().stream()
                 .filter(account -> account.accountType == Enums.IptvAccountType.M3U
                         || account.accountType == Enums.IptvAccountType.XTREAM)
+                .filter(account -> account.assignedUser == null)
+                .filter(account -> account.expiresAt == null || account.expiresAt.isAfter(Instant.now()))
+                .filter(account -> !isMisconfigured(account))
+                .filter(account -> !hasBlockingHealthStatus(account))
+                .toList();
+    }
+
+    private List<IptvAccount> activeCatalogAccounts(UserEntity user) {
+        if (user == null) {
+            return activeCatalogAccounts();
+        }
+        List<IptvAccount> assignedAccounts = accounts.findByAssignedUser_IdAndActiveTrueAndDisabledFalse(user.id);
+        if (assignedAccounts == null) {
+            return List.of();
+        }
+        return assignedAccounts.stream()
+                .filter(account -> account.accountType == Enums.IptvAccountType.M3U)
                 .filter(account -> account.expiresAt == null || account.expiresAt.isAfter(Instant.now()))
                 .filter(account -> !isMisconfigured(account))
                 .filter(account -> !hasBlockingHealthStatus(account))
@@ -997,6 +1226,26 @@ public class IptvCatalogService {
     }
 
     private List<IptvAccount> browsableCatalogAccounts() {
+        return browsableCatalogAccounts(null);
+    }
+
+    private List<IptvAccount> browsableCatalogAccounts(UserEntity user) {
+        if (user != null) {
+            Map<Long, IptvAccount> browsable = new LinkedHashMap<>();
+            activeCatalogAccounts(user).forEach(account -> browsable.put(account.id, account));
+            List<IptvAccount> assignedAccounts = accounts.findByAssignedUser_IdAndActiveTrueAndDisabledFalse(user.id);
+            if (assignedAccounts == null) {
+                return List.copyOf(browsable.values());
+            }
+            assignedAccounts.stream()
+                    .filter(account -> account.accountType == Enums.IptvAccountType.M3U)
+                    .filter(account -> !ARCHIVED_BY_ADMIN.equals(account.disabledReason))
+                    .filter(account -> account.expiresAt == null || account.expiresAt.isAfter(Instant.now()))
+                    .filter(account -> !isMisconfigured(account))
+                    .filter(account -> account.active && !account.disabled || hasReusableCatalog(account))
+                    .forEach(account -> browsable.putIfAbsent(account.id, account));
+            return List.copyOf(browsable.values());
+        }
         Map<Long, IptvAccount> browsable = new LinkedHashMap<>();
         activeCatalogAccounts().forEach(account -> browsable.put(account.id, account));
         List<IptvAccount> allAccounts = accounts.findAll();
@@ -1006,12 +1255,19 @@ public class IptvCatalogService {
         allAccounts.stream()
                 .filter(account -> account.accountType == Enums.IptvAccountType.M3U
                         || account.accountType == Enums.IptvAccountType.XTREAM)
+                .filter(account -> account.assignedUser == null)
                 .filter(account -> !ARCHIVED_BY_ADMIN.equals(account.disabledReason))
                 .filter(account -> account.expiresAt == null || account.expiresAt.isAfter(Instant.now()))
                 .filter(account -> !isMisconfigured(account))
                 .filter(account -> account.active && !account.disabled || hasReusableCatalog(account))
                 .forEach(account -> browsable.putIfAbsent(account.id, account));
         return List.copyOf(browsable.values());
+    }
+
+    private void requireUserCatalogAccess(UserEntity user, IptvAccount account) {
+        if (user != null && !isAssignedToUser(account, user)) {
+            throw ApiException.forbidden("Ce compte IPTV n'est pas attribue a votre utilisateur");
+        }
     }
 
     private boolean isMisconfigured(IptvAccount account) {
@@ -1293,12 +1549,20 @@ public class IptvCatalogService {
             SeriesSource requested,
             boolean preferAlternativeAccounts
     ) {
+        return mergedSeriesDetails(requested, preferAlternativeAccounts, activeCatalogAccounts());
+    }
+
+    private Map<String, Object> mergedSeriesDetails(
+            SeriesSource requested,
+            boolean preferAlternativeAccounts,
+            List<IptvAccount> candidateCatalogAccounts
+    ) {
         String key = seriesKey(requested.series());
         Map<Long, SeriesSource> matching = new LinkedHashMap<>();
         if (!preferAlternativeAccounts) {
             matching.put(requested.account().id, requested);
         }
-        List<IptvAccount> availableAccounts = activeCatalogAccounts().stream()
+        List<IptvAccount> availableAccounts = candidateCatalogAccounts.stream()
                 .filter(account -> !preferAlternativeAccounts
                         || !Objects.equals(account.id, requested.account().id))
                 .filter(account -> account.maxStreams <= 0 || account.activeStreams < account.maxStreams)

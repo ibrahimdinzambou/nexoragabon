@@ -139,7 +139,7 @@ public class StreamingService {
             accessType = descriptor.contentType() == null ? normalizedType : descriptor.contentType();
             adult = descriptor.adult();
         } else {
-            IptvCatalogService.CatalogAccessDescriptor descriptor = catalogService.accessForItem(itemId);
+            IptvCatalogService.CatalogAccessDescriptor descriptor = catalogAccessFor(user, itemId);
             categoryId = descriptor.categoryId();
             categoryName = descriptor.categoryName();
             accessType = descriptor.contentType() == null ? normalizedType : descriptor.contentType();
@@ -193,7 +193,7 @@ public class StreamingService {
             streamUrl = resolution.streamUrl();
             streamHeaders = StreamRequestHeaders.encode(resolution.headers());
         } else {
-            IptvCatalogService.StreamSelection selection = catalogService.selectStream(type, itemId);
+            IptvCatalogService.StreamSelection selection = selectCatalogStream(user, type, itemId);
             account = selection.account();
             streamUrl = selection.streamUrl();
             sessionItemId = selection.itemId() == null ? itemId : selection.itemId();
@@ -243,7 +243,8 @@ public class StreamingService {
         }
         IptvCatalogService.StreamSelection selection;
         try {
-            selection = catalogService.selectStream(
+            selection = selectCatalogStream(
+                    session.user,
                     session.contentType,
                     session.itemId,
                     excluded
@@ -369,6 +370,45 @@ public class StreamingService {
 
     private boolean hasEporner() {
         return eporner != null && eporner.isEnabled();
+    }
+
+    private IptvCatalogService.CatalogAccessDescriptor catalogAccessFor(UserEntity user, String itemId) {
+        IptvCatalogService.CatalogAccessDescriptor descriptor = catalogService.accessForItem(user, itemId);
+        if (descriptor == null) {
+            descriptor = catalogService.accessForItem(itemId);
+        }
+        if (descriptor == null) {
+            throw ApiException.streamUnavailable("Contenu IPTV introuvable");
+        }
+        return descriptor;
+    }
+
+    private IptvCatalogService.StreamSelection selectCatalogStream(UserEntity user, String type, String itemId) {
+        IptvCatalogService.StreamSelection selection = catalogService.selectStream(user, type, itemId);
+        if (selection == null) {
+            selection = catalogService.selectStream(type, itemId);
+        }
+        return requireSelection(selection);
+    }
+
+    private IptvCatalogService.StreamSelection selectCatalogStream(
+            UserEntity user,
+            String type,
+            String itemId,
+            Set<Long> excludedAccountIds
+    ) {
+        IptvCatalogService.StreamSelection selection = catalogService.selectStream(user, type, itemId, excludedAccountIds);
+        if (selection == null) {
+            selection = catalogService.selectStream(type, itemId, excludedAccountIds);
+        }
+        return requireSelection(selection);
+    }
+
+    private IptvCatalogService.StreamSelection requireSelection(IptvCatalogService.StreamSelection selection) {
+        if (selection == null) {
+            throw ApiException.streamUnavailable("Aucune source IPTV disponible pour ce contenu");
+        }
+        return selection;
     }
 
     @Transactional(readOnly = true)

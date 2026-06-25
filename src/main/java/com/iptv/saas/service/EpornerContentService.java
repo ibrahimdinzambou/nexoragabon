@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class EpornerContentService {
     public static final String CATEGORY_ADULTS = "adults-eporner";
-    private static final String CATEGORY_NAME = "Adults";
+    private static final String CATEGORY_NAME = "Reserve";
     private static final String ITEM_PREFIX = "eporner";
     private static final String TYPE_MOVIE = "movie";
     private static final String SOURCE = "Eporner";
@@ -170,7 +170,7 @@ public class EpornerContentService {
         int page = Math.max(1, requestedPage);
         int perPage = requestedLimit <= 0 ? Math.min(30, maxPerPage) : Math.min(requestedLimit, maxPerPage);
         if (query == null || query.isBlank()) {
-            return browseItems(sort, Math.max(perPage, Math.min(96, maxPerPage)), page);
+            return browseItems(sort, Math.max(perPage, Math.min(150, maxPerPage)), page);
         }
         return searchItems(normalizedQuery(query), sort, perPage, page);
     }
@@ -204,7 +204,7 @@ public class EpornerContentService {
     private List<Map<String, Object>> browseItems(String sort, int targetLimit, int requestedPage) {
         List<Map<String, Object>> result = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
-        int perPage = Math.max(20, Math.min(40, targetLimit));
+        int perPage = Math.max(20, Math.min(50, targetLimit));
         int pagesPerBatch = Math.max(1, (int) Math.ceil(targetLimit / (double) perPage));
         int startPage = ((Math.max(1, requestedPage) - 1) * pagesPerBatch) + 1;
         int endPage = startPage + pagesPerBatch - 1;

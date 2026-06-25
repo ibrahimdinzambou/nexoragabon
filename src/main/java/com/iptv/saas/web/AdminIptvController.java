@@ -78,7 +78,8 @@ public class AdminIptvController {
                 request.playlistUrl(),
                 request.maxStreams(),
                 request.active(),
-                request.expiresAt()
+                request.expiresAt(),
+                request.assignedUserId()
         )));
     }
 
@@ -94,7 +95,8 @@ public class AdminIptvController {
                 request.playlistUrl(),
                 request.maxStreams(),
                 request.active(),
-                request.expiresAt()
+                request.expiresAt(),
+                request.assignedUserId()
         )));
     }
 
@@ -175,7 +177,8 @@ public class AdminIptvController {
             String playlistUrl,
             Integer maxStreams,
             Boolean active,
-            Instant expiresAt
+            Instant expiresAt,
+            Long assignedUserId
     ) {
     }
 }

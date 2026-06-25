@@ -44,6 +44,20 @@ class TmdbCatalogServiceTests {
     }
 
     @Test
+    void exposesKoreanDramaSeriesCategory() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.start();
+        TmdbCatalogService service = service();
+
+        List<Map<String, Object>> categories = service.categories("series");
+
+        assertTrue(categories.stream().anyMatch(category ->
+                "tmdb-series-korean-drama".equals(category.get("id"))
+                        && "Drama coreens".equals(category.get("name"))
+        ));
+    }
+
+    @Test
     void loadsMovieCategoryItemsMarkedAsTmdbAndVideasyPlayable() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/movie/popular", exchange -> json(exchange, """
@@ -113,6 +127,45 @@ class TmdbCatalogServiceTests {
         assertTrue(query.get().contains("query=matrix"));
         assertEquals(1, items.size());
         assertEquals("tmdb~movie~603", items.get(0).get("id"));
+    }
+
+    @Test
+    void loadsKoreanDramaDiscoveryWithTmdbPlayableSeries() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicReference<String> query = new AtomicReference<>();
+        server.createContext("/discover/tv", exchange -> {
+            query.set(exchange.getRequestURI().getQuery());
+            json(exchange, """
+                    {"page":1,"results":[
+                      {
+                        "id":96102,
+                        "name":"Crash Landing on You",
+                        "overview":"A Korean drama.",
+                        "poster_path":"/cloy.jpg",
+                        "first_air_date":"2019-12-14",
+                        "vote_average":8.5
+                      }
+                    ]}
+                    """);
+        });
+        server.start();
+        TmdbCatalogService service = service();
+
+        List<Map<String, Object>> items = service.items(
+                "series",
+                null,
+                "tmdb-series-korean-drama",
+                null,
+                "default",
+                10
+        );
+
+        assertTrue(query.get().contains("with_origin_country=KR"));
+        assertTrue(query.get().contains("with_original_language=ko"));
+        assertEquals(1, items.size());
+        assertEquals("tmdb~series~96102", items.get(0).get("id"));
+        assertEquals("videasy", items.get(0).get("playbackProvider"));
+        assertEquals("Drama coreens", items.get(0).get("categoryName"));
     }
 
     @Test

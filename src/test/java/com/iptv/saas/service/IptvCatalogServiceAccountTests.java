@@ -2,6 +2,7 @@ package com.iptv.saas.service;
 
 import com.iptv.saas.domain.Enums;
 import com.iptv.saas.domain.IptvAccount;
+import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.repository.IptvAccountRepository;
 import com.iptv.saas.web.ApiException;
 import org.junit.jupiter.api.Test;
@@ -120,5 +121,21 @@ class IptvCatalogServiceAccountTests {
         verify(playlists).invalidate(1L);
         verify(xtream).invalidate(1L);
         verify(metadata).invalidate(1L);
+    }
+
+    @Test
+    void userPlaybackRejectsXtreamItemIds() {
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        M3uPlaylistService playlists = mock(M3uPlaylistService.class);
+        XtreamCatalogService xtream = mock(XtreamCatalogService.class);
+        ProviderMetadataService metadata = mock(ProviderMetadataService.class);
+        CatalogImageService images = mock(CatalogImageService.class);
+        IptvCatalogService catalog = new IptvCatalogService(accounts, playlists, xtream, metadata, images);
+
+        UserEntity user = new UserEntity();
+        user.id = 42L;
+
+        assertThrows(ApiException.class, () -> catalog.selectStream(user, "live", "xtream-1-live-99"));
+        verify(xtream, never()).load(org.mockito.ArgumentMatchers.any());
     }
 }

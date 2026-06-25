@@ -5,7 +5,7 @@ const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT", "OPS"];
 const ACCOUNT_PAGE_SIZES = [12, 24, 48, 96];
 const ADULT_PROVIDER_CATEGORY = {
     id: "adults-eporner",
-    name: "Adults - Eporner",
+    name: "Reserve - Eporner",
     type: "movie",
     source: "Eporner API",
     adult: true,
@@ -431,7 +431,11 @@ async function loadDashboard() {
 }
 
 async function loadIptv() {
-    [state.accounts, state.sessions] = await Promise.all([api("/admin/accounts"), api("/admin/sessions")]);
+    [state.accounts, state.sessions, state.users] = await Promise.all([
+        api("/admin/accounts"),
+        api("/admin/sessions"),
+        api("/admin/users")
+    ]);
     renderAccounts();
     renderSessions();
     el.accountNavCount.textContent = state.accounts.length;
@@ -479,6 +483,8 @@ function accountSearchText(account) {
         account.type,
         account.baseUrl,
         account.playlistUrl,
+        account.assignedUserName,
+        account.assignedUserEmail,
         account.lastHealthStatus,
         account.expiresAt
     ].filter(Boolean).join(" ").toLocaleLowerCase("fr");
@@ -588,7 +594,7 @@ function renderCustomers() {
             <tr data-searchable="${escapeHtml(`${user.name} ${user.email} ${user.role}`)}"><td><span class="cell-main">${escapeHtml(user.name)}</span><span class="cell-sub">${escapeHtml(user.email)}</span></td>
             <td><select class="table-select" data-user-role="${user.id}">${["SUPER_ADMIN","ADMIN","BILLING","SUPPORT","OPS","USER"].map(role => `<option value="${role}" ${role === user.role ? "selected" : ""}>${role.replaceAll("_"," ")}</option>`).join("")}</select></td>
             <td>#${escapeHtml(user.currentOrganizationId)}</td><td><button class="row-action ${user.active ? "positive" : "negative"}" data-user-toggle="${user.id}" data-active="${user.active}">${user.active ? "Actif" : "Inactif"}</button></td><td>${dateLabel(user.createdAt)}</td>
-            <td><div class="row-actions"><button class="row-action adult-access ${hasAdultProviderAccess(user) ? "enabled" : ""}" data-user-adults="${user.id}">${hasAdultProviderAccess(user) ? "Adults ON" : "Adults OFF"}</button><button class="row-action" data-user-categories="${user.id}">Catégories (${user.allowedCategories?.length || 0})</button>${canDeleteUsers && state.user?.id !== user.id ? `<button class="row-action danger" data-user-delete="${user.id}" data-user-email="${escapeHtml(user.email)}">Supprimer</button>` : ""}</div></td></tr>
+            <td><div class="row-actions"><button class="row-action adult-access ${hasAdultProviderAccess(user) ? "enabled" : ""}" data-user-adults="${user.id}">${hasAdultProviderAccess(user) ? "Reserve ON" : "Reserve OFF"}</button><button class="row-action" data-user-categories="${user.id}">Catégories (${user.allowedCategories?.length || 0})</button>${canDeleteUsers && state.user?.id !== user.id ? `<button class="row-action danger" data-user-delete="${user.id}" data-user-email="${escapeHtml(user.email)}">Supprimer</button>` : ""}</div></td></tr>
         `).join("") : emptyRow(6);
     } else {
         el.customersHead.innerHTML = "<tr><th>ID</th><th>Organisation</th><th>Formule</th><th>Droits</th><th>Statut</th><th>Fin de période</th></tr>";
@@ -915,6 +921,7 @@ function openModal(type, item = null) {
                 ${field("username", "Nom d'utilisateur", "")}${field("password", "Mot de passe", "", false, "password")}
                 ${field("maxStreams", "Streams maximum", item?.maxStreams ?? 1, false, "number")}
                 ${field("expiresAt", "Date d'expiration", toLocalDateTime(item?.expiresAt), false, "datetime-local")}
+                ${accountUserSelectField(item)}
                 </div>${checkField("active", "Compte actif", item?.active ?? true)}`,
             submit: form => saveAccount(form, item?.id)
         },
@@ -1033,7 +1040,7 @@ function planEntitlementFields(item) {
         ${categoryCardsField(state.catalogCategories, selectedCategories, {
             name: "entitlementCategories",
             title: "Catégories précises",
-            note: "Sélectionnez les rayons inclus dans cette formule. Les cartes 18+ doivent être cochées explicitement."
+            note: "Sélectionnez les rayons inclus dans cette formule. Les cartes Reserve doivent être cochées explicitement."
         })}
         ${addonCardsField(selectedAddons)}
         ${connectorCardsField(selectedConnectors)}
@@ -1073,13 +1080,13 @@ function categoryLane(type, categories, selectedIds, name) {
 function categoryCard(category, checked, name) {
     const isAdultProvider = isAdultProviderCategory(category);
     const meta = isAdultProvider
-        ? { label: "Adults 18+", tone: "adult", iconName: "lock" }
+        ? { label: "Reserve", tone: "adult", iconName: "lock" }
         : categoryTypeMeta(category.type);
     const details = [
         category.source || "Catalogue IPTV",
         category.addonKey ? `Add-on ${category.addonKey}` : null,
         category.filterRequired ? "Filtre requis" : null,
-        category.adult ? "18+" : null,
+        category.adult ? "Reserve" : null,
         category.privateUse ? "Privé" : null
     ].filter(Boolean);
     return checkboxCard({
@@ -1209,6 +1216,16 @@ function field(name, label, value = "", required = false, type = "text", step = 
 function selectField(name, label, options, selected) {
     return `<label class="admin-field"><span>${label}</span><select name="${name}">${options.map(option => `<option value="${option}" ${option === selected ? "selected" : ""}>${option}</option>`).join("")}</select></label>`;
 }
+function accountUserSelectField(account = null) {
+    const users = (state.users || []).filter(user => user.active && !["SUPER_ADMIN", "ADMIN", "SUPPORT"].includes(user.role));
+    const selected = account?.assignedUserId == null ? "" : String(account.assignedUserId);
+    const options = [`<option value="">Aucun utilisateur</option>`].concat(users.map(user => {
+        const value = String(user.id);
+        const label = `${user.name || "Utilisateur"} - ${user.email}`;
+        return `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
+    }));
+    return `<label class="admin-field"><span>Utilisateur assigne</span><select name="assignedUserId">${options.join("")}</select></label>`;
+}
 function textareaField(name, label, value = "") {
     return `<label class="admin-field"><span>${label}</span><textarea name="${name}">${escapeHtml(value)}</textarea></label>`;
 }
@@ -1240,7 +1257,9 @@ async function saveAccount(form, id) {
     if (!id || playlistUrl) payload.playlistUrl = playlistUrl;
     if (!id || username) payload.username = username;
     if (!id || password) payload.password = password;
+    payload.assignedUserId = form.get("assignedUserId") ? Number(form.get("assignedUserId")) : 0;
     await api(`/admin/accounts${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
+    await loadIptv();
 }
 async function savePlan(form, id) {
     const payload = Object.fromEntries(form.entries());
@@ -1344,7 +1363,7 @@ async function toggleAdultProviderAccess(id) {
     });
     user.allowedCategories = nextCategories;
     renderCustomers();
-    showToast(enabled ? "Acces Adults retire." : "Acces Adults attribue.");
+    showToast(enabled ? "Acces Reserve retire." : "Acces Reserve attribue.");
 }
 
 async function saveAddon(form, id) {

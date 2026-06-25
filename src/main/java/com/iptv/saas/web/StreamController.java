@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -527,7 +528,7 @@ public class StreamController {
         requireAllowedHlsUrl(session, targetUrl);
         String encoded = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(targetUrl.getBytes(StandardCharsets.UTF_8));
-        return "/api/stream/hls/" + session.sessionToken + "?u=" + encoded;
+        return absoluteApiUrl("/api/stream/hls/" + session.sessionToken + "?u=" + encoded);
     }
 
     private String decodeHlsUrl(String encodedUrl) {
@@ -628,7 +629,7 @@ public class StreamController {
         var body = Responses.map();
         body.put("session", ApiMappers.session(session));
         body.put("token", session.sessionToken);
-        body.put("proxyUrl", embed ? session.streamUrl : "/api/stream/proxy/" + session.sessionToken);
+        body.put("proxyUrl", embed ? session.streamUrl : absoluteApiUrl("/api/stream/proxy/" + session.sessionToken));
         body.put("quality", quality);
         body.put("playbackMode",
                 embed
@@ -638,6 +639,20 @@ public class StreamController {
                         ? "mpegts"
                         : "native");
         return body;
+    }
+
+    private String absoluteApiUrl(String path) {
+        String normalizedPath = path == null || path.isBlank()
+                ? "/"
+                : path.startsWith("/") ? path : "/" + path;
+        try {
+            return ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path(normalizedPath)
+                    .build()
+                    .toUriString();
+        } catch (IllegalStateException exception) {
+            return normalizedPath;
+        }
     }
 
     private boolean isEmbedSession(UserSession session) {

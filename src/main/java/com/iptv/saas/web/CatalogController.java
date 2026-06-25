@@ -65,7 +65,7 @@ public class CatalogController {
         UserEntity user = currentUser();
         List<Map<String, Object>> values = new ArrayList<>();
         if (shouldIncludeNativeCatalog(user)) {
-            values.addAll(catalog.categories(type));
+            values.addAll(nativeCategories(user, type));
         }
         if (hasConsumet()) {
             values.addAll(consumet.categories(type));
@@ -83,7 +83,7 @@ public class CatalogController {
 
     @GetMapping("/api/catalog/languages")
     public Object languages(@RequestParam(required = false) String type) {
-        return Responses.ok(catalog.languages(type));
+        return Responses.ok(nativeLanguages(currentUser(), type));
     }
 
     @GetMapping("/api/catalog/items")
@@ -101,7 +101,7 @@ public class CatalogController {
         UserEntity user = currentUser();
         List<List<Map<String, Object>>> resultSets = new ArrayList<>();
         if (shouldIncludeNativeCatalog(user) && shouldQueryNativeCatalog(categoryId)) {
-            addResultSet(resultSets, catalog.items(type, q, categoryId, language, sort, limit));
+            addResultSet(resultSets, nativeItems(user, type, q, categoryId, language, sort, limit));
         }
         if (hasConsumet()) {
             addResultSet(resultSets, consumet.items(type, q, categoryId, language, sort, limit));
@@ -151,7 +151,7 @@ public class CatalogController {
                 ? consumet.seriesInfo(seriesId, title)
                 : hasTmdb() && tmdb.isTmdbItem(seriesId)
                 ? tmdb.seriesInfo(seriesId, title)
-                : catalog.seriesInfo(seriesId, title);
+                : nativeSeriesInfo(user, seriesId, title);
         if (!permits(user, series)) {
             throw ApiException.forbidden("Cette catégorie n'est pas autorisée pour votre compte");
         }
@@ -169,7 +169,7 @@ public class CatalogController {
                 ? tmdb.itemInfo(itemId)
                 : hasEporner() && eporner.isEpornerItem(itemId)
                 ? epornerItemInfo(user, itemId)
-                : catalog.itemInfo(itemId);
+                : nativeItemInfo(user, itemId);
         if (!permits(user, item)) {
             throw ApiException.forbidden("Cette catégorie n'est pas autorisée pour votre compte");
         }
@@ -179,13 +179,13 @@ public class CatalogController {
     @GetMapping("/api/stream/groups")
     public Object groups() {
         UserEntity user = currentUser();
-        return Responses.ok(filterForUser(user, catalog.liveGroups()));
+        return Responses.ok(filterForUser(user, nativeLiveGroups(user)));
     }
 
     @GetMapping("/api/stream/channels")
     public Object channels() {
         UserEntity user = currentUser();
-        return Responses.ok(filterForUser(user, catalog.liveChannels()));
+        return Responses.ok(filterForUser(user, nativeLiveChannels(user)));
     }
 
     private UserEntity currentUser() {
@@ -239,7 +239,62 @@ public class CatalogController {
     }
 
     private boolean shouldIncludeNativeCatalog(UserEntity user) {
-        return catalog.hasActiveSources() || (!addons.hasApprovedAddons(user) && !hasConsumet() && !hasTmdb() && !hasEporner());
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return nativeHasActiveSources(user)
+                || (catalogUser == null && !addons.hasApprovedAddons(user) && !hasConsumet() && !hasTmdb() && !hasEporner());
+    }
+
+    private boolean nativeHasActiveSources(UserEntity user) {
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return catalogUser == null ? catalog.hasActiveSources() : catalog.hasActiveSources(catalogUser);
+    }
+
+    private List<Map<String, Object>> nativeCategories(UserEntity user, String type) {
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return catalogUser == null ? catalog.categories(type) : catalog.categories(catalogUser, type);
+    }
+
+    private List<Map<String, Object>> nativeLanguages(UserEntity user, String type) {
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return catalogUser == null ? catalog.languages(type) : catalog.languages(catalogUser, type);
+    }
+
+    private List<Map<String, Object>> nativeItems(
+            UserEntity user,
+            String type,
+            String q,
+            String categoryId,
+            String language,
+            String sort,
+            int limit
+    ) {
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return catalogUser == null
+                ? catalog.items(type, q, categoryId, language, sort, limit)
+                : catalog.items(catalogUser, type, q, categoryId, language, sort, limit);
+    }
+
+    private Map<String, Object> nativeSeriesInfo(UserEntity user, String seriesId, String title) {
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return catalogUser == null ? catalog.seriesInfo(seriesId, title) : catalog.seriesInfo(catalogUser, seriesId, title);
+    }
+
+    private Map<String, Object> nativeItemInfo(UserEntity user, String itemId) {
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return catalogUser == null ? catalog.itemInfo(itemId) : catalog.itemInfo(catalogUser, itemId);
+    }
+
+    private List<Map<String, Object>> nativeLiveGroups(UserEntity user) {
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return catalogUser == null ? catalog.liveGroups() : catalog.liveGroups(catalogUser);
+    }
+
+    private List<Map<String, Object>> nativeLiveChannels(UserEntity user) {
+        UserEntity catalogUser = nativeCatalogUser(user);
+        return catalogUser == null ? catalog.liveChannels() : catalog.liveChannels(catalogUser);
+    }
+    private UserEntity nativeCatalogUser(UserEntity user) {
+        return SecurityUtils.isAdminLike(user) ? null : user;
     }
 
     private boolean shouldQueryNativeCatalog(String categoryId) {
@@ -275,7 +330,7 @@ public class CatalogController {
     private Map<String, Object> epornerCategory() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", EpornerContentService.CATEGORY_ADULTS);
-        payload.put("name", "Adults");
+        payload.put("name", "Reserve");
         payload.put("type", "movie");
         payload.put("source", "Eporner");
         payload.put("sourceCode", "eporner");

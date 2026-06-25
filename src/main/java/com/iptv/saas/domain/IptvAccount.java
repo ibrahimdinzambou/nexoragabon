@@ -4,6 +4,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -24,6 +26,9 @@ public class IptvAccount extends BaseEntity {
 
     @Column(length = 4000)
     public String playlistUrl;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    public UserEntity assignedUser;
 
     public boolean active = true;
     public boolean disabled = false;

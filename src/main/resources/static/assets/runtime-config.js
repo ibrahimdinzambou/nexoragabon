@@ -25,8 +25,7 @@
             window.NEXORA_NODE_API_BASE_URL || window.NEXORA_ORION_API_BASE_URL || ""
         );
         if (explicit) return explicit;
-        const host = String(window.location.hostname || "").toLowerCase();
-        return localHosts.has(host) ? "http://localhost:3000" : railwayNodeApiBase;
+        return railwayNodeApiBase;
     }
 
     const apiBaseUrl = configuredBase();

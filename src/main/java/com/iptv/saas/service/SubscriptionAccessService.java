@@ -208,17 +208,10 @@ public class SubscriptionAccessService {
         if (manualCategories.contains(categoryId)) {
             return true;
         }
-        if (!isTmdbSearchCategory(categoryId)) {
-            return false;
-        }
         String requestedFamily = tmdbCategoryFamily(categoryId);
         return !requestedFamily.isBlank()
                 && manualCategories.stream()
                 .anyMatch(allowedCategory -> requestedFamily.equals(tmdbCategoryFamily(allowedCategory)));
-    }
-
-    private boolean isTmdbSearchCategory(String categoryId) {
-        return "tmdb-movie-search".equals(categoryId) || "tmdb-series-search".equals(categoryId);
     }
 
     private String tmdbCategoryFamily(String categoryId) {

@@ -50,6 +50,16 @@ class SubscriptionAccessServiceTests {
     }
 
     @Test
+    void tmdbSeriesManualGrantPermitsSameFamilyDetails() {
+        UserEntity user = new UserEntity();
+        user.allowedCategories = "[\"tmdb-series-korean-drama\"]";
+        Subscription subscription = activeSubscription(typeEntitlement("all"));
+
+        assertTrue(access.permits(user, subscription, "series", "tmdb-series-popular", "TMDB - Series populaires", false));
+        assertFalse(access.permits(user, subscription, "movie", "tmdb-movie-popular", "TMDB - Films populaires", false));
+    }
+
+    @Test
     void adultContentNeedsAnExplicitCategoryEntitlement() {
         UserEntity user = new UserEntity();
         Subscription broadSubscription = activeSubscription(typeEntitlement("movie"));
