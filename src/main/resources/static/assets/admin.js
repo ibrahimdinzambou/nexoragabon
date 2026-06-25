@@ -589,13 +589,13 @@ function renderCustomers() {
         `).join("") : emptyRow(5);
     } else if (state.customerTab === "users") {
         const canDeleteUsers = ["SUPER_ADMIN", "ADMIN"].includes(state.user?.role);
-        el.customersHead.innerHTML = "<tr><th>Utilisateur</th><th>Rôle</th><th>Organisation</th><th>Statut</th><th>Création</th><th></th></tr>";
+        el.customersHead.innerHTML = "<tr><th>Utilisateur</th><th>Rôle</th><th>Organisation</th><th>IPTV</th><th>Statut</th><th>Création</th><th></th></tr>";
         el.customersTable.innerHTML = state.users.length ? state.users.map(user => `
             <tr data-searchable="${escapeHtml(`${user.name} ${user.email} ${user.role}`)}"><td><span class="cell-main">${escapeHtml(user.name)}</span><span class="cell-sub">${escapeHtml(user.email)}</span></td>
             <td><select class="table-select" data-user-role="${user.id}">${["SUPER_ADMIN","ADMIN","BILLING","SUPPORT","OPS","USER"].map(role => `<option value="${role}" ${role === user.role ? "selected" : ""}>${role.replaceAll("_"," ")}</option>`).join("")}</select></td>
-            <td>#${escapeHtml(user.currentOrganizationId)}</td><td><button class="row-action ${user.active ? "positive" : "negative"}" data-user-toggle="${user.id}" data-active="${user.active}">${user.active ? "Actif" : "Inactif"}</button></td><td>${dateLabel(user.createdAt)}</td>
+            <td>#${escapeHtml(user.currentOrganizationId)}</td><td>${user.iptvActive ? `<span class="cell-main">IPTV actif</span><span class="cell-sub">${escapeHtml(user.iptvAccountName || `${user.iptvAssignedCount || 1} compte`)}</span>` : `<span class="cell-sub">Aucun compte</span>`}</td><td><button class="row-action ${user.active ? "positive" : "negative"}" data-user-toggle="${user.id}" data-active="${user.active}">${user.active ? "Actif" : "Inactif"}</button></td><td>${dateLabel(user.createdAt)}</td>
             <td><div class="row-actions"><button class="row-action adult-access ${hasAdultProviderAccess(user) ? "enabled" : ""}" data-user-adults="${user.id}">${hasAdultProviderAccess(user) ? "Reserve ON" : "Reserve OFF"}</button><button class="row-action" data-user-categories="${user.id}">Catégories (${user.allowedCategories?.length || 0})</button>${canDeleteUsers && state.user?.id !== user.id ? `<button class="row-action danger" data-user-delete="${user.id}" data-user-email="${escapeHtml(user.email)}">Supprimer</button>` : ""}</div></td></tr>
-        `).join("") : emptyRow(6);
+        `).join("") : emptyRow(7);
     } else {
         el.customersHead.innerHTML = "<tr><th>ID</th><th>Organisation</th><th>Formule</th><th>Droits</th><th>Statut</th><th>Fin de période</th></tr>";
         el.customersTable.innerHTML = state.subscriptions.length ? state.subscriptions.map(item => `

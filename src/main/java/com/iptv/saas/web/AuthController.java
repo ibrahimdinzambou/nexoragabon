@@ -1,6 +1,7 @@
 package com.iptv.saas.web;
 
 import com.iptv.saas.security.SecurityUtils;
+import com.iptv.saas.repository.IptvAccountRepository;
 import com.iptv.saas.service.AuthService;
 import com.iptv.saas.service.BillingService;
 import com.iptv.saas.service.OrganizationService;
@@ -10,6 +11,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,12 +26,25 @@ public class AuthController {
     private final TokenService tokens;
     private final OrganizationService organizations;
     private final BillingService billing;
+    private final IptvAccountRepository iptvAccounts;
 
     public AuthController(AuthService auth, TokenService tokens, OrganizationService organizations, BillingService billing) {
+        this(auth, tokens, organizations, billing, null);
+    }
+
+    @Autowired
+    public AuthController(
+            AuthService auth,
+            TokenService tokens,
+            OrganizationService organizations,
+            BillingService billing,
+            IptvAccountRepository iptvAccounts
+    ) {
         this.auth = auth;
         this.tokens = tokens;
         this.organizations = organizations;
         this.billing = billing;
+        this.iptvAccounts = iptvAccounts;
     }
 
     @PostMapping("/register")
@@ -89,7 +104,21 @@ public class AuthController {
         body.put("user", ApiMappers.user(user));
         body.put("organization", ApiMappers.organization(organizations.currentOrganization(user)));
         body.put("subscription", ApiMappers.subscription(billing.currentSubscription(user)));
+        body.put("iptv", iptvSummary(user.id));
         return Responses.ok(body);
+    }
+
+    private Object iptvSummary(Long userId) {
+        var values = iptvAccounts == null || userId == null
+                ? java.util.List.<com.iptv.saas.domain.IptvAccount>of()
+                : iptvAccounts.findByAssignedUser_IdAndActiveTrueAndDisabledFalse(userId);
+        var body = Responses.map();
+        body.put("assignedCount", values.size());
+        body.put("active", !values.isEmpty());
+        body.put("accountName", values.isEmpty() ? null : values.get(0).name);
+        body.put("accountType", values.isEmpty() ? null : values.get(0).accountType);
+        body.put("health", values.isEmpty() ? null : values.get(0).lastHealthStatus);
+        return body;
     }
 
     @PostMapping("/logout")

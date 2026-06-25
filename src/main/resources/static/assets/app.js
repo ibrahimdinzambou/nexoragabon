@@ -62,6 +62,7 @@ const state = {
     user: null,
     organization: null,
     subscription: null,
+    iptv: null,
     catalog: [...fallbackCatalog],
     browseCatalog: [...fallbackCatalog],
     categories: [],
@@ -587,12 +588,15 @@ function formatAccountDate(value) {
 
 function renderBillingSettings() {
     const plan = state.subscription?.plan;
+    const iptv = state.iptv || {};
     elements.settingsPlan.textContent = plan?.name || "Aucune formule";
     elements.settingsStatus.textContent = statusLabel(state.subscription?.status);
     elements.settingsPeriodEnd.textContent = formatAccountDate(state.subscription?.currentPeriodEnd);
-    elements.settingsStreams.textContent = plan?.maxConcurrentStreams
+    elements.settingsStreams.textContent = iptv.active
+        ? `IPTV actif - ${iptv.accountName || `${iptv.assignedCount || 1} compte`}`
+        : plan?.maxConcurrentStreams
         ? `${plan.maxConcurrentStreams} simultané${plan.maxConcurrentStreams > 1 ? "s" : ""} par utilisateur`
-        : "—";
+        : "IPTV non assigne";
 }
 
 function normalizeItem(item, type, index) {
@@ -2234,6 +2238,7 @@ async function applySession(data) {
     state.user = data.user || null;
     state.organization = data.organization || null;
     state.subscription = data.subscription || null;
+    state.iptv = data.iptv || null;
     await refreshProfile();
     updateAccountUi();
     await loadCatalog();
@@ -2291,6 +2296,7 @@ async function refreshProfile() {
     state.user = profile.user;
     state.organization = profile.organization;
     state.subscription = profile.subscription;
+    state.iptv = profile.iptv || null;
 }
 
 function updateAccountUi() {
@@ -2333,6 +2339,7 @@ function clearSession() {
     state.user = null;
     state.organization = null;
     state.subscription = null;
+    state.iptv = null;
     state.languages = [];
     state.activeLanguage = "";
     state.pendingAuthAction = null;

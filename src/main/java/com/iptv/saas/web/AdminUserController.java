@@ -2,11 +2,14 @@ package com.iptv.saas.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.iptv.saas.domain.Enums;
+import com.iptv.saas.domain.IptvAccount;
 import com.iptv.saas.domain.UserEntity;
+import com.iptv.saas.repository.IptvAccountRepository;
 import com.iptv.saas.repository.UserRepository;
 import com.iptv.saas.security.SecurityUtils;
 import com.iptv.saas.service.TokenService;
 import jakarta.transaction.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -26,19 +29,43 @@ public class AdminUserController {
     private final UserRepository users;
     private final ObjectMapper mapper;
     private final TokenService tokens;
+    private final IptvAccountRepository iptvAccounts;
 
     public AdminUserController(UserRepository users, ObjectMapper mapper, TokenService tokens) {
+        this(users, mapper, tokens, null);
+    }
+
+    @Autowired
+    public AdminUserController(
+            UserRepository users,
+            ObjectMapper mapper,
+            TokenService tokens,
+            IptvAccountRepository iptvAccounts
+    ) {
         this.users = users;
         this.mapper = mapper;
         this.tokens = tokens;
+        this.iptvAccounts = iptvAccounts;
     }
 
     @GetMapping
     public Object users() {
         return Responses.ok(this.users.findAll().stream()
                 .filter(user -> !isDeleted(user))
-                .map(ApiMappers::user)
+                .map(this::userWithIptv)
                 .toList());
+    }
+
+    private Map<String, Object> userWithIptv(UserEntity user) {
+        Map<String, Object> payload = ApiMappers.user(user);
+        List<IptvAccount> assigned = iptvAccounts == null || user.id == null
+                ? List.of()
+                : iptvAccounts.findByAssignedUser_IdAndActiveTrueAndDisabledFalse(user.id);
+        payload.put("iptvActive", !assigned.isEmpty());
+        payload.put("iptvAssignedCount", assigned.size());
+        payload.put("iptvAccountName", assigned.isEmpty() ? null : assigned.get(0).name);
+        payload.put("iptvAccountHealth", assigned.isEmpty() ? null : assigned.get(0).lastHealthStatus);
+        return payload;
     }
 
     @PatchMapping("/{id}/toggle")
