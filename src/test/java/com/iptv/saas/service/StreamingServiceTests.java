@@ -27,9 +27,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -69,6 +72,59 @@ class StreamingServiceTests {
 
         assertThrows(ApiException.class, () -> service.open(user, "movie", "movie-1"));
         verify(catalog, times(0)).selectStream("movie", "movie-1");
+    }
+
+    @Test
+    void opensAssignedIptvStreamEvenWhenManualCategoryRulesWouldRejectIt() {
+        UserSessionRepository sessions = mock(UserSessionRepository.class);
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        SubscriptionRepository subscriptions = mock(SubscriptionRepository.class);
+        OrganizationService organizations = mock(OrganizationService.class);
+        IptvCatalogService catalog = mock(IptvCatalogService.class);
+        CommunityAddonService addons = mock(CommunityAddonService.class);
+        SubscriptionAccessService access = mock(SubscriptionAccessService.class);
+        TelegramAlertService telegram = mock(TelegramAlertService.class);
+        AuditService audit = mock(AuditService.class);
+        StreamingService service = new StreamingService(
+                sessions, accounts, subscriptions, organizations, catalog, addons, access, telegram, audit, 90
+        );
+
+        Organization organization = new Organization();
+        organization.status = Enums.OrganizationStatus.ACTIVE;
+        UserEntity user = new UserEntity();
+        user.id = 2L;
+        user.allowedCategories = "[\"tmdb-movie-popular\"]";
+        Plan plan = new Plan();
+        plan.maxConcurrentStreams = 1;
+        Subscription subscription = new Subscription();
+        subscription.plan = plan;
+        subscription.status = Enums.SubscriptionStatus.ACTIVE;
+        subscription.currentPeriodEnd = Instant.now().plusSeconds(3600);
+        IptvAccount account = new IptvAccount();
+        account.id = 33L;
+        account.maxStreams = 1;
+
+        String itemId = "m3u-33-private-channel";
+        when(organizations.currentOrganization(user)).thenReturn(organization);
+        when(subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(organization))
+                .thenReturn(Optional.of(subscription));
+        when(catalog.accessForItem(itemId)).thenReturn(
+                new IptvCatalogService.CatalogAccessDescriptor("catalog-cat-live-news", "News", "live", false)
+        );
+        when(catalog.hasAssignedCatalogAccess(user, itemId)).thenReturn(true);
+        when(sessions.findByUserAndStatus(user, Enums.SessionStatus.ACTIVE)).thenReturn(List.of());
+        when(catalog.selectStream(user, "live", itemId)).thenReturn(
+                new IptvCatalogService.StreamSelection(account, "https://provider.test/live.ts", itemId)
+        );
+        when(catalog.health(account)).thenReturn("ok");
+        when(sessions.save(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserSession opened = service.open(user, "live", itemId);
+
+        assertEquals(account, opened.iptvAccount);
+        assertEquals("https://provider.test/live.ts", opened.streamUrl);
+        assertEquals(itemId, opened.itemId);
+        verify(access, times(0)).permits(any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -522,7 +578,7 @@ class StreamingServiceTests {
         UserSession moved = service.failover(session);
 
         assertEquals(0, failed.activeStreams);
-        assertEquals("stream-failed", failed.lastHealthStatus);
+        assertEquals("content-missing", failed.lastHealthStatus);
         assertEquals(1, replacement.activeStreams);
         assertEquals(replacement, moved.iptvAccount);
         assertEquals("https://replacement.test/live.ts", moved.streamUrl);
@@ -576,13 +632,13 @@ class StreamingServiceTests {
 
         assertEquals(unavailable, thrown);
         assertEquals(0, failed.activeStreams);
-        assertEquals(1, failed.failureCount);
-        assertEquals("stream-failed", failed.lastHealthStatus);
+        assertEquals(0, failed.failureCount);
+        assertEquals("content-missing", failed.lastHealthStatus);
         verify(accounts).save(failed);
     }
 
     @Test
-    void disablesAnUnresponsiveAccountAfterRepeatedPlaybackFailures() {
+    void playbackFailuresDoNotDisableTheWholeAccount() {
         UserSessionRepository sessions = mock(UserSessionRepository.class);
         IptvAccountRepository accounts = mock(IptvAccountRepository.class);
         SubscriptionRepository subscriptions = mock(SubscriptionRepository.class);
@@ -636,16 +692,74 @@ class StreamingServiceTests {
 
         UserSession moved = service.failover(session, Set.of(), "provider_unavailable");
 
-        assertFalse(failed.active);
-        assertTrue(failed.disabled);
+        assertTrue(failed.active);
+        assertFalse(failed.disabled);
         assertEquals(0, failed.activeStreams);
-        assertEquals(3, failed.failureCount);
-        assertEquals("disabled", failed.lastHealthStatus);
-        assertEquals("stream-failure:provider_unavailable", failed.disabledReason);
+        assertEquals(2, failed.failureCount);
+        assertEquals("content-missing", failed.lastHealthStatus);
+        assertEquals(null, failed.disabledReason);
         assertEquals(replacement, moved.iptvAccount);
         assertEquals("replacement-channel", moved.itemId);
         verify(accounts).save(failed);
         verify(accounts).save(replacement);
+    }
+
+    @Test
+    void assignedAccountNeverFailsOverToAnotherIptvAccount() {
+        UserSessionRepository sessions = mock(UserSessionRepository.class);
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        SubscriptionRepository subscriptions = mock(SubscriptionRepository.class);
+        OrganizationService organizations = mock(OrganizationService.class);
+        IptvCatalogService catalog = mock(IptvCatalogService.class);
+        CommunityAddonService addons = mock(CommunityAddonService.class);
+        SubscriptionAccessService access = mock(SubscriptionAccessService.class);
+        TelegramAlertService telegram = mock(TelegramAlertService.class);
+        AuditService audit = mock(AuditService.class);
+        StreamingService service = new StreamingService(
+                sessions,
+                accounts,
+                subscriptions,
+                organizations,
+                catalog,
+                addons,
+                access,
+                telegram,
+                audit,
+                90
+        );
+
+        UserEntity owner = new UserEntity();
+        owner.id = 77L;
+        IptvAccount assigned = new IptvAccount();
+        assigned.id = 33L;
+        assigned.active = true;
+        assigned.disabled = false;
+        assigned.activeStreams = 1;
+        assigned.assignedUser = owner;
+
+        UserSession session = new UserSession();
+        session.id = 9L;
+        session.status = Enums.SessionStatus.ACTIVE;
+        session.user = owner;
+        session.iptvAccount = assigned;
+        session.contentType = "live";
+        session.itemId = "private-channel";
+        session.streamUrl = "https://assigned.test/live.ts";
+
+        ApiException thrown = assertThrows(
+                ApiException.class,
+                () -> service.failover(session, Set.of(), "provider_unavailable")
+        );
+
+        assertEquals("Bascule IPTV interdite pour un compte assigne", thrown.getMessage());
+        assertEquals(assigned, session.iptvAccount);
+        assertEquals("https://assigned.test/live.ts", session.streamUrl);
+        assertEquals(0, assigned.activeStreams);
+        assertTrue(assigned.active);
+        assertFalse(assigned.disabled);
+        assertEquals("content-missing", assigned.lastHealthStatus);
+        verify(catalog, never()).selectStream(anyString(), anyString(), anySet());
+        verify(accounts).save(assigned);
     }
 
     @Test

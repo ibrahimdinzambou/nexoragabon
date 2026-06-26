@@ -2,6 +2,7 @@ package com.iptv.saas.web;
 
 import com.iptv.saas.domain.Enums;
 import com.iptv.saas.domain.IptvAccount;
+import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.domain.UserSession;
 import com.iptv.saas.service.CommunityAddonService;
 import com.iptv.saas.service.StreamRelayService;
@@ -27,6 +28,7 @@ import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -61,6 +63,30 @@ class StreamControllerTests {
         assertEquals(200, response.getStatusCode().value());
         verify(streams).failover(eq(failed), anySet(), eq("service_unavailable"));
         verify(relay).open(replacement.streamUrl, null);
+    }
+
+    @Test
+    void doesNotFailoverAssignedIptvAccountProxyFailures() {
+        StreamingService streams = mock(StreamingService.class);
+        StreamRelayService relay = mock(StreamRelayService.class);
+        VlcRemuxService remux = mock(VlcRemuxService.class);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        StreamController controller = controller(streams, relay, remux);
+
+        UserEntity owner = new UserEntity();
+        owner.id = 77L;
+        UserSession assigned = session("token", "https://assigned.test/live.ts");
+        assigned.user = owner;
+        assigned.iptvAccount.assignedUser = owner;
+        ApiException original = ApiException.serviceUnavailable("upstream 503");
+        when(streams.getActiveByToken("token")).thenReturn(assigned);
+        when(request.getHeader(HttpHeaders.RANGE)).thenReturn(null);
+        when(relay.open(assigned.streamUrl, null)).thenThrow(original);
+
+        ApiException thrown = assertThrows(ApiException.class, () -> controller.proxy("token", request));
+
+        assertSame(original, thrown);
+        verify(streams, never()).failover(eq(assigned), anySet(), anyString());
     }
 
     @Test
@@ -179,39 +205,29 @@ class StreamControllerTests {
     }
 
     @Test
-    void preflightSwitchesToAHealthySourceBeforePlaybackStarts() {
+    void preflightReportsFailureWithoutFailoverBeforePlaybackStarts() {
         StreamingService streams = mock(StreamingService.class);
         StreamRelayService relay = mock(StreamRelayService.class);
         VlcRemuxService remux = mock(VlcRemuxService.class);
         StreamController controller = controller(streams, relay, remux);
 
         UserSession failed = session("token", "https://failed.test/live.ts", 1L);
-        UserSession replacement = session("token", "https://replacement.test/live.ts", 2L);
         when(streams.getActiveByToken("token")).thenReturn(failed);
-        when(streams.failover(eq(failed), anySet(), anyString())).thenReturn(replacement);
         when(relay.open(failed.streamUrl, null))
                 .thenThrow(ApiException.serviceUnavailable("empty stream"));
-        when(relay.open(replacement.streamUrl, null)).thenReturn(new StreamRelayService.RelayResponse(
-                200,
-                "video/mp2t",
-                3L,
-                null,
-                null,
-                false,
-                new ByteArrayInputStream(new byte[]{1, 2, 3})
-        ));
 
         Map<String, Object> response = (Map<String, Object>) controller.preflight("token");
         Map<String, Object> data = (Map<String, Object>) response.get("data");
 
         assertEquals(true, response.get("success"));
         assertEquals("/api/stream/proxy/token", data.get("proxyUrl"));
-        verify(streams).failover(eq(failed), anySet(), eq("service_unavailable"));
-        verify(relay).open(replacement.streamUrl, null);
+        assertEquals(false, data.get("preflightOk"));
+        assertEquals("service_unavailable", data.get("preflightCode"));
+        verify(streams, never()).failover(eq(failed), anySet(), anyString());
     }
 
     @Test
-    void preflightProbesNativeHlsPlaylistBeforePlaybackStarts() {
+    void preflightProbesHlsPlaylistBeforePlaybackStarts() {
         StreamingService streams = mock(StreamingService.class);
         StreamRelayService relay = mock(StreamRelayService.class);
         VlcRemuxService remux = mock(VlcRemuxService.class);
@@ -248,7 +264,7 @@ class StreamControllerTests {
         Map<String, Object> data = (Map<String, Object>) response.get("data");
 
         assertEquals(true, response.get("success"));
-        assertEquals("native", data.get("playbackMode"));
+        assertEquals("hls", data.get("playbackMode"));
         assertEquals("/api/stream/proxy/token", data.get("proxyUrl"));
         verify(relay).open(session.streamUrl, null);
         verify(relay).open(segmentUrl, null);

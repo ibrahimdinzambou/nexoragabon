@@ -71,9 +71,9 @@ public class StreamRelayService {
 
     public StreamRelayService(
             @Value("${app.iptv.proxy-range-chunk-bytes:4194304}") long rangeChunkBytes,
-            @Value("${app.iptv.proxy-connect-timeout-seconds:15}") long connectTimeoutSeconds,
-            @Value("${app.iptv.proxy-request-timeout-seconds:30}") long requestTimeoutSeconds,
-            @Value("${app.iptv.proxy-first-byte-timeout-seconds:15}") long firstByteTimeoutSeconds
+            @Value("${app.iptv.proxy-connect-timeout-seconds:4}") long connectTimeoutSeconds,
+            @Value("${app.iptv.proxy-request-timeout-seconds:4}") long requestTimeoutSeconds,
+            @Value("${app.iptv.proxy-first-byte-timeout-seconds:3}") long firstByteTimeoutSeconds
     ) {
         this.rangeChunkBytes = Math.max(262_144, rangeChunkBytes);
         this.connectTimeout = Duration.ofSeconds(Math.max(1, connectTimeoutSeconds));
@@ -380,7 +380,7 @@ public class StreamRelayService {
                     int status = response.statusCode();
                     response.body().close();
                     if (status >= 500 && attempt == 0) {
-                        pauseBeforeRetry();
+                        pauseBeforeRetry(status == 503 ? 500 : 120);
                         continue;
                     }
                     logUpstreamStatus(uri, status);
@@ -524,8 +524,12 @@ public class StreamRelayService {
     }
 
     private void pauseBeforeRetry() {
+        pauseBeforeRetry(120);
+    }
+
+    private void pauseBeforeRetry(long millis) {
         try {
-            Thread.sleep(120);
+            Thread.sleep(millis);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw ApiException.serviceUnavailable("Connexion au flux interrompue");

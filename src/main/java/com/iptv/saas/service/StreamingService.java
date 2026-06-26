@@ -38,9 +38,6 @@ public class StreamingService {
     private final AuditService audit;
     private final int heartbeatTimeoutSeconds;
 
-    @Value("${app.iptv.health-disable-after-failures:3}")
-    private int disableAfterFailures = 3;
-
     public StreamingService(
             UserSessionRepository sessions,
             IptvAccountRepository accounts,
@@ -146,7 +143,8 @@ public class StreamingService {
             adult = descriptor.adult();
         }
         boolean privateAccess = addonItem && addons.hasPrivateAccess(itemId, user)
-                || epornerItem && eporner.hasAccess(user);
+                || epornerItem && eporner.hasAccess(user)
+                || !addonItem && !consumetItem && !epornerItem && catalogService.hasAssignedCatalogAccess(user, itemId);
         boolean permitted = SecurityUtils.isAdminLike(user)
                 || privateAccess
                 || access.permits(user, subscription, accessType, categoryId, categoryName, adult);
@@ -237,6 +235,10 @@ public class StreamingService {
         }
 
         IptvAccount failedAccount = session.iptvAccount;
+        if (isAssignedAccount(failedAccount)) {
+            markStreamFailure(failedAccount, failureCode);
+            throw ApiException.validation("Bascule IPTV interdite pour un compte assigne");
+        }
         Set<Long> excluded = new LinkedHashSet<>(excludedAccountIds == null ? Set.of() : excludedAccountIds);
         if (failedAccount.id != null) {
             excluded.add(failedAccount.id);
@@ -298,52 +300,13 @@ public class StreamingService {
         if (account.activeStreams > 0) {
             account.activeStreams -= 1;
         }
-        if ("stream_unavailable".equals(failureCode)) {
-            account.lastHealthStatus = "content-missing";
-            LOGGER.info(
-                    "Flux absent chez le fournisseur IPTV: compte={}, nom={}, code={}",
-                    account.id,
-                    account.name,
-                    failureCode
-            );
-        } else {
-            account.failureCount += 1;
-            int threshold = Math.max(1, disableAfterFailures);
-            if (account.failureCount >= threshold) {
-                account.active = false;
-                account.disabled = true;
-                account.activeStreams = 0;
-                account.lastHealthStatus = "disabled";
-                account.disabledReason = "stream-failure:" + safeFailureCode(failureCode);
-                LOGGER.warn(
-                        "Compte IPTV desactive apres echecs de lecture: id={}, nom={}, echecs={}, seuil={}, code={}",
-                        account.id,
-                        account.name,
-                        account.failureCount,
-                        threshold,
-                        failureCode
-                );
-                telegram.send(
-                        "Compte IPTV desactive automatiquement",
-                        """
-                        Compte: #%d %s
-                        Echecs lecture: %d/%d
-                        Code: %s
-                        Statut: disabled
-                        """.formatted(account.id, account.name, account.failureCount, threshold, failureCode)
-                );
-            } else {
-                account.lastHealthStatus = "stream-failed";
-                LOGGER.warn(
-                        "Echec lecture IPTV: compte={}, nom={}, echecs={}/{}, code={}",
-                        account.id,
-                        account.name,
-                        account.failureCount,
-                        threshold,
-                        failureCode
-                );
-            }
-        }
+        account.lastHealthStatus = "content-missing";
+        LOGGER.info(
+                "Flux IPTV indisponible sans desactiver le compte: compte={}, nom={}, code={}",
+                account.id,
+                account.name,
+                safeFailureCode(failureCode)
+        );
         accounts.save(account);
     }
 
@@ -503,5 +466,9 @@ public class StreamingService {
                 && right != null
                 && left.id != null
                 && Objects.equals(left.id, right.id);
+    }
+
+    private boolean isAssignedAccount(IptvAccount account) {
+        return account != null && account.assignedUser != null;
     }
 }

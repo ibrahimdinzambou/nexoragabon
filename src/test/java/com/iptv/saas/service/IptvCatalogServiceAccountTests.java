@@ -228,4 +228,100 @@ class IptvCatalogServiceAccountTests {
         assertEquals(5L, items.get(0).get("assignedIptvAccountId"));
         assertEquals("ok", account.lastHealthStatus);
     }
+
+    @Test
+    void assignedXtreamCatalogIsVisibleToClientAndMarkedPrivate() {
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        M3uPlaylistService playlists = mock(M3uPlaylistService.class);
+        XtreamCatalogService xtream = mock(XtreamCatalogService.class);
+        ProviderMetadataService metadata = mock(ProviderMetadataService.class);
+        CatalogImageService images = mock(CatalogImageService.class);
+        IptvCatalogService catalog = new IptvCatalogService(accounts, playlists, xtream, metadata, images);
+
+        UserEntity user = new UserEntity();
+        user.id = 42L;
+        IptvAccount account = assignedXtreamAccount(user);
+        M3uPlaylistService.Entry entry = xtreamLiveEntry(account);
+        M3uPlaylistService.Playlist playlist = new M3uPlaylistService.Playlist(
+                List.of(entry),
+                List.of(new M3uPlaylistService.Category("xtream-cat-9-live-1", "News", "live")),
+                List.of()
+        );
+
+        when(accounts.findByAssignedUser_IdAndActiveTrueAndDisabledFalse(42L)).thenReturn(List.of(account));
+        when(xtream.load(account)).thenReturn(playlist);
+        when(accounts.save(account)).thenReturn(account);
+
+        assertTrue(catalog.hasActiveSources(user));
+        List<Map<String, Object>> items = catalog.items(user, "live", null, null, null, "default", 0);
+
+        assertEquals(1, items.size());
+        assertEquals("Xtream News", items.get(0).get("name"));
+        assertEquals(true, items.get(0).get("privateUse"));
+        assertEquals(true, items.get(0).get("privateAccess"));
+        assertEquals(9L, items.get(0).get("assignedIptvAccountId"));
+        assertEquals("ok", account.lastHealthStatus);
+    }
+
+    @Test
+    void userPlaybackAcceptsAssignedXtreamItemIds() {
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        M3uPlaylistService playlists = mock(M3uPlaylistService.class);
+        XtreamCatalogService xtream = mock(XtreamCatalogService.class);
+        ProviderMetadataService metadata = mock(ProviderMetadataService.class);
+        CatalogImageService images = mock(CatalogImageService.class);
+        IptvCatalogService catalog = new IptvCatalogService(accounts, playlists, xtream, metadata, images);
+
+        UserEntity user = new UserEntity();
+        user.id = 42L;
+        IptvAccount account = assignedXtreamAccount(user);
+        M3uPlaylistService.Entry entry = xtreamLiveEntry(account);
+        M3uPlaylistService.Playlist playlist = new M3uPlaylistService.Playlist(
+                List.of(entry),
+                List.of(new M3uPlaylistService.Category("xtream-cat-9-live-1", "News", "live")),
+                List.of()
+        );
+
+        when(accounts.findById(9L)).thenReturn(Optional.of(account));
+        when(xtream.load(account)).thenReturn(playlist);
+
+        IptvCatalogService.StreamSelection selection = catalog.selectStream(user, "live", entry.id());
+
+        assertEquals(account, selection.account());
+        assertEquals("http://provider.test/live/user/pass/123.ts", selection.streamUrl());
+        assertEquals(entry.id(), selection.itemId());
+    }
+
+    private IptvAccount assignedXtreamAccount(UserEntity user) {
+        IptvAccount account = new IptvAccount();
+        account.id = 9L;
+        account.name = "Assigned Xtream";
+        account.accountType = Enums.IptvAccountType.XTREAM;
+        account.baseUrl = "http://provider.test";
+        account.username = "user";
+        account.password = "pass";
+        account.active = true;
+        account.disabled = false;
+        account.maxStreams = 1;
+        account.assignedUser = user;
+        return account;
+    }
+
+    private M3uPlaylistService.Entry xtreamLiveEntry(IptvAccount account) {
+        return new M3uPlaylistService.Entry(
+                "xtream-" + account.id + "-live-123",
+                "",
+                "Xtream News",
+                "live",
+                "xtream-cat-9-live-1",
+                "News",
+                "",
+                "http://provider.test/live/user/pass/123.ts",
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
 }

@@ -165,6 +165,9 @@ public class StreamController {
                     failedAccountIds.add(session.iptvAccount.id);
                 }
                 logStreamFailure("proxy", session, failure);
+                if (!canFailover(session)) {
+                    throw originalFailure;
+                }
                 if (attempt + 1 >= STREAM_FAILOVER_ATTEMPTS) {
                     throw originalFailure;
                 }
@@ -198,39 +201,17 @@ public class StreamController {
         if (isEmbedSession(session)) {
             return sessionPayload(session);
         }
-        ApiException originalFailure = null;
-        Set<Long> failedAccountIds = new LinkedHashSet<>();
-        for (int attempt = 0; attempt < STREAM_FAILOVER_ATTEMPTS; attempt++) {
-            try {
-                verifySessionReadable(session);
-                return sessionPayload(session);
-            } catch (ApiException failure) {
-                if (originalFailure == null) {
-                    originalFailure = failure;
-                } else {
-                    originalFailure.addSuppressed(failure);
-                }
-                if (session.iptvAccount == null) {
-                    throw originalFailure;
-                }
-                if (session.iptvAccount.id != null) {
-                    failedAccountIds.add(session.iptvAccount.id);
-                }
-                logStreamFailure("preflight", session, failure);
-                if (attempt + 1 >= STREAM_FAILOVER_ATTEMPTS) {
-                    throw originalFailure;
-                }
-                try {
-                    session = streams.failover(session, failedAccountIds, failure.code());
-                } catch (ApiException failoverFailure) {
-                    originalFailure.addSuppressed(failoverFailure);
-                    throw originalFailure;
-                }
-            }
+        Map<String, Object> payload = sessionPayload(session);
+        try {
+            verifySessionReadable(session);
+            payload.put("preflightOk", true);
+        } catch (ApiException failure) {
+            logStreamFailure("preflight", session, failure);
+            payload.put("preflightOk", false);
+            payload.put("preflightCode", failure.code());
+            payload.put("preflightMessage", failure.getMessage());
         }
-        throw originalFailure == null
-                ? ApiException.serviceUnavailable("Flux indisponible")
-                : originalFailure;
+        return payload;
     }
 
     private void verifySessionReadable(UserSession session) {
@@ -623,7 +604,7 @@ public class StreamController {
         );
     }
 
-    private Object sessionPayload(com.iptv.saas.domain.UserSession session) {
+    private Map<String, Object> sessionPayload(com.iptv.saas.domain.UserSession session) {
         String quality = effectiveQuality(session);
         boolean embed = isEmbedSession(session);
         var body = Responses.map();
@@ -631,14 +612,30 @@ public class StreamController {
         body.put("token", session.sessionToken);
         body.put("proxyUrl", embed ? session.streamUrl : absoluteApiUrl("/api/stream/proxy/" + session.sessionToken));
         body.put("quality", quality);
-        body.put("playbackMode",
-                embed
-                        ? "embed"
-                        : "live".equals(session.contentType)
-                        || remux.requiresProcessing(session.streamUrl, quality)
-                        ? "mpegts"
-                        : "native");
+        body.put("playbackMode", playbackMode(session, quality, embed));
+        body.put("canFailover", canFailover(session));
         return body;
+    }
+
+    private boolean canFailover(UserSession session) {
+        return session != null
+                && session.iptvAccount != null
+                && session.iptvAccount.assignedUser == null;
+    }
+
+    private String playbackMode(UserSession session, String quality, boolean embed) {
+        if (embed) {
+            return "embed";
+        }
+        if (looksLikeHlsPlaylistUrl(session.streamUrl)) {
+            return "hls";
+        }
+        if ("live".equals(session.contentType)
+                || remux.requiresProcessing(session.streamUrl, quality)
+                || likelyMpegTs(session.streamUrl)) {
+            return "mpegts";
+        }
+        return "native";
     }
 
     private String absoluteApiUrl(String path) {

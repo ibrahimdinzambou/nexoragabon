@@ -9,6 +9,7 @@ const STREAM_OPEN_RETRY_DELAYS = [500, 1200];
 const IMAGE_RETRY_LIMIT = 2;
 const PLAYER_RECOVERY_DELAY_MS = 6000;
 const PLAYER_STARTUP_TIMEOUT_MS = 10000;
+const STREAM_PREFLIGHT_TIMEOUT_MS = 3500;
 const PLAYER_VISUAL_WATCHDOG_MS = 4500;
 const PLAYER_VISUAL_WATCHDOG_MAX_MS = 14000;
 const PLAYER_MAX_RECOVERY_ATTEMPTS = 4;
@@ -441,9 +442,14 @@ function saveProfileSettings(nextSettings) {
     applyProfileSettings();
 }
 
-function loadRecentlyWatched() {
+function recentlyWatchedKey(user = null) {
+    const owner = user?.id || user?.email || "anonymous";
+    return `${RECENTLY_WATCHED_KEY}:${owner}`;
+}
+
+function loadRecentlyWatched(user = null) {
     try {
-        const values = JSON.parse(localStorage.getItem(RECENTLY_WATCHED_KEY) || "[]");
+        const values = JSON.parse(localStorage.getItem(recentlyWatchedKey(user)) || "[]");
         if (!Array.isArray(values)) return [];
         return values
             .map((item, index) => normalizeRecentItem(item, index))
@@ -466,7 +472,7 @@ function normalizeRecentItem(item, index = 0) {
 
 function saveRecentlyWatched() {
     localStorage.setItem(
-        RECENTLY_WATCHED_KEY,
+        recentlyWatchedKey(state.user),
         JSON.stringify(state.recentlyWatched.slice(0, RECENTLY_WATCHED_LIMIT))
     );
 }
@@ -2239,7 +2245,9 @@ async function applySession(data) {
     state.organization = data.organization || null;
     state.subscription = data.subscription || null;
     state.iptv = data.iptv || null;
+    state.recentlyWatched = loadRecentlyWatched(state.user);
     await refreshProfile();
+    state.recentlyWatched = loadRecentlyWatched(state.user);
     updateAccountUi();
     await loadCatalog();
 }
@@ -2257,6 +2265,7 @@ async function restoreSession() {
 
     try {
         await refreshProfile();
+        state.recentlyWatched = loadRecentlyWatched(state.user);
         updateAccountUi();
         await loadCatalog();
     } catch {
@@ -2343,6 +2352,7 @@ function clearSession() {
     state.languages = [];
     state.activeLanguage = "";
     state.pendingAuthAction = null;
+    state.recentlyWatched = loadRecentlyWatched();
     localStorage.removeItem(TOKEN_KEY);
     updateAccountUi();
     renderLanguageFilter();
@@ -3148,6 +3158,16 @@ async function startStreamFromPayload(item, stream, requestedQuality) {
     applyStreamPayload(stream, requestedQuality);
     setPlayerLoading("Verification du flux...", "Nexora choisit la source la plus stable.");
     const verifiedStream = await preflightActiveStream(requestedQuality);
+    if (verifiedStream.preflightOk === false && !state.activeCanFailover) {
+        const error = new Error(playerOpenErrorMessage({
+            status: 503,
+            code: verifiedStream.preflightCode,
+            message: verifiedStream.preflightMessage
+        }, item));
+        error.status = 503;
+        error.code = verifiedStream.preflightCode;
+        throw error;
+    }
     startHeartbeat();
     setPlayerLoading("Ouverture du flux...", "Connexion directe a la source video.");
     await startStreamPlayback(
@@ -3159,9 +3179,13 @@ async function startStreamFromPayload(item, stream, requestedQuality) {
 
 function applyStreamPayload(stream, requestedQuality) {
     state.activeSessionToken = stream.token || state.activeSessionToken;
-    if (stream.session) {
-        state.activeCanFailover = Boolean(stream.session.iptvAccountId);
+    if (stream.proxyUrl) {
+        state.activeProxyUrl = stream.proxyUrl;
     }
+    if (stream.playbackMode) {
+        state.activePlaybackMode = stream.playbackMode;
+    }
+    state.activeCanFailover = Boolean(stream.canFailover);
     state.activePlaybackQuality = stream.quality || requestedQuality || "auto";
     elements.playerQuality.value = state.activePlaybackQuality;
     if (requestedQuality && state.activePlaybackQuality !== requestedQuality) {
@@ -3170,11 +3194,37 @@ function applyStreamPayload(stream, requestedQuality) {
 }
 
 async function preflightActiveStream(requestedQuality) {
-    const stream = await api(`/stream/preflight/${state.activeSessionToken}`, {
-        method: "POST"
-    });
-    applyStreamPayload(stream, requestedQuality || stream.quality || "auto");
-    return stream;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), STREAM_PREFLIGHT_TIMEOUT_MS);
+    try {
+        const stream = await api(`/stream/preflight/${state.activeSessionToken}`, {
+            method: "POST",
+            signal: controller.signal
+        });
+        applyStreamPayload(stream, requestedQuality || stream.quality || "auto");
+        return stream;
+    } catch (error) {
+        const aborted = error?.name === "AbortError" || controller.signal.aborted;
+        const transient = error?.status === 502 || error?.status === 503 || error?.status === 504;
+        if ((transient || aborted) && !state.activeCanFailover) {
+            const unavailable = new Error("Le fournisseur video ne repond pas pour le moment.");
+            unavailable.status = error?.status || 503;
+            unavailable.code = error?.code || "provider_unavailable";
+            throw unavailable;
+        }
+        if ((!transient && !aborted) || !state.activeProxyUrl || !state.activePlaybackMode) {
+            throw error;
+        }
+        elements.playerMessage.textContent = "Verification distante trop lente, ouverture directe du flux.";
+        return {
+            token: state.activeSessionToken,
+            proxyUrl: state.activeProxyUrl,
+            playbackMode: state.activePlaybackMode,
+            quality: state.activePlaybackQuality || requestedQuality || "auto"
+        };
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
 }
 
 function settleDetachedPlayer() {
@@ -4043,7 +4093,19 @@ async function recoverPlayer(reason) {
             if (fallback) return;
         }
 
-        if (state.activeCanFailover && (preferFailover || state.playerRecoveryAttempts > 1)) {
+        if (preferFailover) {
+            if (state.activeCanFailover) {
+                const failover = await tryFailoverPlayer();
+                if (failover) {
+                    await restartPlaybackFromPayload(failover);
+                    return;
+                }
+            }
+            showPlayerError(reason || "Ce flux est momentanement indisponible chez le fournisseur.");
+            return;
+        }
+
+        if (state.activeCanFailover && state.playerRecoveryAttempts > 1) {
             const failover = await tryFailoverPlayer();
             if (failover) {
                 await restartPlaybackFromPayload(failover);
@@ -4320,7 +4382,9 @@ function mpegtsErrorMessage(type, detail, info) {
 function playerOpenErrorMessage(error, item = state.activePlayerItem) {
     const message = error?.message || "";
     const unavailable = error?.status === 503
+        || error?.code === "provider_unavailable"
         || error?.code === "service_unavailable"
+        || error?.code === "stream_unavailable"
         || /impossible de joindre|service unavailable|timeout/i.test(message);
     if (unavailable && isAddonPublicId(item?.id)) {
         return "Le lien video fourni par cet add-on ne repond pas pour le moment.";
