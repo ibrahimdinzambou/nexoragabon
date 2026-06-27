@@ -1,10 +1,10 @@
 (function () {
-    const railwayApiBase = "https://nexora-api-production.up.railway.app";
-    const railwayNodeApiBase = "https://nexora-node-api-production.up.railway.app";
+    const publicApiBase = "https://api.nexoragabon.com";
+    const publicNodeApiBase = "https://api.nexoragabon.com/node-fr";
     const publicSiteUrl = "https://nexoragabon.com";
     const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
     const proxiedFrontHosts = new Set(["nexoragabon.com", "www.nexoragabon.com"]);
-    const railwayHost = "nexora-api-production.up.railway.app";
+    const apiHost = "api.nexoragabon.com";
 
     function trimSlash(value) {
         return String(value || "").replace(/\/+$/, "");
@@ -14,10 +14,10 @@
         const explicit = trimSlash(window.NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
         const host = String(window.location.hostname || "").toLowerCase();
-        if (localHosts.has(host) || host === railwayHost || host.endsWith(".up.railway.app")) {
+        if (proxiedFrontHosts.has(host) || host === apiHost) {
             return "";
         }
-        return railwayApiBase;
+        return publicApiBase;
     }
 
     function configuredNodeBase() {
@@ -25,7 +25,7 @@
             window.NEXORA_NODE_API_BASE_URL || window.NEXORA_ORION_API_BASE_URL || ""
         );
         if (explicit) return explicit;
-        return railwayNodeApiBase;
+        return publicNodeApiBase;
     }
 
     const apiBaseUrl = configuredBase();
@@ -73,8 +73,8 @@
         nodeApiRoot,
         orionApiBaseUrl: nodeApiBaseUrl,
         publicSiteUrl,
-        railwayApiBase,
-        railwayNodeApiBase
+        railwayApiBase: publicApiBase,
+        railwayNodeApiBase: publicNodeApiBase
     };
     window.NexoraApi = {
         baseUrl: apiBaseUrl,

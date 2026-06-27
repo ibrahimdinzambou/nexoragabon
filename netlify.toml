@@ -3,12 +3,12 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "https://nexora-api-production.up.railway.app/api/:splat"
+  to = "https://api.nexoragabon.com/api/:splat"
   status = 200
   force = true
 
 [[redirects]]
   from = "/actuator/*"
-  to = "https://nexora-api-production.up.railway.app/actuator/:splat"
+  to = "https://api.nexoragabon.com/actuator/:splat"
   status = 200
   force = true

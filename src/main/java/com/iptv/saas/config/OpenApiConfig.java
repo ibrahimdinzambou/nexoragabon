@@ -20,7 +20,7 @@ public class OpenApiConfig {
 
     @Bean
     OpenAPI iptvSaasOpenApi(
-            @Value("${app.public.api-base-url:https://nexora-api-production.up.railway.app}") String publicApiBaseUrl
+            @Value("${app.public.api-base-url:https://api.nexoragabon.com}") String publicApiBaseUrl
     ) {
         return new OpenAPI()
                 .info(new Info()
@@ -43,7 +43,7 @@ public class OpenApiConfig {
 
     private String trimSlash(String value) {
         String normalized = value == null || value.isBlank()
-                ? "https://nexora-api-production.up.railway.app"
+                ? "https://api.nexoragabon.com"
                 : value.trim();
         return normalized.replaceAll("/+$", "");
     }

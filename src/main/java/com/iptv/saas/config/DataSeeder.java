@@ -151,7 +151,7 @@ public class DataSeeder {
                 check.name = "API Health";
                 check.url = trimSlash(environment.getProperty(
                         "app.public.api-base-url",
-                        "https://nexora-api-production.up.railway.app"
+                        "https://api.nexoragabon.com"
                 )) + "/actuator/health";
                 check.method = "GET";
                 check.enabled = true;

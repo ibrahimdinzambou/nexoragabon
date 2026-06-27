@@ -62,7 +62,7 @@ management:
 app:
   public:
     site-url: ${PUBLIC_SITE_URL:https://nexoragabon.com}
-    api-base-url: ${PUBLIC_API_BASE_URL:https://nexora-api-production.up.railway.app}
+    api-base-url: ${PUBLIC_API_BASE_URL:https://api.nexoragabon.com}
   cors:
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:}
   mail:

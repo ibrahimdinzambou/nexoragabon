@@ -30,7 +30,7 @@ public class ApplicationAlertService {
     public ApplicationAlertService(
             @Value("${app.alerts.enabled:false}") boolean enabled,
             @Value("${app.public.site-url:https://nexoragabon.com}") String siteUrl,
-            @Value("${app.public.api-base-url:https://nexora-api-production.up.railway.app}") String apiBaseUrl,
+            @Value("${app.public.api-base-url:https://api.nexoragabon.com}") String apiBaseUrl,
             Environment environment,
             HealthEndpoint healthEndpoint,
             TelegramAlertService telegram
