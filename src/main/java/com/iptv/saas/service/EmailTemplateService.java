@@ -84,6 +84,21 @@ public class EmailTemplateService {
         );
     }
 
+    public String adminMessage(String title, String body, String senderName) {
+        String sender = senderName == null || senderName.isBlank() ? companyName : senderName;
+        return layout(
+                title,
+                "Nouveau message de l'equipe Nexora.",
+                """
+                <div style="padding:22px;border:1px solid #28312b;background:#101512">
+                  <p style="margin:0 0 14px;color:#8b938c;font-size:11px;letter-spacing:.12em">MESSAGE DE %s</p>
+                  <div style="color:#d9ddd7;font-size:14px;line-height:1.75;white-space:pre-line">%s</div>
+                </div>
+                %s
+                """.formatted(escape(sender), escape(body), button("Ouvrir Nexora", publicSiteUrl))
+        );
+    }
+
     public String invoice(Invoice invoice) {
         return invoiceClassic(invoice);
     }

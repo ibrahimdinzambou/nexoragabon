@@ -57,4 +57,16 @@ class CatalogImageServiceTests {
         assertEquals("", payload.get("backdrop"));
         assertEquals("/assets/images/landscape-1.jpg", payload.get("logo"));
     }
+
+    @Test
+    void unwrapsNestedProxyUrlsBeforeLoadingRemoteImages() {
+        CatalogImageService images = new CatalogImageService(1_048_576, 16);
+        String nested = "https://api.nexoragabon.com/api/catalog/images/proxy?url="
+                + "https%3A%2F%2Fapi.nexoragabon.com%2Fapi%2Fcatalog%2Fimages%2Fproxy%3Furl%3D"
+                + "http%253A%252F%252F127.0.0.1%252Fprivate.jpg";
+
+        ApiException exception = assertThrows(ApiException.class, () -> images.loadRemote(nested));
+
+        assertEquals(422, exception.status().value());
+    }
 }

@@ -471,13 +471,178 @@ button {
 
 .notification-dot {
     position: absolute;
-    top: 7px;
-    right: 6px;
-    width: 6px;
-    height: 6px;
+    top: 2px;
+    right: 0;
+    display: grid;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    place-items: center;
     border-radius: 50%;
     background: var(--accent);
-    box-shadow: 0 0 0 2px #111;
+    box-shadow: 0 0 0 2px #111, 0 8px 24px rgba(231, 195, 109, 0.34);
+    color: #090a0c;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.notification-panel {
+    position: fixed;
+    top: 78px;
+    right: var(--page-x);
+    z-index: 1200;
+    width: min(420px, calc(100vw - 28px));
+    max-height: min(620px, calc(100svh - 102px));
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-top: 2px solid var(--accent);
+    background:
+        linear-gradient(145deg, rgba(29, 43, 67, 0.94), rgba(7, 10, 16, 0.98)),
+        #080b11;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(22px);
+    animation: notificationIn 180ms ease both;
+}
+
+.notification-panel[hidden] {
+    display: none;
+}
+
+.notification-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.notification-panel-head .section-kicker {
+    margin-bottom: 8px;
+}
+
+.notification-panel-head h2 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 28px;
+    font-weight: 500;
+}
+
+.notification-mark-read {
+    min-height: 32px;
+    padding: 0 11px;
+    color: var(--accent-strong);
+    border: 1px solid rgba(231, 195, 109, 0.32);
+    border-radius: 2px;
+    background: rgba(231, 195, 109, 0.08);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.notification-list {
+    display: grid;
+    max-height: min(520px, calc(100svh - 190px));
+    overflow-y: auto;
+    padding: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(231, 195, 109, 0.62) rgba(255, 255, 255, 0.07);
+}
+
+.notification-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 12px;
+    width: 100%;
+    padding: 12px;
+    color: var(--ink);
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+}
+
+.notification-item:hover,
+.notification-item:focus-visible {
+    outline: 0;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.notification-item.unread::after {
+    position: absolute;
+    top: 16px;
+    right: 12px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    content: "";
+    background: var(--accent);
+    box-shadow: 0 0 14px rgba(231, 195, 109, 0.72);
+}
+
+.notification-icon {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    color: #081019;
+    background: var(--accent);
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.notification-copy {
+    min-width: 0;
+    padding-right: 12px;
+}
+
+.notification-copy strong,
+.notification-copy span,
+.notification-copy small {
+    display: block;
+}
+
+.notification-copy strong {
+    overflow: hidden;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-copy span {
+    margin-top: 5px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.notification-copy small {
+    margin-top: 8px;
+    color: var(--accent);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.notification-empty {
+    padding: 32px 22px 34px;
+    color: var(--muted);
+    text-align: center;
+}
+
+.notification-empty strong {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--ink);
+    font-family: var(--display);
+    font-size: 24px;
+    font-weight: 500;
 }
 
 .account-button {
@@ -9691,4 +9856,392 @@ body.catalog-mode-browse .catalog-rows {
 [hidden] {
     display: none !important;
     pointer-events: none !important;
+}
+
+/* Final responsive stability guard */
+.media-card img,
+.poster-media-card img,
+.home-poster-card img,
+.home-continue-card img,
+.watch-poster-card img,
+.watch-orbit-card img {
+    background:
+        linear-gradient(145deg, rgba(231, 195, 109, 0.14), rgba(70, 112, 154, 0.12)),
+        #141821 !important;
+}
+
+.poster-card-track .poster-media-card,
+.home-poster-card,
+.watch-poster-card {
+    contain: layout paint;
+}
+
+@media (max-width: 920px) {
+    .topbar {
+        grid-template-columns: auto minmax(0, 1fr) !important;
+        grid-auto-rows: min-content !important;
+        height: auto !important;
+        min-height: 72px !important;
+        padding-top: 12px !important;
+        padding-bottom: 12px !important;
+        gap: 10px 14px !important;
+        overflow: visible !important;
+    }
+
+    .main-nav {
+        grid-column: 1 / -1 !important;
+        order: 3 !important;
+        width: 100% !important;
+    }
+
+    .topbar-actions {
+        min-width: 0 !important;
+    }
+
+    .topbar .search-shell {
+        flex: 1 1 auto !important;
+        width: min(52vw, 360px) !important;
+    }
+
+    .catalog-shell {
+        padding-right: 14px !important;
+        padding-left: 14px !important;
+    }
+
+    .catalog-heading,
+    .catalog-controls,
+    .row-heading {
+        align-items: stretch !important;
+        flex-direction: column !important;
+    }
+
+    .catalog-selectors {
+        width: 100% !important;
+        flex-wrap: wrap !important;
+    }
+
+    .catalog-select,
+    .catalog-select select {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .card-track:not(.poster-card-track) .media-card,
+    .card-track:not(.poster-card-track) .shelf-more-card {
+        flex-basis: min(82vw, 330px) !important;
+        width: min(82vw, 330px) !important;
+        max-width: min(82vw, 330px) !important;
+    }
+
+    #playerModal .player-room-layout,
+    .player-room-layout {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        height: auto !important;
+        min-height: 100svh !important;
+        overflow: visible !important;
+        padding: 14px !important;
+    }
+
+    #playerModal .player-episode-panel,
+    .player-episode-panel {
+        max-height: none !important;
+    }
+}
+
+@media (max-width: 520px) {
+    .brand-name,
+    .account-button #accountLabel {
+        display: none !important;
+    }
+
+    .topbar .search-shell {
+        width: calc(100vw - 118px) !important;
+    }
+
+    .hero {
+        width: calc(100% - 16px) !important;
+        margin-top: 138px !important;
+    }
+
+    .poster-card-track .poster-media-card,
+    .poster-card-track .shelf-more-card,
+    .home-poster-card,
+    .home-trending .home-poster-card,
+    .watch-poster-card {
+        flex-basis: clamp(112px, 42vw, 148px) !important;
+        width: clamp(112px, 42vw, 148px) !important;
+        max-width: clamp(112px, 42vw, 148px) !important;
+    }
+
+    .poster-media-card {
+        grid-template-rows: clamp(168px, 63vw, 222px) 58px !important;
+    }
+
+    .player-room-head {
+        grid-template-columns: auto 1fr auto !important;
+        gap: 10px !important;
+    }
+
+    .player-primary-actions .button,
+    .player-nextprev .button {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+}
+
+@keyframes notificationIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (max-width: 760px) {
+    .notification-button {
+        display: grid !important;
+    }
+
+    .notification-panel {
+        top: 74px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+        max-height: calc(100svh - 150px);
+    }
+
+    .notification-panel-head h2 {
+        font-size: 24px;
+    }
+}
+
+/* All-device responsive guard */
+html,
+body {
+    min-width: 0 !important;
+    max-width: 100% !important;
+}
+
+body > main,
+.topbar,
+.main-nav,
+.topbar-actions,
+.hero,
+.hero-content,
+.catalog-shell,
+.catalog-heading,
+.catalog-controls,
+.catalog-selectors,
+.catalog-rows,
+.home-dashboard,
+.home-panel,
+.content-row,
+.media-row,
+.row-shell,
+.card-track,
+.home-continue-track,
+.home-poster-track,
+.modal-card,
+.detail-card,
+.series-card,
+.player-room {
+    min-width: 0 !important;
+    max-width: min(100%, 100vw) !important;
+    box-sizing: border-box !important;
+}
+
+img,
+video,
+iframe,
+svg {
+    max-width: 100%;
+}
+
+.main-nav,
+.genre-list,
+.catalog-selectors,
+.card-track,
+.home-continue-track,
+.home-poster-track {
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 520px) {
+    .topbar {
+        padding-right: 14px !important;
+        padding-left: 14px !important;
+        gap: 10px !important;
+    }
+
+    .topbar-actions {
+        display: flex !important;
+        gap: 10px !important;
+    }
+
+    .topbar .search-shell {
+        flex: 1 1 auto !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    .topbar .search-box,
+    .topbar .search-shell.open .search-box,
+    .topbar .search-shell.has-query .search-box,
+    .topbar .search-box:hover,
+    .topbar .search-box:focus-within {
+        width: 100% !important;
+    }
+
+    .main-nav {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        justify-content: flex-start !important;
+        gap: 16px !important;
+        scrollbar-width: none !important;
+    }
+
+    .main-nav::-webkit-scrollbar {
+        display: none !important;
+    }
+
+    .nav-link,
+    .adult-nav-entry {
+        flex: 0 0 auto !important;
+        white-space: nowrap !important;
+    }
+
+    .hero {
+        width: calc(100% - 16px) !important;
+        margin-top: 132px !important;
+        border-radius: 12px !important;
+    }
+
+    .hero-backdrop,
+    .hero-vignette {
+        min-height: 360px !important;
+    }
+
+    .hero-content {
+        display: flex !important;
+        min-height: 360px !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        padding: 24px 16px 52px !important;
+        animation-delay: 80ms !important;
+        animation-duration: 420ms !important;
+    }
+
+    .hero h1 {
+        font-size: clamp(31px, 10.5vw, 44px) !important;
+        line-height: 0.98 !important;
+    }
+
+    .hero-copy {
+        margin-top: 14px !important;
+        font-size: 13px !important;
+        line-height: 1.45 !important;
+    }
+
+    .hero-meta {
+        max-width: 100% !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        gap: 8px !important;
+        scrollbar-width: none !important;
+    }
+
+    .hero-meta::-webkit-scrollbar {
+        display: none !important;
+    }
+
+    .hero-meta span {
+        flex: 0 0 auto !important;
+    }
+
+    .hero-actions {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 10px !important;
+        margin-top: 18px !important;
+    }
+
+    .hero-actions .button {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 42px !important;
+    }
+
+    .catalog-shell {
+        padding-right: 8px !important;
+        padding-left: 8px !important;
+    }
+
+    .catalog-heading,
+    .catalog-controls,
+    .home-panel,
+    .row-shell,
+    .media-row,
+    .drama-panel {
+        padding: 14px !important;
+    }
+
+    .catalog-selectors {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .home-mood-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .auth-card,
+    .profile-card,
+    .settings-card,
+    .detail-card,
+    .series-card {
+        width: min(100%, calc(100vw - 20px)) !important;
+        max-height: calc(100dvh - 20px) !important;
+    }
+}
+
+@media (max-width: 360px) {
+    .hero {
+        margin-top: 126px !important;
+    }
+
+    .hero-backdrop,
+    .hero-vignette,
+    .hero-content {
+        min-height: 330px !important;
+    }
+
+    .catalog-heading h2 {
+        font-size: clamp(22px, 8vw, 30px) !important;
+    }
+
+    .card-track:not(.poster-card-track) .media-card,
+    .card-track:not(.poster-card-track) .shelf-more-card,
+    .home-continue-card {
+        flex-basis: min(84vw, 280px) !important;
+        width: min(84vw, 280px) !important;
+        max-width: min(84vw, 280px) !important;
+    }
+}
+
+@media (min-width: 1800px) {
+    .hero,
+    .catalog-shell {
+        max-width: 1920px !important;
+    }
+
+    .player-room-layout {
+        max-width: 2200px !important;
+        margin-right: auto !important;
+        margin-left: auto !important;
+    }
 }

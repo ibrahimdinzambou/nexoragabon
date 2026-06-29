@@ -62,6 +62,8 @@ const state = {
     view: "dashboard",
     customerTab: "organizations",
     billingTab: "payments",
+    messageTargetMode: "USERS",
+    selectedMessageRecipients: new Set(),
     accountFilter: "all",
     accountPage: 1,
     accountPageSize: 24,
@@ -138,6 +140,12 @@ const el = {
     ticketList: document.querySelector("#ticketList"),
     ticketStatusFilter: document.querySelector("#ticketStatusFilter"),
     conversation: document.querySelector("#conversationPanel"),
+    broadcastForm: document.querySelector("#broadcastForm"),
+    messageTargetMode: document.querySelector("#messageTargetMode"),
+    recipientSearch: document.querySelector("#recipientSearch"),
+    recipientList: document.querySelector("#recipientList"),
+    broadcastAudienceCount: document.querySelector("#broadcastAudienceCount"),
+    broadcastResult: document.querySelector("#broadcastResult"),
     opsMetrics: document.querySelector("#opsMetrics"),
     uptimeList: document.querySelector("#uptimeList"),
     auditList: document.querySelector("#auditList"),
@@ -174,6 +182,7 @@ const viewMeta = {
     customers: ["Clients & accès", "ORGANISATIONS ET UTILISATEURS"],
     billing: ["Facturation", "REVENUS ET ABONNEMENTS"],
     support: ["Centre de support", "CONVERSATIONS CLIENTS"],
+    messages: ["Messages", "E-MAILS ET NOTIFICATIONS"],
     ops: ["Opérations", "SANTÉ ET TRAÇABILITÉ"],
     integrations: ["Connecteurs", "CANAUX ET ADD-ONS COMMUNAUTAIRES"],
     legal: ["Documents légaux", "PUBLICATION ET CONFORMITÉ"]
@@ -758,6 +767,80 @@ async function openTicket(id) {
         <form class="reply-form" data-ticket-reply="${ticket.id}"><textarea name="body" placeholder="Écrire une réponse..." required></textarea><div class="reply-actions"><label class="checkbox-field"><input name="internal" type="checkbox"> Note interne</label><button class="admin-button admin-button-primary" type="submit">Envoyer la réponse</button></div></form>`;
 }
 
+async function loadMessages() {
+    state.users = await api("/admin/users");
+    state.selectedMessageRecipients = new Set(
+        [...state.selectedMessageRecipients].filter((id) => state.users.some((user) => user.id === id && user.active))
+    );
+    renderMessageRecipients();
+}
+
+function renderMessageRecipients() {
+    if (!el.recipientList) return;
+    const query = (el.recipientSearch?.value || "").trim().toLocaleLowerCase("fr");
+    const users = state.users
+        .filter((user) => user.active)
+        .filter((user) => !String(user.email || "").startsWith("deleted-user-"))
+        .filter((user) => {
+            if (!query) return true;
+            return `${user.name || ""} ${user.email || ""} ${user.role || ""}`.toLocaleLowerCase("fr").includes(query);
+        });
+
+    const allMode = state.messageTargetMode === "ALL";
+    if (el.recipientSearch) el.recipientSearch.disabled = allMode;
+    el.messageTargetMode?.querySelectorAll("[data-message-target]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.messageTarget === state.messageTargetMode);
+    });
+    const audienceCount = allMode
+        ? state.users.filter((user) => user.active && !String(user.email || "").startsWith("deleted-user-")).length
+        : state.selectedMessageRecipients.size;
+    if (el.broadcastAudienceCount) {
+        el.broadcastAudienceCount.textContent = `${audienceCount} destinataire${audienceCount > 1 ? "s" : ""}`;
+    }
+
+    if (allMode) {
+        el.recipientList.innerHTML = `
+            <div class="recipient-all-state">
+                <strong>Tous les utilisateurs actifs</strong>
+                <span>Le message partira a chaque compte actif et restera visible dans ses notifications.</span>
+            </div>`;
+        return;
+    }
+
+    el.recipientList.innerHTML = users.length ? users.map((user) => {
+        const checked = state.selectedMessageRecipients.has(user.id);
+        return `
+            <label class="recipient-row" role="listitem">
+                <input type="checkbox" value="${escapeHtml(user.id)}" data-message-recipient="${escapeHtml(user.id)}" ${checked ? "checked" : ""}>
+                <span><strong>${escapeHtml(user.name || "Utilisateur")}</strong><small>${escapeHtml(user.email || "")} - ${escapeHtml(String(user.role || "USER").replaceAll("_", " "))}</small></span>
+            </label>`;
+    }).join("") : `<div class="recipient-all-state"><strong>Aucun utilisateur</strong><span>Aucun compte ne correspond a cette recherche.</span></div>`;
+}
+
+async function sendBroadcast(form) {
+    const data = new FormData(form);
+    const payload = {
+        targetMode: state.messageTargetMode,
+        userIds: state.messageTargetMode === "ALL" ? [] : [...state.selectedMessageRecipients],
+        title: String(data.get("title") || "").trim(),
+        body: String(data.get("body") || "").trim(),
+        email: data.has("email"),
+        inApp: data.has("inApp")
+    };
+    const result = await api("/admin/notifications/broadcasts", {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+    if (el.broadcastResult) {
+        el.broadcastResult.textContent = `${result.recipients} destinataire(s), ${result.emails} e-mail(s), ${result.notifications} notification(s).`;
+    }
+    state.selectedMessageRecipients.clear();
+    form.reset();
+    state.messageTargetMode = "USERS";
+    renderMessageRecipients();
+    showToast("Message envoye aux utilisateurs.");
+}
+
 async function loadOps() {
     [state.opsHealth, state.opsMetrics, state.uptime, state.audits] = await Promise.all([
         api("/admin/ops/health"), api("/admin/ops/metrics"), api("/admin/ops/uptime-checks"), api("/admin/ops/audit-logs")
@@ -943,7 +1026,7 @@ function updateNavCounters() {
     el.ticketNavCount.textContent = data.support.openTickets;
 }
 
-const loaders = { dashboard: loadDashboard, iptv: loadIptv, customers: loadCustomers, billing: loadBilling, support: loadSupport, ops: loadOps, integrations: loadIntegrations, legal: loadLegal };
+const loaders = { dashboard: loadDashboard, iptv: loadIptv, customers: loadCustomers, billing: loadBilling, support: loadSupport, messages: loadMessages, ops: loadOps, integrations: loadIntegrations, legal: loadLegal };
 
 function openModal(type, item = null) {
     const configs = {
@@ -1603,6 +1686,13 @@ function filterCurrentView(query) {
 document.addEventListener("click", async event => {
     const viewButton = event.target.closest("[data-view], [data-jump]");
     if (viewButton) return switchView(viewButton.dataset.view || viewButton.dataset.jump);
+    const messageTarget = event.target.closest("[data-message-target]");
+    if (messageTarget) {
+        state.messageTargetMode = messageTarget.dataset.messageTarget;
+        if (el.broadcastResult) el.broadcastResult.textContent = "";
+        renderMessageRecipients();
+        return;
+    }
     const modalButton = event.target.closest("[data-open-modal]");
     if (modalButton) return openModal(modalButton.dataset.openModal);
     if (event.target.closest("[data-close-admin-modal]")) return closeModal();
@@ -1702,9 +1792,20 @@ document.addEventListener("change", async event => {
             await openTicket(event.target.dataset.ticketAssignee);
         } catch (error) { showToast(error.message, true); }
     }
+    if (event.target.matches("[data-message-recipient]")) {
+        const id = Number(event.target.dataset.messageRecipient);
+        if (event.target.checked) state.selectedMessageRecipients.add(id);
+        else state.selectedMessageRecipients.delete(id);
+        if (el.broadcastResult) el.broadcastResult.textContent = "";
+        renderMessageRecipients();
+    }
 });
 
 document.addEventListener("input", event => {
+    if (event.target === el.recipientSearch) {
+        renderMessageRecipients();
+        return;
+    }
     if (event.target.matches("[name='entitlementKeywords']") && event.target.value.trim()) {
         const allAccess = el.dynamicForm.querySelector("[name='entitlementAll']");
         if (allAccess) allAccess.checked = false;
@@ -1712,6 +1813,15 @@ document.addEventListener("input", event => {
 });
 
 document.addEventListener("submit", async event => {
+    if (event.target === el.broadcastForm) {
+        event.preventDefault();
+        try {
+            await sendBroadcast(event.target);
+        } catch (error) {
+            showToast(error.message, true);
+        }
+        return;
+    }
     const reply = event.target.closest("[data-ticket-reply]");
     if (!reply) return;
     event.preventDefault();

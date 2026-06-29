@@ -5,6 +5,7 @@ const MOVIE_SORT_KEY = "nexora_movie_sort";
 const SETTINGS_KEY = "nexora_profile_settings";
 const RECENTLY_WATCHED_KEY = "nexora_recently_watched";
 const ACTIVE_PLAYBACK_KEY = "nexora_active_playback";
+const NOTIFICATION_READ_KEY = "nexora_notification_read";
 const NETWORK_RETRY_DELAYS = [700, 1800, 4000];
 const STREAM_OPEN_RETRY_DELAYS = [500, 1200];
 const IMAGE_RETRY_LIMIT = 2;
@@ -24,6 +25,7 @@ const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
 const HOME_PREVIEW_LIMIT = 30;
 const HOME_SHOWCASE_LIMIT = 20;
+const INITIAL_VISIBLE_CATALOG = { live: 120, movie: 180, series: 180 };
 const LOAD_MORE_INCREMENT = 300;
 const DRAMA_VISIBLE_INCREMENT = 50;
 const DRAMA_SEARCH_PAGE_SIZE = 11;
@@ -97,6 +99,10 @@ const state = {
     activeLanguage: "",
     visibleCatalog: { ...DEFAULT_VISIBLE_CATALOG },
     recentlyWatched: loadRecentlyWatched(),
+    notifications: [],
+    notificationReadIds: loadNotificationReadIds(),
+    notificationPanelOpen: false,
+    notificationLoading: false,
     hiddenCatalogCards: new Set(),
     hiddenContinueCards: new Set(),
     movieSort: localStorage.getItem(MOVIE_SORT_KEY) || "title-asc",
@@ -127,6 +133,7 @@ const state = {
     playerVisualWatchTimer: null,
     playerPauseResumeTimer: null,
     playerLastUserIntentAt: 0,
+    playerUserPaused: false,
     playerDetaching: false,
     playerVisualWatchStartedAt: 0,
     playerVisualFallbackPending: false,
@@ -154,6 +161,7 @@ const state = {
     playerGeneration: 0,
     catalogLoading: false,
     catalogIsFallback: true,
+    catalogMetaLoaded: false,
     catalogRequestId: 0,
     catalogAbortController: null,
     searchResults: [],
@@ -227,6 +235,11 @@ const elements = {
     movieSort: document.querySelector("#movieSort"),
     emptyState: document.querySelector("#emptyState"),
     resetFilters: document.querySelector("#resetFilters"),
+    notificationButtons: [...document.querySelectorAll("[data-notification-button]")],
+    notificationDots: [...document.querySelectorAll(".notification-dot")],
+    notificationPanel: document.querySelector("#notificationPanel"),
+    notificationList: document.querySelector("#notificationList"),
+    notificationMarkRead: document.querySelector("#notificationMarkRead"),
     authModal: document.querySelector("#authModal"),
     authForm: document.querySelector("#authForm"),
     authTabs: document.querySelector("#authTabs"),
@@ -471,7 +484,7 @@ function retryCatalogImage(image, fallback) {
     }
 
     image.onerror = null;
-    image.src = fallback;
+    image.src = fallbackImageForElement(image, fallback);
 }
 
 async function repairCatalogImage(image) {
@@ -497,6 +510,9 @@ async function repairCatalogImage(image) {
         });
     } catch {
         imageRepairInFlight.delete(repairKey);
+        const directSource = tmdbDirectImageUrl(source);
+        image.onerror = () => retryCatalogImage(image, "/assets/images/poster-1.jpg");
+        image.src = directSource || fallbackImageForElement(image, "/assets/images/poster-1.jpg");
         return;
     }
     imageRepairInFlight.delete(repairKey);
@@ -505,10 +521,19 @@ async function repairCatalogImage(image) {
 
     const title = String(image.dataset.imageTitle || "").trim();
     const type = String(image.dataset.imageType || "").trim() || "movie";
-    if (!title) return;
+    if (!title) {
+        image.src = fallbackImageForElement(image, "/assets/images/poster-1.jpg");
+        return;
+    }
 
-    const repaired = await findReplacementPoster(title, type, source);
-    if (!repaired || !image.isConnected) return;
+    const directSource = tmdbDirectImageUrl(source);
+    const repaired = directSource || await findReplacementPoster(title, type, source);
+    if (!image.isConnected) return;
+    if (!repaired) {
+        image.onerror = null;
+        image.src = fallbackImageForElement(image, "/assets/images/poster-1.jpg");
+        return;
+    }
     image.dataset.originalSource = repaired;
     image.dataset.placeholderRepairChecked = "0";
     image.onerror = () => retryCatalogImage(image, "/assets/images/poster-1.jpg");
@@ -562,9 +587,103 @@ function setResilientImage(image, source, fallback) {
 }
 
 window.repairCatalogImage = repairCatalogImage;
+window.retryCatalogImage = retryCatalogImage;
+
+function fallbackImageForElement(image, fallback) {
+    const title = image?.dataset?.imageTitle || image?.alt || "";
+    const type = image?.dataset?.imageType || "";
+    if (title) {
+        return generatedPosterDataUrl(title, type);
+    }
+    return fallback;
+}
+
+function generatedPosterDataUrl(title, type = "") {
+    const label = String(title || "Nexora").trim() || "Nexora";
+    const kind = String(type || "").trim().toUpperCase();
+    const initials = label
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0])
+        .join("")
+        .toUpperCase() || "NX";
+    let hash = 0;
+    for (let index = 0; index < label.length; index += 1) {
+        hash = (hash * 31 + label.charCodeAt(index)) >>> 0;
+    }
+    const hue = hash % 360;
+    const bgA = `hsl(${hue} 38% 18%)`;
+    const bgB = `hsl(${(hue + 48) % 360} 48% 9%)`;
+    const accent = `hsl(${(hue + 18) % 360} 78% 68%)`;
+    const escapedTitle = escapeHtml(label);
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 450">
+            <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                    <stop stop-color="${bgA}"/>
+                    <stop offset="1" stop-color="${bgB}"/>
+                </linearGradient>
+            </defs>
+            <rect width="300" height="450" fill="url(#g)"/>
+            <rect x="22" y="22" width="256" height="406" rx="18" fill="none" stroke="${accent}" stroke-opacity=".34"/>
+            <circle cx="230" cy="92" r="58" fill="${accent}" fill-opacity=".12"/>
+            <text x="150" y="214" text-anchor="middle" fill="${accent}" font-family="Georgia,serif" font-size="78" font-weight="700">${escapeHtml(initials)}</text>
+            <text x="150" y="308" text-anchor="middle" fill="#f7f4ed" font-family="Trebuchet MS,Arial,sans-serif" font-size="22" font-weight="700">
+                ${escapedTitle.length > 22 ? escapedTitle.slice(0, 22) + "..." : escapedTitle}
+            </text>
+            <text x="150" y="340" text-anchor="middle" fill="#c7c4bc" font-family="Trebuchet MS,Arial,sans-serif" font-size="12" letter-spacing="3">${escapeHtml(kind || "NEXORA")}</text>
+        </svg>`;
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
 
 function catalogImageProxyUrl(source) {
-    return resolveApiResourceUrl(`/api/catalog/images/proxy?url=${encodeURIComponent(source)}`);
+    const existingProxy = existingCatalogImageUrl(source);
+    if (existingProxy) {
+        return existingProxy;
+    }
+    return resolveApiResourceUrl(`/api/catalog/images/proxy?url=${encodeURIComponent(unwrapCatalogImageProxyUrl(source))}`);
+}
+
+function existingCatalogImageUrl(source) {
+    const value = String(source || "").trim();
+    if (!value) return "";
+    try {
+        const parsed = new URL(value, window.location.origin);
+        if (parsed.pathname.startsWith("/api/catalog/images/")
+            && !parsed.pathname.endsWith("/api/catalog/images/proxy")) {
+            return parsed.href;
+        }
+    } catch {
+        if (value.startsWith("/api/catalog/images/")
+            && !value.startsWith("/api/catalog/images/proxy")) {
+            return resolveApiResourceUrl(value);
+        }
+    }
+    return "";
+}
+
+function unwrapCatalogImageProxyUrl(source) {
+    let value = String(source || "").trim();
+    for (let depth = 0; depth < 6; depth += 1) {
+        let parsed;
+        try {
+            parsed = new URL(value, window.location.origin);
+        } catch {
+            return value;
+        }
+        if (!parsed.pathname.endsWith("/api/catalog/images/proxy")
+            && parsed.pathname !== "/api/catalog/images/proxy") {
+            return value;
+        }
+        const nested = parsed.searchParams.get("url");
+        if (!nested || nested === value) {
+            return value;
+        }
+        value = nested;
+    }
+    return value;
 }
 
 function tmdbImagePathUrl(path, size = "w500") {
@@ -573,7 +692,7 @@ function tmdbImagePathUrl(path, size = "w500") {
 }
 
 function tmdbDirectImageUrl(source) {
-    const value = String(source || "").trim();
+    const value = unwrapCatalogImageProxyUrl(source);
     if (/^[A-Za-z0-9_-]+\.(?:jpe?g|png|webp|avif)$/i.test(value)) {
         return tmdbImagePathUrl(value);
     }
@@ -590,7 +709,7 @@ function isTmdbImageUrl(url) {
 }
 
 function normalizeImageSource(source, fallback = "/assets/images/landscape-1.jpg") {
-    const value = String(source || "").trim();
+    const value = unwrapCatalogImageProxyUrl(source);
     if (!value) return fallback;
     if (/^(?:file:|[a-z]:[\\/]|\\\\)/i.test(value)) return fallback;
     if (/^\/[A-Za-z0-9_/-]+\.(?:jpe?g|png|webp|avif)$/i.test(value)) {
@@ -606,6 +725,10 @@ function normalizeImageSource(source, fallback = "/assets/images/landscape-1.jpg
     try {
         const parsed = new URL(value, window.location.origin);
         if (!["http:", "https:"].includes(parsed.protocol)) return fallback;
+        if (parsed.pathname.startsWith("/api/catalog/images/")
+            && !parsed.pathname.endsWith("/api/catalog/images/proxy")) {
+            return parsed.href;
+        }
         if (isTmdbImageUrl(parsed)) {
             return parsed.href;
         }
@@ -616,7 +739,7 @@ function normalizeImageSource(source, fallback = "/assets/images/landscape-1.jpg
 }
 
 function normalizeNodeImageSource(source, fallback = "/assets/images/landscape-1.jpg") {
-    const value = String(source || "").trim();
+    const value = unwrapCatalogImageProxyUrl(source);
     if (!value) return fallback;
     if (/^(?:file:|[a-z]:[\\/]|\\\\)/i.test(value)) return fallback;
     if (/^\/[A-Za-z0-9_/-]+\.(?:jpe?g|png|webp|avif)$/i.test(value)) {
@@ -628,6 +751,13 @@ function normalizeNodeImageSource(source, fallback = "/assets/images/landscape-1
     try {
         const parsed = new URL(value, window.location.origin);
         if (!["http:", "https:"].includes(parsed.protocol)) return fallback;
+        if (parsed.pathname.startsWith("/api/catalog/images/")
+            && !parsed.pathname.endsWith("/api/catalog/images/proxy")) {
+            return parsed.href;
+        }
+        if (isTmdbImageUrl(parsed)) {
+            return parsed.href;
+        }
         return catalogImageProxyUrl(parsed.href);
     } catch {
         return normalizeImageSource(value, fallback);
@@ -704,6 +834,27 @@ function loadActivePlayback(user = null) {
     } catch {
         return null;
     }
+}
+
+function notificationReadKey(user = null) {
+    const owner = user?.id || user?.email || "anonymous";
+    return `${NOTIFICATION_READ_KEY}:${owner}`;
+}
+
+function loadNotificationReadIds(user = null) {
+    try {
+        const values = JSON.parse(localStorage.getItem(notificationReadKey(user)) || "[]");
+        return new Set(Array.isArray(values) ? values.map(String) : []);
+    } catch {
+        return new Set();
+    }
+}
+
+function saveNotificationReadIds() {
+    localStorage.setItem(
+        notificationReadKey(state.user),
+        JSON.stringify([...state.notificationReadIds].slice(-120))
+    );
 }
 
 function restoreActivePlayback() {
@@ -881,12 +1032,13 @@ function normalizeItem(item, type, index) {
         || playbackProvider.startsWith("orion")
         || provider.includes("orion")
         || provider.includes("source fr");
-    const fallbackImage = matched?.image || "/assets/images/landscape-1.jpg";
+    const posterFallback = generatedPosterDataUrl(item.name || matched?.name || "Nexora", itemType);
+    const landscapeFallback = matched?.image || "/assets/images/landscape-1.jpg";
     const normalizeSource = isNodeSource ? normalizeNodeImageSource : normalizeImageSource;
     const rawPoster = item.poster || item.image || item.cover || item.thumbnail || item.logo;
     const rawBackdrop = item.backdrop || item.background || item.banner || item.cover || item.image || rawPoster;
-    const image = normalizeSource(rawPoster, fallbackImage);
-    const backdrop = normalizeSource(rawBackdrop, image);
+    const image = normalizeSource(rawPoster, posterFallback);
+    const backdrop = normalizeSource(rawBackdrop, landscapeFallback);
 
     return {
         ...matched,
@@ -952,6 +1104,7 @@ async function loadCatalog() {
         state.catalogIsFallback = true;
         state.categories = [];
         state.languages = [];
+        state.catalogMetaLoaded = false;
         state.browseCatalog = [...fallbackCatalog];
         state.catalog = [...fallbackCatalog];
         state.searchResults = [];
@@ -973,7 +1126,7 @@ async function loadCatalog() {
     renderCatalog();
     renderSearchSuggestions();
 
-    if (!query) {
+    if (!query && !state.catalogMetaLoaded) {
         try {
             const [categories, languages] = await Promise.all([
                 api("/v1/catalog/categories", { signal: abortController.signal }),
@@ -982,6 +1135,7 @@ async function loadCatalog() {
             if (requestId !== state.catalogRequestId) return;
             state.categories = categories || [];
             state.languages = languages || [];
+            state.catalogMetaLoaded = true;
             renderCategories();
             renderAddonFilter();
             renderLanguageFilter();
@@ -989,6 +1143,7 @@ async function loadCatalog() {
             if (requestId !== state.catalogRequestId) return;
             state.categories = [];
             state.languages = [];
+            state.catalogMetaLoaded = false;
             renderAddonFilter();
             renderLanguageFilter();
         }
@@ -1005,12 +1160,15 @@ async function loadCatalog() {
         const resultSets = await Promise.all(
             types.map(async (type) => {
                 const movieLibrary = !query && state.activeType === "movie" && type === "movie";
+                const baseVisible = state.visibleCatalog[type] || defaultCatalogLimit(type);
+                const initialVisible = INITIAL_VISIBLE_CATALOG[type] || baseVisible;
                 const requestedLimit = query
                     ? searchCatalogLimit(type)
-                    : Math.max(
-                        state.visibleCatalog[type] || defaultCatalogLimit(type),
-                        movieLibrary ? defaultCatalogLimit("movie") : defaultCatalogLimit(type)
-                    );
+                    : movieLibrary
+                        ? Math.max(baseVisible, defaultCatalogLimit("movie"))
+                        : state.activeType === "all"
+                            ? Math.min(baseVisible, initialVisible)
+                            : baseVisible;
                 const params = new URLSearchParams({
                     type,
                     limit: String(requestedLimit)
@@ -1088,6 +1246,7 @@ async function loadCatalog() {
             clearSession();
         }
         state.catalogIsFallback = true;
+        state.catalogMetaLoaded = false;
         state.browseCatalog = [...fallbackCatalog];
         state.catalog = [...fallbackCatalog];
         state.searchResults = [];
@@ -1104,6 +1263,7 @@ async function loadCatalog() {
         updateCatalogStatus();
         renderCatalog();
         renderSearchSuggestions();
+        refreshNotifications({ silent: true });
     }
 }
 
@@ -2087,7 +2247,7 @@ function renderHomeForYou(items) {
 
     elements.homeFeaturedCard.innerHTML = `
         <button class="home-featured-card" type="button" data-item-id="${escapeHtml(featured.id)}" data-item-type="${featured.type}">
-            <img src="${homeImage(featured)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-2.jpg')">
+            <img src="${homeImage(featured)}" alt="" decoding="async" data-image-title="${escapeHtml(featured.name)}" data-image-type="${escapeHtml(featured.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '/assets/images/landscape-2.jpg')">
             <span class="home-featured-play" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"></path></svg>
             </span>
@@ -2100,7 +2260,7 @@ function renderHomeForYou(items) {
 
     elements.homeForYouList.innerHTML = miniItems.map((item) => `
         <button class="home-mini-item" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}">
-            <img src="${homeImage(item)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-3.jpg')">
+            <img src="${homeImage(item)}" alt="" decoding="async" data-image-title="${escapeHtml(item.name)}" data-image-type="${escapeHtml(item.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '/assets/images/landscape-3.jpg')">
             <span>
                 <strong>${escapeHtml(item.name)}</strong>
                 <small>${escapeHtml(homeMeta(item))}</small>
@@ -2213,7 +2373,7 @@ function renderHomeContinueCard(item) {
             <button class="home-continue-remove" type="button" data-continue-remove="${escapeHtml(item.id)}" data-continue-type="${item.type}" aria-label="Retirer ${escapeHtml(item.name)} de Continuer la lecture">
                 <span aria-hidden="true">&times;</span>
             </button>
-            <img src="${homeImage(item)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')">
+            <img src="${homeImage(item)}" alt="" decoding="async" data-image-title="${escapeHtml(item.name)}" data-image-type="${escapeHtml(item.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')">
             <span>
                 <strong>${escapeHtml(item.name)}</strong>
                 <small>${escapeHtml(item.isEpisode ? `S${item.season || 1} E${item.episode || 1}` : homeMeta(item))}</small>
@@ -2228,7 +2388,7 @@ function renderHomePosterCard(item, index = 0) {
     const fallback = `/assets/images/poster-${(index % 4) + 1}.jpg`;
     return `
         <button class="home-poster-card" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}">
-            <img src="${homeImage(item, fallback)}" alt="" decoding="async" onerror="retryCatalogImage(this, '${fallback}')">
+            <img src="${homeImage(item, fallback)}" alt="" decoding="async" data-image-title="${escapeHtml(item.name)}" data-image-type="${escapeHtml(item.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '${fallback}')">
             <span>
                 <strong>${escapeHtml(item.name)}</strong>
                 <small>${escapeHtml(homeMeta(item))}</small>
@@ -2254,7 +2414,7 @@ function renderBrowseDashboard(items) {
     return `
         <section class="browse-dashboard" aria-label="${escapeHtml(typeLabel(type))}">
             <article class="browse-originals" data-item-id="${escapeHtml(featured.id)}" data-item-type="${featured.type}">
-                <img src="${homeImage(featured, "/assets/images/landscape-7.jpg")}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-7.jpg')">
+                <img src="${homeImage(featured, "/assets/images/landscape-7.jpg")}" alt="" decoding="async" data-image-title="${escapeHtml(featured.name)}" data-image-type="${escapeHtml(featured.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '/assets/images/landscape-7.jpg')">
                 <div>
                     <p class="section-kicker">${escapeHtml(type === "movie" ? "FILMS ORIGINAUX" : "SERIES ORIGINALES")}</p>
                     <h3>${escapeHtml(title)}</h3>
@@ -3567,10 +3727,13 @@ async function applySession(data) {
     state.subscription = data.subscription || null;
     state.iptv = data.iptv || null;
     state.recentlyWatched = loadRecentlyWatched(state.user);
+    state.notificationReadIds = loadNotificationReadIds(state.user);
     await refreshProfile();
     state.recentlyWatched = loadRecentlyWatched(state.user);
+    state.notificationReadIds = loadNotificationReadIds(state.user);
     updateAccountUi();
     await loadCatalog();
+    await refreshNotifications();
 }
 
 async function restoreSession() {
@@ -3587,8 +3750,10 @@ async function restoreSession() {
     try {
         await refreshProfile();
         state.recentlyWatched = loadRecentlyWatched(state.user);
+        state.notificationReadIds = loadNotificationReadIds(state.user);
         updateAccountUi();
         await loadCatalog();
+        await refreshNotifications();
         restoreActivePlayback();
     } catch {
         clearSession();
@@ -3669,6 +3834,196 @@ function updateCatalogStatus() {
             : " Mode découverte";
 }
 
+async function refreshNotifications(options = {}) {
+    if (state.notificationLoading) return;
+    state.notificationLoading = true;
+    try {
+        let payments = [];
+        let tickets = [];
+        let adminNotifications = [];
+        if (state.user && state.token) {
+            [payments, tickets, adminNotifications] = await Promise.all([
+                api("/billing/payments").catch(() => []),
+                api("/support/tickets").catch(() => []),
+                api("/notifications").catch(() => [])
+            ]);
+        }
+        state.notifications = buildNotifications(payments || [], tickets || [], adminNotifications || []);
+        renderNotifications();
+    } finally {
+        state.notificationLoading = false;
+        if (!options.silent && state.notificationPanelOpen) renderNotifications();
+    }
+}
+
+function buildNotifications(payments = [], tickets = [], adminNotifications = []) {
+    const items = [];
+    if (!state.user) {
+        items.push(notificationItem("session-login", "Compte requis", "Connectez-vous pour recevoir les alertes de lecture, support et facturation.", "Connexion", "!", "auth"));
+        return items;
+    }
+    if (state.catalogLoading) {
+        items.push(notificationItem("catalog-sync", "Catalogue en synchronisation", "Les nouveaux films, series et chaines arrivent progressivement.", "Catalogue", "S", "catalog"));
+    }
+    adminNotifications
+        .slice(0, 6)
+        .forEach((notification) => {
+            items.push(notificationItem(
+                `admin-${notification.id}-${notification.createdAt || ""}`,
+                notification.title || "Message Nexora",
+                notification.body || "",
+                notification.senderName ? `Nexora - ${notification.senderName}` : "Nexora",
+                "N",
+                "",
+                notification.createdAt
+            ));
+        });
+    const subscription = state.subscription || {};
+    const planName = subscription.plan?.name || "Aucune formule";
+    if (!subscription.status) {
+        items.push(notificationItem("subscription-none", "Aucune formule active", "Choisissez une formule pour debloquer tout le catalogue.", "Abonnement", "A", "billing"));
+    } else if (String(subscription.status).toUpperCase() !== "ACTIVE") {
+        items.push(notificationItem(`subscription-${subscription.status}`, `Abonnement ${statusLabel(subscription.status)}`, `${planName}: verifiez votre statut pour eviter une coupure.`, "Abonnement", "A", "billing"));
+    } else if (subscription.currentPeriodEnd) {
+        const days = daysUntil(subscription.currentPeriodEnd);
+        if (days <= 7) {
+            items.push(notificationItem(`subscription-end-${subscription.currentPeriodEnd}`, "Renouvellement proche", `${planName} arrive a echeance dans ${Math.max(days, 0)} jour${days > 1 ? "s" : ""}.`, "Abonnement", "A", "billing"));
+        }
+    }
+    if (state.iptv && state.iptv.active === false) {
+        items.push(notificationItem("iptv-inactive", "Acces IPTV a verifier", state.iptv.accountName ? `${state.iptv.accountName} n'est pas actif.` : "Votre acces IPTV n'est pas actif.", "IPTV", "I", "profile"));
+    }
+    payments
+        .filter((payment) => ["PENDING", "WAITING", "SUBMITTED"].includes(String(payment.status || "").toUpperCase()))
+        .slice(0, 3)
+        .forEach((payment) => {
+            items.push(notificationItem(`payment-${payment.id}-${payment.status}`, "Paiement en attente", `${payment.reference || "Paiement"} - ${moneyLabel(payment.amount, payment.currency)} attend validation.`, "Facturation", "P", "billing", payment.createdAt));
+        });
+    tickets
+        .filter((ticket) => !["CLOSED", "RESOLVED"].includes(String(ticket.status || "").toUpperCase()))
+        .slice(0, 4)
+        .forEach((ticket) => {
+            items.push(notificationItem(`ticket-${ticket.id}-${ticket.status}-${ticket.updatedAt || ticket.createdAt}`, ticket.status === "ANSWERED" ? "Support a repondu" : "Ticket support ouvert", ticket.subject || "Conversation support en cours.", "Support", "T", "support", ticket.updatedAt || ticket.createdAt));
+        });
+    const activePlayback = loadActivePlayback(state.user);
+    if (activePlayback) {
+        items.push(notificationItem(`resume-${activePlayback.type}-${activePlayback.id}`, "Reprendre la lecture", activePlayback.name, "Lecture", "R", "resume"));
+    }
+    if (!items.length) {
+        items.push(notificationItem("all-clear", "Tout est a jour", "Aucune action importante pour le moment.", "Nexora", "N", ""));
+    }
+    return items.slice(0, 12);
+}
+
+function notificationItem(id, title, body, meta, icon, action = "", time = "") {
+    return { id: String(id), title, body, meta, icon, action, time };
+}
+
+function renderNotifications() {
+    const unread = state.notifications.filter((item) => !state.notificationReadIds.has(item.id) && item.id !== "all-clear").length;
+    elements.notificationDots.forEach((dot) => {
+        dot.hidden = unread <= 0;
+        dot.textContent = unread > 9 ? "9+" : String(unread);
+    });
+    elements.notificationButtons.forEach((button) => {
+        button.classList.toggle("active", state.notificationPanelOpen);
+        button.setAttribute("aria-expanded", String(state.notificationPanelOpen));
+    });
+    if (!elements.notificationList) return;
+    if (!state.notifications.length) {
+        elements.notificationList.innerHTML = `<div class="notification-empty"><strong>Aucune notification</strong><span>Les alertes Nexora apparaitront ici.</span></div>`;
+        return;
+    }
+    elements.notificationList.innerHTML = state.notifications.map((item) => {
+        const unreadClass = !state.notificationReadIds.has(item.id) && item.id !== "all-clear" ? "unread" : "";
+        return `
+            <button class="notification-item ${unreadClass}" type="button" data-notification-id="${escapeHtml(item.id)}" data-notification-action="${escapeHtml(item.action)}" role="listitem">
+                <span class="notification-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
+                <span class="notification-copy">
+                    <strong>${escapeHtml(item.title)}</strong>
+                    <span>${escapeHtml(item.body)}</span>
+                    <small>${escapeHtml([item.meta, notificationTimeLabel(item.time)].filter(Boolean).join(" - "))}</small>
+                </span>
+            </button>
+        `;
+    }).join("");
+}
+
+function toggleNotifications(forceOpen = null) {
+    state.notificationPanelOpen = forceOpen === null ? !state.notificationPanelOpen : Boolean(forceOpen);
+    elements.notificationPanel.hidden = !state.notificationPanelOpen;
+    if (state.notificationPanelOpen) refreshNotifications({ silent: true });
+    renderNotifications();
+}
+
+function markNotificationsRead() {
+    state.notifications.forEach((item) => state.notificationReadIds.add(item.id));
+    saveNotificationReadIds();
+    renderNotifications();
+}
+
+function handleNotificationAction(item) {
+    if (!item) return;
+    state.notificationReadIds.add(item.id);
+    saveNotificationReadIds();
+    toggleNotifications(false);
+    switch (item.action) {
+        case "auth":
+        case "profile":
+            handleAccountClick();
+            break;
+        case "billing":
+            if (state.user) {
+                openModal("profileModal");
+                switchSettingsTab("billing");
+            } else {
+                handleAccountClick();
+            }
+            break;
+        case "support":
+            window.location.href = "mailto:support@nexoragabon.com";
+            break;
+        case "catalog":
+            setFilter("all");
+            break;
+        case "resume": {
+            const activePlayback = loadActivePlayback(state.user);
+            if (activePlayback) playItem(activePlayback);
+            break;
+        }
+        default:
+            break;
+    }
+    renderNotifications();
+}
+
+function daysUntil(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 999;
+    return Math.ceil((date.getTime() - Date.now()) / 86_400_000);
+}
+
+function notificationTimeLabel(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60_000));
+    if (minutes < 1) return "maintenant";
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours} h`;
+    return formatAccountDate(value);
+}
+
+function moneyLabel(amount, currency = "XAF") {
+    const value = Number(amount || 0);
+    try {
+        return new Intl.NumberFormat("fr-FR", { style: "currency", currency: currency || "XAF", maximumFractionDigits: 0 }).format(value);
+    } catch {
+        return `${value} ${currency || "XAF"}`;
+    }
+}
+
 function clearSession() {
     state.token = null;
     state.user = null;
@@ -3679,8 +4034,11 @@ function clearSession() {
     state.activeLanguage = "";
     state.pendingAuthAction = null;
     state.recentlyWatched = loadRecentlyWatched();
+    state.notificationReadIds = loadNotificationReadIds();
+    state.notifications = buildNotifications();
     localStorage.removeItem(TOKEN_KEY);
     updateAccountUi();
+    renderNotifications();
     renderLanguageFilter();
 }
 
@@ -4119,6 +4477,7 @@ async function playItem(item, options = {}) {
     state.playerRecoveryAttempts = 0;
     state.playerRecovering = false;
     state.playerRecoveryShouldFailover = false;
+    state.playerUserPaused = false;
     clearPlayerRecoveryTimer();
     state.activePlayerItem = item;
     const requestedQuality = requestedPlaybackQuality(item, options);
@@ -5207,6 +5566,7 @@ function setPlayerLoading(placeholderText, statusText) {
 
 function setPlayerPlaying() {
     state.playerHasStarted = true;
+    state.playerUserPaused = false;
     state.playerErrorShown = false;
     state.playerLastProgressAt = Date.now();
     clearPlayerRecoveryTimer();
@@ -5223,6 +5583,7 @@ function setPlayerPlaying() {
 
 function setEmbedPlayerAwaitingLaunch() {
     state.playerHasStarted = true;
+    state.playerUserPaused = false;
     state.playerLastProgressAt = Date.now();
     clearPlayerRecoveryTimer();
     clearPlayerStartupTimer();
@@ -5234,6 +5595,7 @@ function setEmbedPlayerAwaitingLaunch() {
 
 function setEmbedPlayerOpened(message = "Lecteur externe ouvert.") {
     state.playerHasStarted = true;
+    state.playerUserPaused = false;
     state.playerLastProgressAt = Date.now();
     clearPlayerRecoveryTimer();
     clearPlayerStartupTimer();
@@ -5286,7 +5648,15 @@ function markPlayerUserIntent() {
 }
 
 function isLikelyManualPause() {
-    return Date.now() - state.playerLastUserIntentAt < PLAYER_MANUAL_PAUSE_WINDOW_MS;
+    return state.playerUserPaused || Date.now() - state.playerLastUserIntentAt < PLAYER_MANUAL_PAUSE_WINDOW_MS;
+}
+
+function markPlayerUserPaused() {
+    state.playerUserPaused = true;
+    clearPlayerRecoveryTimer();
+    clearPlayerStartupTimer();
+    clearPlayerPauseResumeTimer();
+    clearPlayerVisualWatchdog();
 }
 
 function schedulePausedPlaybackResume() {
@@ -5295,6 +5665,7 @@ function schedulePausedPlaybackResume() {
         || state.activePlaybackMode === "embed"
         || state.playerErrorShown
         || state.playerRecovering
+        || state.playerUserPaused
         || elements.streamPlayer.ended) {
         return;
     }
@@ -5339,7 +5710,7 @@ function schedulePausedPlaybackResume() {
 
 function schedulePlayerVisualWatchdog(generation) {
     clearPlayerVisualWatchdog();
-    if (!state.activeVisualWatchdogEnabled || state.activePlaybackMode !== "hls") {
+    if (!state.activeVisualWatchdogEnabled || state.activePlaybackMode !== "hls" || state.playerUserPaused) {
         return;
     }
     state.playerVisualWatchStartedAt = Date.now();
@@ -5355,6 +5726,7 @@ function inspectPlayerVisualTrack(generation) {
         || state.activePlaybackMode !== "hls"
         || !state.activeVisualWatchdogEnabled
         || state.playerErrorShown
+        || state.playerUserPaused
         || state.playerVisualFallbackPending
         || !hasActivePlayback()) {
         return;
@@ -5528,6 +5900,7 @@ function schedulePlayerStartupWatchdog(generation) {
             || state.playerHasStarted
             || state.playerRecovering
             || state.playerErrorShown
+            || state.playerUserPaused
             || !hasActivePlayback()) {
             return;
         }
@@ -5553,7 +5926,7 @@ function schedulePlayerStartupWatchdog(generation) {
 }
 
 function schedulePlayerRecovery(reason, immediate = false, preferFailover = false) {
-    if (!state.activeSessionToken || state.playerRecovering || state.playerErrorShown) {
+    if (!state.activeSessionToken || state.playerRecovering || state.playerErrorShown || state.playerUserPaused) {
         return;
     }
     state.playerRecoveryShouldFailover = state.playerRecoveryShouldFailover || Boolean(preferFailover);
@@ -5575,7 +5948,7 @@ function schedulePlayerRecovery(reason, immediate = false, preferFailover = fals
 
 async function recoverPlayer(reason) {
     clearPlayerRecoveryTimer();
-    if (!state.activeSessionToken || state.playerErrorShown || state.playerRecovering) return;
+    if (!state.activeSessionToken || state.playerErrorShown || state.playerRecovering || state.playerUserPaused) return;
     if (state.playerOpening) {
         state.playerRecoveryTimer = window.setTimeout(
             () => recoverPlayer(reason),
@@ -5690,6 +6063,7 @@ function detachPlayerMedia() {
     clearEmbedAssistTimer();
     state.playerVisualWatchStartedAt = 0;
     state.playerLastUserIntentAt = 0;
+    state.playerUserPaused = false;
     state.playerVisualFallbackPending = false;
     state.nativePlaybackRequiresUserLaunch = false;
     state.activeEmbedFallbackUrl = null;
@@ -6554,6 +6928,7 @@ elements.playerNextEpisodeButton?.addEventListener("click", async (event) => {
 });
 
 elements.playerResumeButton?.addEventListener("click", () => {
+    state.playerUserPaused = false;
     if (!elements.streamPlayer.hidden) {
         elements.streamPlayer.play().catch(() => {});
     }
@@ -6651,6 +7026,22 @@ elements.detailPlay.addEventListener("click", () => {
 
 elements.accountButton.addEventListener("click", handleAccountClick);
 elements.footerAccountButton.addEventListener("click", handleAccountClick);
+elements.notificationButtons.forEach((button) => {
+    button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleNotifications();
+    });
+});
+elements.notificationMarkRead?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    markNotificationsRead();
+});
+elements.notificationList?.addEventListener("click", (event) => {
+    const itemButton = event.target.closest("[data-notification-id]");
+    if (!itemButton) return;
+    const item = state.notifications.find((entry) => entry.id === itemButton.dataset.notificationId);
+    handleNotificationAction(item);
+});
 elements.heroPlay.addEventListener("click", playHeroSelection);
 elements.discoverButton.addEventListener("click", discoverHeroSelection);
 elements.heroPrev.addEventListener("click", () => changeHeroSlide(-1));
@@ -6705,6 +7096,11 @@ window.addEventListener("error", (event) => {
 }, true);
 
 document.addEventListener("click", (event) => {
+    if (state.notificationPanelOpen
+        && !elements.notificationPanel.contains(event.target)
+        && !event.target.closest("[data-notification-button]")) {
+        toggleNotifications(false);
+    }
     if (!elements.searchShell.contains(event.target)) {
         closeSearchSuggestions();
     }
@@ -6714,6 +7110,10 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
+    if (state.notificationPanelOpen) {
+        toggleNotifications(false);
+        return;
+    }
     const openModalElement = [...document.querySelectorAll(".modal")].find((modal) => !modal.hidden);
     if (openModalElement) closeModal(openModalElement.id);
 });
@@ -6732,6 +7132,10 @@ elements.streamPlayer.addEventListener("playing", () => {
     if (hasActivePlayback()) {
         setPlayerPlaying();
     }
+});
+
+elements.streamPlayer.addEventListener("play", () => {
+    state.playerUserPaused = false;
 });
 
 elements.streamPlayer.addEventListener("loadstart", () => {
@@ -6789,11 +7193,12 @@ elements.streamPlayer.addEventListener("pause", () => {
     if (hasActivePlayback() && state.playerHasStarted && !elements.streamPlayer.ended) {
         elements.playerPlaceholder.hidden = true;
         if (isLikelyManualPause()) {
-            clearPlayerPauseResumeTimer();
+            markPlayerUserPaused();
             elements.playerMessage.textContent = "Lecture en pause.";
             return;
         }
-        schedulePausedPlaybackResume();
+        markPlayerUserPaused();
+        elements.playerMessage.textContent = "Lecture en pause.";
     }
 });
 
@@ -6809,6 +7214,8 @@ elements.streamPlayer.addEventListener("error", () => {
 });
 elements.playerQuality.addEventListener("change", changePlayerQuality);
 
+state.notifications = buildNotifications();
+renderNotifications();
 renderCatalog();
 applyLaunchIntent();
 restoreSession();

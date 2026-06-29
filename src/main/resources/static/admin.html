@@ -7,7 +7,7 @@
     <meta name="description" content="Console d'administration Nexora IPTV SaaS.">
     <title>Nexora Control | Administration</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/admin.css?v=20260627-reelshort-1">
+    <link rel="stylesheet" href="/assets/admin.css?v=20260629-responsive-all-screens-1">
 </head>
 <body>
 <div class="admin-grain" aria-hidden="true"></div>
@@ -52,6 +52,7 @@
             <button type="button" data-view="billing"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3zM3 9h18M7 15h4"/></svg>Facturation<span class="nav-count warning" id="paymentNavCount">0</span></button>
             <button type="button" data-view="support"><svg viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>Support<span class="nav-count danger" id="ticketNavCount">0</span></button>
             <button type="button" data-view="ops"><svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>Opérations</button>
+            <button type="button" data-view="messages"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H7l-3 3zM8 9h8M8 12h5"/></svg>Messages</button>
             <button type="button" data-view="integrations"><svg viewBox="0 0 24 24"><path d="M8 12h8M12 8v8M5 5l3 3M19 5l-3 3M5 19l3-3M19 19l-3-3"/><circle cx="12" cy="12" r="9"/></svg>Connecteurs</button>
             <button type="button" data-view="legal"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6zM9 10h6M9 14h6M9 18h4M14 3v4h4"/></svg>Documents légaux</button>
         </nav>
@@ -134,6 +135,37 @@
                 <div class="ticket-list" id="ticketList"></div>
             </div>
             <article class="admin-panel conversation-panel" id="conversationPanel"><div class="empty-conversation"><span>↗</span><h2>Sélectionnez un ticket</h2><p>La conversation et les outils de traitement apparaîtront ici.</p></div></article>
+        </section>
+
+        <section class="admin-view messages-view" data-admin-view="messages">
+            <form class="admin-panel message-composer" id="broadcastForm">
+                <div class="panel-title-row">
+                    <div><p class="admin-kicker">DIFFUSION CLIENT</p><h2>Envoyer un message</h2></div>
+                    <span class="secure-chip" id="broadcastAudienceCount">0 destinataire</span>
+                </div>
+                <div class="message-composer-grid">
+                    <div class="message-copy-fields">
+                        <label class="admin-field"><span>Titre</span><input name="title" maxlength="160" placeholder="Maintenance, nouveaute, information importante..." required></label>
+                        <label class="admin-field"><span>Message</span><textarea name="body" rows="9" maxlength="4000" placeholder="Votre message sera envoye par e-mail et affiche dans les notifications." required></textarea></label>
+                        <div class="message-channel-row">
+                            <label class="toggle-line"><input type="checkbox" name="email" checked><span>Envoyer par e-mail</span></label>
+                            <label class="toggle-line"><input type="checkbox" name="inApp" checked><span>Afficher dans les notifications</span></label>
+                        </div>
+                    </div>
+                    <div class="recipient-panel">
+                        <div class="segmented-control message-target-mode" id="messageTargetMode">
+                            <button class="active" type="button" data-message-target="USERS">Utilisateurs cibles</button>
+                            <button type="button" data-message-target="ALL">Tous les utilisateurs</button>
+                        </div>
+                        <label class="admin-field recipient-search"><span>Rechercher</span><input id="recipientSearch" type="search" placeholder="Nom, e-mail, role"></label>
+                        <div class="recipient-list" id="recipientList" role="list"></div>
+                    </div>
+                </div>
+                <div class="message-actions">
+                    <span id="broadcastResult"></span>
+                    <button class="admin-button admin-button-primary" type="submit">Envoyer le message</button>
+                </div>
+            </form>
         </section>
 
         <section class="admin-view" data-admin-view="ops">
@@ -266,6 +298,6 @@
 </div>
 <div class="admin-toast" id="adminToast" role="status" aria-live="polite" hidden></div>
 <script src="/assets/runtime-config.js?v=20260627-local-api-1" defer></script>
-<script src="/assets/admin.js?v=20260627-reelshort-1" defer></script>
+<script src="/assets/admin.js?v=20260629-admin-notifications-1" defer></script>
 </body>
 </html>

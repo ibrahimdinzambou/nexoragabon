@@ -104,8 +104,9 @@ public class CatalogImageService {
     }
 
     public CachedImage loadRemote(String source) {
-        String key = digest(source);
-        sources.putIfAbsent(key, source);
+        String normalizedSource = unwrapImageProxy(source);
+        String key = digest(normalizedSource);
+        sources.putIfAbsent(key, normalizedSource);
         return load(key);
     }
 
@@ -136,9 +137,50 @@ public class CatalogImageService {
     }
 
     private String register(String source) {
-        String key = digest(source);
-        sources.putIfAbsent(key, source);
+        String normalizedSource = unwrapImageProxy(source);
+        String key = digest(normalizedSource);
+        sources.putIfAbsent(key, normalizedSource);
         return "/api/catalog/images/" + key;
+    }
+
+    private String unwrapImageProxy(String source) {
+        String value = source == null ? "" : source.strip();
+        for (int depth = 0; depth < 6; depth++) {
+            try {
+                URI uri = URI.create(value);
+                String path = uri.getPath() == null ? "" : uri.getPath();
+                if (!path.endsWith("/api/catalog/images/proxy")) {
+                    return value;
+                }
+                String nested = queryParameter(uri.getRawQuery(), "url");
+                if (nested == null || nested.isBlank() || nested.equals(value)) {
+                    return value;
+                }
+                value = nested;
+            } catch (IllegalArgumentException exception) {
+                return value;
+            }
+        }
+        return value;
+    }
+
+    private String queryParameter(String rawQuery, String name) {
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return null;
+        }
+        for (String part : rawQuery.split("&")) {
+            int separator = part.indexOf('=');
+            String key = separator < 0 ? part : part.substring(0, separator);
+            if (!name.equals(urlDecode(key))) {
+                continue;
+            }
+            return urlDecode(separator < 0 ? "" : part.substring(separator + 1));
+        }
+        return null;
+    }
+
+    private String urlDecode(String value) {
+        return java.net.URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
     private URI publicImageUri(String value) {

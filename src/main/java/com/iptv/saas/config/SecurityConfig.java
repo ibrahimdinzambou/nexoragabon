@@ -64,7 +64,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/catalog/images/**", "/api/catalog/image-proxy").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/stream/proxy/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/stream/hls/**").permitAll()
-                        .requestMatchers("/api/admin/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT", "OPS")
+                        .requestMatchers("/api/admin/**", "/admin/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT", "OPS")
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()
                 )

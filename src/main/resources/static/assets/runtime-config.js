@@ -14,9 +14,6 @@
         const explicit = trimSlash(window.NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
         const host = String(window.location.hostname || "").toLowerCase();
-        if (localHosts.has(host)) {
-            return "";
-        }
         if (proxiedFrontHosts.has(host) || host === apiHost) {
             return "";
         }

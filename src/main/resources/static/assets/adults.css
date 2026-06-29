@@ -2147,3 +2147,157 @@ body {
         display: none !important;
     }
 }
+
+/* All-device responsive guard */
+html,
+body {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+.adult-topbar,
+.adult-topbar .main-nav,
+.adult-topbar .topbar-actions,
+.adult-shell,
+.adult-workbench,
+.adult-hero,
+.adult-provider-panel,
+.adult-discovery,
+.adult-featured,
+.adult-grid,
+.adult-card-grid,
+.age-card,
+.player-frame {
+    min-width: 0 !important;
+    max-width: min(100%, 100vw) !important;
+    box-sizing: border-box !important;
+}
+
+.adult-topbar .main-nav,
+.adult-rails,
+.adult-category-tabs,
+.adult-card-track {
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 520px) {
+    .adult-topbar.topbar {
+        grid-template-columns: minmax(108px, auto) minmax(0, 1fr) auto !important;
+        padding-right: 12px !important;
+        padding-left: 12px !important;
+        gap: 10px !important;
+    }
+
+    .adult-topbar .adult-brand {
+        width: 112px !important;
+        min-width: 0 !important;
+        max-width: 112px !important;
+    }
+
+    .adult-topbar .brand-name {
+        max-width: 112px !important;
+        overflow: hidden !important;
+        font-size: 25px !important;
+        text-overflow: ellipsis !important;
+    }
+
+    .adult-topbar .main-nav {
+        gap: 16px !important;
+        padding: 7px 0 2px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        scrollbar-width: none !important;
+    }
+
+    .adult-topbar .main-nav::-webkit-scrollbar {
+        display: none !important;
+    }
+
+    .adult-topbar .nav-link,
+    .adult-topbar .adult-nav-entry {
+        flex: 0 0 auto !important;
+        min-height: 32px !important;
+        font-size: 13px !important;
+        white-space: nowrap !important;
+    }
+
+    .adult-shell {
+        width: calc(100% - 20px) !important;
+        padding-bottom: 58px !important;
+    }
+
+    .adult-hero {
+        min-height: 320px !important;
+        padding: 24px !important;
+    }
+
+    .adult-hero h1 {
+        font-size: clamp(38px, 14vw, 56px) !important;
+    }
+
+    .adult-provider-panel,
+    .adult-login-panel,
+    .adult-blocked,
+    .adult-discovery {
+        padding: 18px !important;
+    }
+
+    .adult-card-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        justify-content: stretch !important;
+    }
+
+    .adult-card-grid .adult-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        flex-basis: auto !important;
+    }
+
+    .age-modal,
+    .adult-player {
+        padding: 10px !important;
+    }
+
+    .age-card {
+        width: 100% !important;
+        padding: 24px !important;
+    }
+
+    .player-frame {
+        width: 100% !important;
+        height: min(92dvh, 760px) !important;
+        max-height: calc(100dvh - 20px) !important;
+    }
+}
+
+@media (max-width: 340px) {
+    .adult-topbar.topbar {
+        grid-template-columns: 102px minmax(0, 1fr) auto !important;
+    }
+
+    .adult-topbar .adult-brand,
+    .adult-topbar .brand-name {
+        width: 102px !important;
+        max-width: 102px !important;
+    }
+
+    .adult-topbar .brand-name {
+        font-size: 23px !important;
+    }
+
+    .adult-hero,
+    .adult-provider-panel,
+    .adult-login-panel,
+    .adult-blocked,
+    .adult-discovery {
+        padding: 16px !important;
+    }
+}
+
+@media (min-width: 1800px) {
+    .adult-shell,
+    .player-frame {
+        max-width: 1920px !important;
+    }
+}

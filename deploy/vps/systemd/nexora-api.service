@@ -1,0 +1,17 @@
+[Unit]
+Description=Nexora Spring Boot API
+After=network-online.target nexora-drama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nexora/app
+EnvironmentFile=/opt/nexora/app/.env
+ExecStart=/usr/bin/java -jar /opt/nexora/app/target/iptv-saas-api-0.1.0.jar
+Restart=on-failure
+RestartSec=5
+User=nexora
+Group=nexora
+
+[Install]
+WantedBy=multi-user.target
