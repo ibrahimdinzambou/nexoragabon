@@ -4,6 +4,7 @@ const TOKEN_KEY = "nexora_access_token";
 const MOVIE_SORT_KEY = "nexora_movie_sort";
 const SETTINGS_KEY = "nexora_profile_settings";
 const RECENTLY_WATCHED_KEY = "nexora_recently_watched";
+const ACTIVE_PLAYBACK_KEY = "nexora_active_playback";
 const NETWORK_RETRY_DELAYS = [700, 1800, 4000];
 const STREAM_OPEN_RETRY_DELAYS = [500, 1200];
 const IMAGE_RETRY_LIMIT = 2;
@@ -21,18 +22,22 @@ const SEARCH_DEBOUNCE_MS = 550;
 const MIN_REMOTE_SEARCH_LENGTH = 2;
 const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
-const HOME_PREVIEW_LIMIT = 24;
+const HOME_PREVIEW_LIMIT = 30;
 const HOME_SHOWCASE_LIMIT = 20;
-const LOAD_MORE_INCREMENT = 480;
+const LOAD_MORE_INCREMENT = 300;
+const DRAMA_VISIBLE_INCREMENT = 50;
+const DRAMA_SEARCH_PAGE_SIZE = 11;
 const RECENTLY_WATCHED_LIMIT = 24;
-const DEFAULT_VISIBLE_CATALOG = { live: 160, movie: 720, series: 720 };
-const SEARCH_VISIBLE_CATALOG = { live: 240, movie: 900, series: 900 };
+const DEFAULT_VISIBLE_CATALOG = { live: 300, movie: 900, series: 900 };
+const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const KOREAN_DRAMA_CATEGORY_ID = "tmdb-series-korean-drama";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const NODE_MOVIE_PROVIDER = "auto";
+const imageRepairCache = new Map();
+const imageRepairInFlight = new Set();
 const launchParams = new URLSearchParams(window.location.search);
 const WATCH_REQUIRES_AUTH = launchParams.get("demo") !== "1";
 const titleCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
@@ -69,6 +74,22 @@ const state = {
     categories: [],
     languages: [],
     activeType: "all",
+    dramaLoaded: false,
+    dramaLang: "fr",
+    dramaMode: "shelves",
+    dramaSearchPage: 1,
+    dramaSearchQuery: "love",
+    dramaSearchHasMore: false,
+    dramaVisibleLimit: DRAMA_VISIBLE_INCREMENT,
+    dramaShelves: [],
+    dramaShelfVisible: {},
+    dramaShelfPaging: {},
+    dramaHydratingShelves: false,
+    dramaBooks: [],
+    dramaCurrentTitle: "Dramas",
+    dramaCurrentShelfIndex: null,
+    activeDramaBook: null,
+    activeDramaEpisodes: [],
     activeCategory: "",
     activeAddonFilter: "",
     addonPages: 1,
@@ -77,6 +98,7 @@ const state = {
     visibleCatalog: { ...DEFAULT_VISIBLE_CATALOG },
     recentlyWatched: loadRecentlyWatched(),
     hiddenCatalogCards: new Set(),
+    hiddenContinueCards: new Set(),
     movieSort: localStorage.getItem(MOVIE_SORT_KEY) || "title-asc",
     homeShuffleSalt: Math.floor(Math.random() * 1000000),
     query: "",
@@ -116,6 +138,8 @@ const state = {
     activeVisualWatchdogEnabled: false,
     activeCanFailover: false,
     embedRequiresUserLaunch: false,
+    embedShieldTimer: null,
+    embedShieldUnlockedUntil: 0,
     embedAssistTimer: null,
     embedAssistShown: false,
     embedManualRetryUsed: false,
@@ -172,8 +196,24 @@ const elements = {
     heroTotal: document.querySelector("#heroTotal"),
     heroProgress: document.querySelector("#heroProgress"),
     heroDots: document.querySelector("#heroDots"),
+    homeForYouPanel: document.querySelector("#homeForYouPanel"),
+    homeFeaturedCard: document.querySelector("#homeFeaturedCard"),
+    homeForYouList: document.querySelector("#homeForYouList"),
     discoverButton: document.querySelector("#discoverButton"),
     catalogRows: document.querySelector("#catalogRows"),
+    dramaSection: document.querySelector("#dramaSection"),
+    dramaStatus: document.querySelector("#dramaStatus"),
+    dramaSearchForm: document.querySelector("#dramaSearchForm"),
+    dramaSearchInput: document.querySelector("#dramaSearchInput"),
+    dramaLang: document.querySelector("#dramaLang"),
+    dramaShelves: document.querySelector("#dramaShelves"),
+    dramaShelfRows: document.querySelector("#dramaShelfRows"),
+    dramaGrid: document.querySelector("#dramaGrid"),
+    dramaLoadMore: document.querySelector("#dramaLoadMore"),
+    dramaEpisodes: document.querySelector("#dramaEpisodes"),
+    dramaEpisodeTitle: document.querySelector("#dramaEpisodeTitle"),
+    dramaEpisodeCount: document.querySelector("#dramaEpisodeCount"),
+    dramaEpisodeList: document.querySelector("#dramaEpisodeList"),
     catalogStatus: document.querySelector("#catalogStatus"),
     catalogKicker: document.querySelector("#catalogKicker"),
     catalogTitle: document.querySelector("#catalogTitle"),
@@ -256,11 +296,34 @@ const elements = {
     playerModal: document.querySelector("#playerModal"),
     streamPlayer: document.querySelector("#streamPlayer"),
     embedPlayer: document.querySelector("#embedPlayer"),
+    embedClickShield: document.querySelector("#embedClickShield"),
+    embedUnlockButton: document.querySelector("#embedUnlockButton"),
     embedLaunchPanel: document.querySelector("#embedLaunchPanel"),
     embedLaunchInlineButton: document.querySelector("#embedLaunchInlineButton"),
     embedOpenExternalLink: document.querySelector("#embedOpenExternalLink"),
     playerPlaceholder: document.querySelector("#playerPlaceholder"),
     playerTitle: document.querySelector("#playerTitle"),
+    playerEpisodeSubtitle: document.querySelector("#playerEpisodeSubtitle"),
+    playerInfoTitle: document.querySelector("#playerInfoTitle"),
+    playerInfoSubtitle: document.querySelector("#playerInfoSubtitle"),
+    playerInfoPills: document.querySelector("#playerInfoPills"),
+    playerSynopsis: document.querySelector("#playerSynopsis"),
+    playerEpisodePanel: document.querySelector("#playerEpisodePanel"),
+    playerEpisodePanelTitle: document.querySelector("#playerEpisodePanelTitle"),
+    playerEpisodePanelCount: document.querySelector("#playerEpisodePanelCount"),
+    playerEpisodePanelList: document.querySelector("#playerEpisodePanelList"),
+    playerAllEpisodesButton: document.querySelector("#playerAllEpisodesButton"),
+    playerPrevEpisodeButton: document.querySelector("#playerPrevEpisodeButton"),
+    playerNextEpisodeButton: document.querySelector("#playerNextEpisodeButton"),
+    playerResumeButton: document.querySelector("#playerResumeButton"),
+    playerVfButton: document.querySelector("#playerVfButton"),
+    playerVostfrButton: document.querySelector("#playerVostfrButton"),
+    playerFavoriteButton: document.querySelector("#playerFavoriteButton"),
+    playerSearchForm: document.querySelector("#playerSearchForm"),
+    playerSearchInput: document.querySelector("#playerSearchInput"),
+    playerSearchClear: document.querySelector("#playerSearchClear"),
+    playerRoomAvatar: document.querySelector("#playerRoomAvatar"),
+    playerRoomUserName: document.querySelector("#playerRoomUserName"),
     playerBadge: document.querySelector("#playerBadge"),
     playerQuality: document.querySelector("#playerQuality"),
     playerFullscreenButton: document.querySelector("#playerFullscreenButton"),
@@ -386,6 +449,7 @@ function retryCatalogImage(image, fallback) {
     const sourceUrl = new URL(originalSource, window.location.origin);
     const isCatalogProxy = sourceUrl.pathname.startsWith("/api/catalog/images/");
     const retryCount = Number(image.dataset.retryCount || 0);
+    const directSource = image.dataset.directSource || sourceUrl.searchParams.get("url") || "";
 
     if (isCatalogProxy && retryCount < IMAGE_RETRY_LIMIT) {
         const nextRetry = retryCount + 1;
@@ -399,32 +463,174 @@ function retryCatalogImage(image, fallback) {
         return;
     }
 
+    if (directSource && image.dataset.directFallbackTried !== "1") {
+        image.dataset.directFallbackTried = "1";
+        image.onerror = () => retryCatalogImage(image, fallback);
+        image.src = directSource;
+        return;
+    }
+
     image.onerror = null;
     image.src = fallback;
 }
 
+async function repairCatalogImage(image) {
+    if (!image?.isConnected || image.dataset.placeholderRepairChecked === "1") return;
+    const source = image.currentSrc || image.src || "";
+    let sourceUrl;
+    try {
+        sourceUrl = new URL(source, window.location.origin);
+    } catch {
+        return;
+    }
+    if (!sourceUrl.pathname.startsWith("/api/catalog/images/")) return;
+
+    const repairKey = sourceUrl.href.split("_retry=", 1)[0];
+    if (imageRepairInFlight.has(repairKey)) return;
+    image.dataset.placeholderRepairChecked = "1";
+    imageRepairInFlight.add(repairKey);
+    let response;
+    try {
+        response = await fetch(sourceUrl.href, {
+            cache: "no-store",
+            credentials: "same-origin"
+        });
+    } catch {
+        imageRepairInFlight.delete(repairKey);
+        return;
+    }
+    imageRepairInFlight.delete(repairKey);
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("image/svg+xml")) return;
+
+    const title = String(image.dataset.imageTitle || "").trim();
+    const type = String(image.dataset.imageType || "").trim() || "movie";
+    if (!title) return;
+
+    const repaired = await findReplacementPoster(title, type, source);
+    if (!repaired || !image.isConnected) return;
+    image.dataset.originalSource = repaired;
+    image.dataset.placeholderRepairChecked = "0";
+    image.onerror = () => retryCatalogImage(image, "/assets/images/poster-1.jpg");
+    image.src = repaired;
+}
+
+async function findReplacementPoster(title, type, currentSource) {
+    const catalogType = type === "drama" || type === "kdrama" ? "series" : type;
+    if (!["live", "movie", "series"].includes(catalogType)) return "";
+    const key = `${catalogType}:${normalizeSearchText(title)}`;
+    if (imageRepairCache.has(key)) {
+        return imageRepairCache.get(key);
+    }
+    if (!state.token && state.authRequired) {
+        imageRepairCache.set(key, "");
+        return "";
+    }
+    try {
+        const params = new URLSearchParams({
+            type: catalogType,
+            q: title,
+            limit: "12"
+        });
+        const candidates = await api(`/catalog/items?${params}`);
+        const match = (candidates || []).find((candidate) => {
+            const candidateImage = candidate.poster || candidate.image || candidate.backdrop || "";
+            if (!candidateImage || candidateImage === currentSource) return false;
+            return isTmdbSource(candidate)
+                || isTmdbPlayable(candidate)
+                || normalizeSearchText(candidate.name || "").includes(normalizeSearchText(title).slice(0, 16));
+        });
+        const replacement = match
+            ? normalizeImageSource(match.poster || match.image || match.backdrop, "/assets/images/poster-1.jpg")
+            : "";
+        imageRepairCache.set(key, replacement);
+        return replacement;
+    } catch {
+        imageRepairCache.set(key, "");
+        return "";
+    }
+}
+
 function setResilientImage(image, source, fallback) {
     const safeSource = normalizeImageSource(source, fallback);
+    const directSource = tmdbDirectImageUrl(source);
     image.dataset.originalSource = safeSource;
+    if (directSource) image.dataset.directSource = directSource;
     image.dataset.retryCount = "0";
     image.onerror = () => retryCatalogImage(image, fallback);
     image.src = safeSource;
+}
+
+window.repairCatalogImage = repairCatalogImage;
+
+function catalogImageProxyUrl(source) {
+    return resolveApiResourceUrl(`/api/catalog/images/proxy?url=${encodeURIComponent(source)}`);
+}
+
+function tmdbImagePathUrl(path, size = "w500") {
+    const normalized = String(path || "").trim().replace(/^\/+/, "");
+    return `https://image.tmdb.org/t/p/${size}/${normalized}`;
+}
+
+function tmdbDirectImageUrl(source) {
+    const value = String(source || "").trim();
+    if (/^[A-Za-z0-9_-]+\.(?:jpe?g|png|webp|avif)$/i.test(value)) {
+        return tmdbImagePathUrl(value);
+    }
+    try {
+        const parsed = new URL(value, window.location.origin);
+        return isTmdbImageUrl(parsed) ? parsed.href : "";
+    } catch {
+        return "";
+    }
+}
+
+function isTmdbImageUrl(url) {
+    return /(^|\.)image\.tmdb\.org$/i.test(url.hostname);
 }
 
 function normalizeImageSource(source, fallback = "/assets/images/landscape-1.jpg") {
     const value = String(source || "").trim();
     if (!value) return fallback;
     if (/^(?:file:|[a-z]:[\\/]|\\\\)/i.test(value)) return fallback;
+    if (/^\/[A-Za-z0-9_/-]+\.(?:jpe?g|png|webp|avif)$/i.test(value)) {
+        return tmdbImagePathUrl(value);
+    }
     if (value.startsWith("/api/") || value.startsWith("api/")) {
         return resolveApiResourceUrl(value);
+    }
+    if (/^[A-Za-z0-9_-]+\.(?:jpe?g|png|webp|avif)$/i.test(value)) {
+        return tmdbImagePathUrl(value);
     }
 
     try {
         const parsed = new URL(value, window.location.origin);
         if (!["http:", "https:"].includes(parsed.protocol)) return fallback;
+        if (isTmdbImageUrl(parsed)) {
+            return parsed.href;
+        }
         return parsed.href;
     } catch {
         return fallback;
+    }
+}
+
+function normalizeNodeImageSource(source, fallback = "/assets/images/landscape-1.jpg") {
+    const value = String(source || "").trim();
+    if (!value) return fallback;
+    if (/^(?:file:|[a-z]:[\\/]|\\\\)/i.test(value)) return fallback;
+    if (/^\/[A-Za-z0-9_/-]+\.(?:jpe?g|png|webp|avif)$/i.test(value)) {
+        return tmdbImagePathUrl(value);
+    }
+    if (value.startsWith("/api/") || value.startsWith("api/")) {
+        return resolveNodeApiResourceUrl(value);
+    }
+    try {
+        const parsed = new URL(value, window.location.origin);
+        if (!["http:", "https:"].includes(parsed.protocol)) return fallback;
+        return catalogImageProxyUrl(parsed.href);
+    } catch {
+        return normalizeImageSource(value, fallback);
     }
 }
 
@@ -477,6 +683,49 @@ function saveRecentlyWatched() {
     );
 }
 
+function activePlaybackKey(user = null) {
+    const owner = user?.id || user?.email || "anonymous";
+    return `${ACTIVE_PLAYBACK_KEY}:${owner}`;
+}
+
+function saveActivePlayback(item) {
+    if (!item?.id || !item?.type || !item?.name) return;
+    localStorage.setItem(activePlaybackKey(state.user), JSON.stringify(recentItemPayload(item)));
+}
+
+function clearActivePlayback() {
+    localStorage.removeItem(activePlaybackKey(state.user));
+}
+
+function loadActivePlayback(user = null) {
+    try {
+        const item = JSON.parse(localStorage.getItem(activePlaybackKey(user)) || "null");
+        return normalizeRecentItem(item, 0);
+    } catch {
+        return null;
+    }
+}
+
+function restoreActivePlayback() {
+    if (!state.token || state.playerOpening || state.activePlayerItem) return;
+    const item = loadActivePlayback(state.user);
+    if (!item) return;
+    window.setTimeout(() => {
+        if (!state.token || state.playerOpening || state.activePlayerItem) return;
+        if (String(item.id || "").startsWith("drama-") && item.dramaBookId && item.chapterId) {
+            state.activeDramaBook = {
+                id: item.dramaBookId,
+                title: item.dramaBookTitle || item.name || "Drama",
+                slug: item.dramaBookSlug || "",
+                image: item.image || item.poster || "/assets/images/poster-2.jpg"
+            };
+            playDramaEpisode(Number(item.episode || 1), item.chapterId);
+            return;
+        }
+        playItem(item, { restored: true });
+    }, 250);
+}
+
 function catalogCardKey(type, id) {
     return `${type}:${id}`;
 }
@@ -502,6 +751,16 @@ function hideCatalogCard(type, id) {
     showToast("Carte masquée temporairement.");
 }
 
+function dismissContinueCard(type, id) {
+    if (!type || !id) return;
+    const key = catalogCardKey(type, id);
+    state.hiddenContinueCards.add(key);
+    state.recentlyWatched = state.recentlyWatched.filter((item) => catalogCardKey(item.type, item.id) !== key);
+    saveRecentlyWatched();
+    renderCatalog();
+    showToast("Retire de Continuer la lecture.");
+}
+
 function clearHiddenCatalogCards() {
     state.hiddenCatalogCards.clear();
 }
@@ -515,6 +774,10 @@ function recentItemPayload(item) {
         tmdbId: item.tmdbId || undefined,
         season: item.season || undefined,
         episode: item.episode || undefined,
+        chapterId: item.chapterId || undefined,
+        dramaBookId: item.dramaBookId || undefined,
+        dramaBookSlug: item.dramaBookSlug || undefined,
+        dramaBookTitle: item.dramaBookTitle || undefined,
         categoryId: item.categoryId || "",
         categoryName: item.categoryName || typeLabel(item.type),
         image: item.image || item.poster || item.logo || "",
@@ -609,6 +872,21 @@ function normalizeItem(item, type, index) {
     const fallback = fallbackCatalog.filter((entry) => entry.type === type);
     const matched = fallback.find((entry) => entry.id === String(item.id)) || fallback[index % fallback.length];
     const itemType = ["live", "movie", "series"].includes(item.type) ? item.type : type;
+    const sourceCode = String(item.sourceCode || "").toLowerCase();
+    const playbackProvider = String(item.playbackProvider || "").toLowerCase();
+    const provider = String(item.provider || item.source || "").toLowerCase();
+    const isNodeSource = sourceCode === "node-fr"
+        || sourceCode === "orion"
+        || playbackProvider.startsWith("node-fr")
+        || playbackProvider.startsWith("orion")
+        || provider.includes("orion")
+        || provider.includes("source fr");
+    const fallbackImage = matched?.image || "/assets/images/landscape-1.jpg";
+    const normalizeSource = isNodeSource ? normalizeNodeImageSource : normalizeImageSource;
+    const rawPoster = item.poster || item.image || item.cover || item.thumbnail || item.logo;
+    const rawBackdrop = item.backdrop || item.background || item.banner || item.cover || item.image || rawPoster;
+    const image = normalizeSource(rawPoster, fallbackImage);
+    const backdrop = normalizeSource(rawBackdrop, image);
 
     return {
         ...matched,
@@ -616,10 +894,9 @@ function normalizeItem(item, type, index) {
         id: String(item.id),
         type: itemType,
         categoryName: item.categoryName || matched?.categoryName || typeLabel(itemType),
-        image: normalizeImageSource(
-            item.poster || item.logo,
-            matched?.image || "/assets/images/landscape-1.jpg"
-        )
+        image,
+        poster: image,
+        backdrop
     };
 }
 
@@ -655,6 +932,15 @@ function searchCatalogLimit(type) {
 }
 
 async function loadCatalog() {
+    if (state.activeType === "drama") {
+        state.catalogLoading = false;
+        updateCatalogStatus();
+        elements.dramaSection.hidden = false;
+        elements.catalogRows.hidden = true;
+        elements.emptyState.hidden = true;
+        return;
+    }
+
     const requestId = ++state.catalogRequestId;
     if (state.catalogAbortController) {
         state.catalogAbortController.abort();
@@ -709,6 +995,10 @@ async function loadCatalog() {
     }
 
     try {
+        if (!query && state.activeType === "drama") {
+            await loadDramaHome();
+            return;
+        }
         const types = query || state.activeType === "all"
             ? ["live", "movie", "series"]
             : [state.activeType];
@@ -909,6 +1199,13 @@ function filteredCatalog() {
 }
 
 function renderCatalog() {
+    syncCatalogMode();
+    if (state.activeType === "drama") {
+        elements.catalogRows.hidden = true;
+        elements.emptyState.hidden = true;
+        return;
+    }
+    elements.catalogRows.hidden = false;
     const items = filteredCatalog();
     const searching = Boolean(state.query.trim());
     const loading = state.catalogLoading;
@@ -967,16 +1264,29 @@ function renderCatalog() {
         return `${shelves.map(renderCatalogShelf).join("")}${loadMore}`;
     }).join("");
 
-    const homeShowcase = !searching && state.activeType === "all"
-        ? renderHomeShowcase(items)
+    const homeDashboard = !searching && state.activeType === "all"
+        ? renderHomeDashboard(items)
+        : "";
+    const browseDashboard = !searching && ["movie", "series"].includes(state.activeType)
+        ? renderBrowseDashboard(items)
         : "";
     const koreanDrama = renderKoreanDramaRail(items, searching);
-    const recentlyWatched = renderRecentlyWatchedSection(items, searching);
+    const recentlyWatched = state.activeType === "all" ? "" : renderRecentlyWatchedSection(items, searching);
     const loadingBanner = loading && rows ? renderCatalogLoadingBanner(searching) : "";
-    elements.catalogRows.innerHTML = recentlyWatched + homeShowcase + koreanDrama + loadingBanner + rows;
-    elements.emptyState.hidden = Boolean(recentlyWatched || homeShowcase || koreanDrama || rows);
+    elements.catalogRows.innerHTML = homeDashboard + browseDashboard + recentlyWatched + koreanDrama + loadingBanner + rows;
+    elements.emptyState.hidden = Boolean(homeDashboard || browseDashboard || recentlyWatched || koreanDrama || rows);
     updateCatalogHeading(items.length, loading);
     renderHeroCarousel(items);
+    renderHomeForYou(items);
+}
+
+function syncCatalogMode() {
+    document.body.classList.toggle("catalog-mode-home", state.activeType === "all");
+    document.body.classList.toggle("catalog-mode-movie", state.activeType === "movie");
+    document.body.classList.toggle("catalog-mode-series", state.activeType === "series");
+    document.body.classList.toggle("catalog-mode-live", state.activeType === "live");
+    document.body.classList.toggle("catalog-mode-drama", state.activeType === "drama");
+    document.body.classList.toggle("catalog-mode-browse", ["movie", "series"].includes(state.activeType));
 }
 
 function renderKoreanDramaRail(items, searching) {
@@ -998,6 +1308,746 @@ function renderKoreanDramaRail(items, searching) {
     }, "kdrama");
 }
 
+function normalizeDramaBook(book) {
+    return {
+        id: String(book.book_id || book.id || ""),
+        title: book.book_title || book.title || "Drama",
+        slug: book.filtered_title || "",
+        image: normalizeImageSource(book.book_pic || book.poster, "/assets/images/poster-2.jpg"),
+        episodeCount: Number(book.chapter_count || 0),
+        summary: book.special_desc || ""
+    };
+}
+
+function setDramaStatus(message, isError = false) {
+    if (!elements.dramaStatus) return;
+    elements.dramaStatus.textContent = message || "";
+    elements.dramaStatus.classList.toggle("error", Boolean(isError));
+}
+
+async function loadDramaHome() {
+    if (!state.token && state.authRequired) {
+        requestLogin("Connectez-vous pour ouvrir les dramas.");
+        return;
+    }
+    elements.dramaSection.hidden = false;
+    elements.catalogRows.hidden = true;
+    elements.emptyState.hidden = true;
+    renderCategories();
+    renderAddonFilter();
+    renderLanguageFilter();
+    if (state.dramaLoaded) return;
+    setDramaStatus("Chargement des rayons dramas...");
+    try {
+        const payload = await api(`/dramas/bookshelves?lang=${encodeURIComponent(state.dramaLang)}`);
+        state.dramaShelves = payload.bookshelves || [];
+        state.dramaShelfVisible = {};
+        state.dramaLoaded = true;
+        const first = state.dramaShelves.find((shelf) => shelf.books?.length);
+        state.dramaMode = "shelf";
+        state.dramaCurrentShelfIndex = first ? state.dramaShelves.indexOf(first) : null;
+        renderDramaShelves();
+        renderDramaShelfRows();
+        setDramaStatus(`${state.dramaShelves.length} rayons disponibles`);
+        hydrateDramaShelvesToMinimum().catch((error) => {
+            setDramaStatus(error.message || "Certains rayons dramas n'ont pas pu etre completes.", true);
+        });
+    } catch (error) {
+        setDramaStatus(error.message || "Impossible de charger les dramas.", true);
+    }
+}
+
+function renderDramaShelves() {
+    if (!elements.dramaShelves) return;
+    const buttons = [
+        `<button class="drama-chip ${state.dramaMode === "search" ? "active" : ""}" type="button" data-drama-shelf="search">Recherche</button>`,
+        ...state.dramaShelves.map((shelf, index) => (
+            `<button class="drama-chip ${state.dramaCurrentShelfIndex === index ? "active" : ""}" type="button" data-drama-shelf="${index}">${escapeHtml(shelf.bookshelf_name || "Rayon")}</button>`
+        ))
+    ];
+    elements.dramaShelves.innerHTML = buttons.join("");
+}
+
+function renderDramaShelfRows() {
+    if (!elements.dramaShelfRows) return;
+    state.dramaMode = "shelf";
+    elements.dramaShelfRows.hidden = false;
+    elements.dramaGrid.hidden = true;
+    elements.dramaLoadMore.hidden = true;
+    elements.dramaEpisodes.hidden = true;
+    elements.dramaEpisodeList.innerHTML = "";
+    state.activeDramaBook = null;
+    state.activeDramaEpisodes = [];
+
+    const allBooks = [];
+    const rows = state.dramaShelves.map((shelf, index) => {
+        const books = (shelf.books || []).map(normalizeDramaBook).filter((book) => book.id && book.slug);
+        allBooks.push(...books);
+        const visibleLimit = state.dramaShelfVisible[index] || DRAMA_VISIBLE_INCREMENT;
+        const visibleBooks = books.slice(0, visibleLimit);
+        const paging = state.dramaShelfPaging[index] || {};
+        const hasMore = visibleBooks.length < books.length || paging.hasMore !== false;
+        return `
+            <section class="drama-row" id="dramaShelfRow-${index}" data-drama-row="${index}">
+                <div class="drama-row-heading">
+                    <div>
+                        <h3>${escapeHtml(shelf.bookshelf_name || "Rayon")}</h3>
+                        <span>${visibleBooks.length}/${books.length} titres</span>
+                    </div>
+                    <button class="button button-outline drama-row-more" type="button" data-drama-row-more="${index}" ${hasMore ? "" : "hidden"}>
+                        ${visibleBooks.length < books.length ? "Voir plus" : "Charger plus"}
+                    </button>
+                </div>
+                <div class="drama-grid drama-row-grid">
+                    ${visibleBooks.map((book) => dramaCardTemplate(book)).join("")}
+                </div>
+            </section>
+        `;
+    }).join("");
+
+    state.dramaBooks = uniqueDramaBooks(allBooks);
+    elements.dramaShelfRows.innerHTML = rows || `
+        <div class="empty-state-inline">
+            <strong>Aucun drama disponible</strong>
+            <span>L'API Python n'a renvoye aucun rayon pour cette langue.</span>
+        </div>
+    `;
+}
+
+async function hydrateDramaShelvesToMinimum() {
+    if (state.dramaHydratingShelves || !state.dramaShelves.length) return;
+    state.dramaHydratingShelves = true;
+    setDramaStatus("Completion des catalogues dramas jusqu'a 50 items...");
+    try {
+        for (let index = 0; index < state.dramaShelves.length; index += 1) {
+            const shelf = state.dramaShelves[index];
+            if (!shelf?.books || shelf.books.length >= DRAMA_VISIBLE_INCREMENT) continue;
+            await loadMoreDramaShelf(index, DRAMA_VISIBLE_INCREMENT - shelf.books.length);
+            renderDramaShelfRows();
+        }
+        setDramaStatus("Catalogues dramas prets");
+    } finally {
+        state.dramaHydratingShelves = false;
+    }
+}
+
+async function loadMoreDramaShelf(index, targetCount = DRAMA_VISIBLE_INCREMENT) {
+    const shelf = state.dramaShelves[index];
+    if (!shelf) return;
+    const paging = state.dramaShelfPaging[index] || { page: 1, hasMore: true };
+    if (paging.hasMore === false) return;
+    const query = dramaShelfSearchQuery(shelf.bookshelf_name || "");
+    const batch = await fetchDramaSearchBatchForQuery(query, paging.page, targetCount);
+    const existing = shelf.books || [];
+    shelf.books = mergeDramaBookSources(existing, batch.books);
+    state.dramaShelfPaging[index] = {
+        page: batch.lastPage + 1,
+        hasMore: batch.hasMore
+    };
+}
+
+function mergeDramaBookSources(existing, incoming) {
+    const seen = new Set();
+    const merged = [];
+    [...(existing || []), ...(incoming || [])].forEach((book) => {
+        const id = String(book.book_id || book.id || "");
+        const slug = book.filtered_title || book.slug || "";
+        const key = `${id}:${slug}`;
+        if (!id || !slug || seen.has(key)) return;
+        seen.add(key);
+        merged.push(book);
+    });
+    return merged;
+}
+
+function dramaShelfSearchQuery(name) {
+    const normalized = String(name || "").toLowerCase();
+    if (normalized.includes("asie") || normalized.includes("asia") || normalized.includes("korea") || normalized.includes("core")) return "asian love";
+    if (normalized.includes("doubl") || normalized.includes("dub")) return "dubbed love";
+    if (normalized.includes("identit") || normalized.includes("hidden")) return "secret identity";
+    if (normalized.includes("tabou") || normalized.includes("forbidden")) return "forbidden love";
+    if (normalized.includes("loup") || normalized.includes("werewolf")) return "alpha";
+    if (normalized.includes("nouvelle") || normalized.includes("new")) return "new love";
+    if (normalized.includes("classement") || normalized.includes("ranking")) return "top love";
+    return "love";
+}
+
+function uniqueDramaBooks(books) {
+    const seen = new Set();
+    return books.filter((book) => {
+        const key = `${book.id}:${book.slug}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function dramaCardTemplate(book) {
+    return `
+        <button class="drama-card" type="button" data-drama-book="${escapeHtml(book.id)}">
+            <img src="${escapeHtml(book.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/poster-2.jpg')">
+            <span>
+                <strong>${escapeHtml(book.title)}</strong>
+                <small>${book.episodeCount ? `${book.episodeCount} episodes` : "Episodes disponibles"}</small>
+            </span>
+        </button>
+    `;
+}
+
+function renderDramaBooks(books, title = "Dramas", preserveVisibleLimit = false) {
+    if (elements.dramaShelfRows) {
+        elements.dramaShelfRows.hidden = true;
+    }
+    elements.dramaGrid.hidden = false;
+    if (!preserveVisibleLimit) {
+        state.dramaVisibleLimit = DRAMA_VISIBLE_INCREMENT;
+    }
+    state.dramaCurrentTitle = title;
+    state.dramaBooks = (books || []).map(normalizeDramaBook).filter((book) => book.id && book.slug);
+    const visibleBooks = state.dramaBooks.slice(0, state.dramaVisibleLimit);
+    state.activeDramaBook = null;
+    state.activeDramaEpisodes = [];
+    elements.dramaEpisodes.hidden = true;
+    elements.dramaEpisodeList.innerHTML = "";
+    elements.dramaEpisodeTitle.textContent = title;
+    elements.dramaEpisodeCount.textContent = `${visibleBooks.length}/${state.dramaBooks.length} titres`;
+    elements.dramaGrid.innerHTML = visibleBooks.map(dramaCardTemplate).join("");
+    elements.dramaLoadMore.hidden = visibleBooks.length >= state.dramaBooks.length && !state.dramaSearchHasMore;
+    elements.dramaLoadMore.textContent = state.dramaSearchHasMore || visibleBooks.length < state.dramaBooks.length
+        ? "Voir plus"
+        : "Tout est affiche";
+}
+
+async function searchDramas(page = 1, append = false) {
+    state.dramaMode = "search";
+    state.dramaCurrentShelfIndex = null;
+    state.dramaSearchQuery = elements.dramaSearchInput.value.trim() || "love";
+    const startPage = append ? state.dramaSearchPage + 1 : page;
+    setDramaStatus(append ? "Chargement de 50 dramas supplementaires..." : "Recherche dramas...");
+    const batch = await fetchDramaSearchBatch(startPage, DRAMA_VISIBLE_INCREMENT);
+    state.dramaSearchPage = batch.lastPage;
+    state.dramaSearchHasMore = batch.hasMore;
+    if (append) {
+        state.dramaVisibleLimit += DRAMA_VISIBLE_INCREMENT;
+        renderDramaBooks([...state.dramaBooks.map((book) => ({
+            book_id: book.id,
+            book_title: book.title,
+            filtered_title: book.slug,
+            book_pic: book.image,
+            chapter_count: book.episodeCount,
+            special_desc: book.summary
+        })), ...batch.books], `Recherche: ${state.dramaSearchQuery}`, true);
+    } else {
+        state.dramaVisibleLimit = DRAMA_VISIBLE_INCREMENT;
+        renderDramaBooks(batch.books, `Recherche: ${state.dramaSearchQuery}`, true);
+    }
+    renderDramaShelves();
+    setDramaStatus(`${Math.min(state.dramaVisibleLimit, state.dramaBooks.length)} / ${state.dramaBooks.length} dramas affiches`);
+}
+
+async function fetchDramaSearchBatch(startPage, targetCount) {
+    return fetchDramaSearchBatchForQuery(state.dramaSearchQuery, startPage, targetCount);
+}
+
+async function fetchDramaSearchBatchForQuery(query, startPage, targetCount) {
+    const books = [];
+    let page = Math.max(1, startPage);
+    let hasMore = false;
+    while (books.length < targetCount) {
+        const payload = await api(
+            `/dramas/search?q=${encodeURIComponent(query)}&page=${page}&lang=${encodeURIComponent(state.dramaLang)}`
+        );
+        const results = payload.results || [];
+        books.push(...results);
+        hasMore = results.length >= DRAMA_SEARCH_PAGE_SIZE;
+        if (!hasMore) break;
+        page += 1;
+    }
+    return {
+        books,
+        hasMore,
+        lastPage: hasMore ? page - 1 : page
+    };
+}
+
+async function selectDramaBook(bookId, options = {}) {
+    const book = state.dramaBooks.find((item) => item.id === bookId);
+    if (!book) return [];
+    state.activeDramaBook = book;
+    setDramaStatus(`Chargement des episodes de ${book.title}...`);
+    const payload = await api(
+        `/dramas/episodes/${encodeURIComponent(book.id)}?filtered_title=${encodeURIComponent(book.slug)}&lang=${encodeURIComponent(state.dramaLang)}`
+    );
+    state.activeDramaEpisodes = payload.episodes || [];
+    elements.dramaEpisodes.hidden = false;
+    elements.dramaEpisodeTitle.textContent = book.title;
+    elements.dramaEpisodeCount.textContent = `${state.activeDramaEpisodes.length} episodes`;
+    elements.dramaEpisodeList.innerHTML = state.activeDramaEpisodes.map((episode) => `
+        <button class="drama-episode" type="button" data-drama-episode="${episode.episode}" data-drama-chapter="${escapeHtml(episode.chapter_id || "")}">
+            EP ${episode.episode}
+        </button>
+    `).join("");
+    setDramaStatus(state.activeDramaEpisodes.length ? "Episodes prets" : "Aucun episode recu", !state.activeDramaEpisodes.length);
+    if (options.scroll !== false) {
+        elements.dramaEpisodes.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    return state.activeDramaEpisodes;
+}
+
+async function playDramaBook(bookId) {
+    const episodes = await selectDramaBook(bookId, { scroll: false });
+    const firstEpisode = episodes.find((episode) => episode.chapter_id) || episodes[0];
+    if (!firstEpisode) {
+        setDramaStatus("Aucun episode disponible pour ce drama.", true);
+        return;
+    }
+    await playDramaEpisode(Number(firstEpisode.episode || 1), firstEpisode.chapter_id || "");
+}
+
+async function playDramaEpisode(episodeNumber, chapterId) {
+    const book = state.activeDramaBook;
+    if (!book || !chapterId) return;
+    setDramaStatus(`Preparation episode ${episodeNumber}...`);
+    const payload = await api(
+        `/dramas/video/${encodeURIComponent(book.id)}/${episodeNumber}?filtered_title=${encodeURIComponent(book.slug)}&chapter_id=${encodeURIComponent(chapterId)}&lang=${encodeURIComponent(state.dramaLang)}`
+    );
+    const url = payload.proxy_video_url || payload.video_url;
+    if (!url) {
+        setDramaStatus("Aucune URL video pour cet episode", true);
+        return;
+    }
+    await playDramaStream({
+        id: `drama-${book.id}-${episodeNumber}`,
+        type: "series",
+        episode: Number(episodeNumber),
+        chapterId: chapterId,
+        dramaBookId: book.id,
+        dramaBookSlug: book.slug,
+        dramaBookTitle: book.title,
+        name: `${book.title} · EP ${episodeNumber}`,
+        image: book.image,
+        categoryName: "Drama ReelShort"
+    }, url);
+}
+
+async function playDramaStream(item, videoUrl) {
+    if (!state.token) {
+        requestLogin("Connectez-vous pour lancer un drama.", () => playDramaStream(item, videoUrl));
+        return;
+    }
+    if (state.playerOpening) return;
+    trackRecentlyWatched(item);
+    saveActivePlayback(item);
+    state.playerOpening = true;
+    setPlayerControlsBusy(true);
+    state.playerErrorShown = false;
+    state.playerRecoveryAttempts = 0;
+    state.playerRecovering = false;
+    state.playerRecoveryShouldFailover = false;
+    clearPlayerRecoveryTimer();
+    clearPlayerStartupTimer();
+    state.activePlayerItem = item;
+    elements.playerQuality.value = "auto";
+    await ensurePlayerContext(item);
+    openModal("playerModal");
+    elements.playerTitle.textContent = item.name;
+    elements.playerBadge.textContent = "DRAMA";
+    refreshPlayerRoom(item, "DRAMA");
+    setPlayerLoading("Preparation du drama...", "Connexion au flux ReelShort.");
+    try {
+        if (state.activeSessionToken) {
+            await stopPlayer();
+        }
+        detachPlayerMedia();
+        await startStreamPlayback(item, videoUrl, "hls", {
+            preferredAudioLanguage: state.dramaLang,
+            preferredSubtitleLanguage: state.dramaLang,
+            enableSubtitles: true
+        });
+    } catch (error) {
+        detachPlayerMedia();
+        showPlayerError(error.message || "Impossible de lancer ce drama.");
+    } finally {
+        state.playerOpening = false;
+        setPlayerControlsBusy(false);
+    }
+}
+
+async function ensurePlayerContext(item) {
+    await Promise.allSettled([
+        ensurePlayerDramaContext(item),
+        ensurePlayerSeriesContext(item)
+    ]);
+}
+
+async function ensurePlayerDramaContext(item) {
+    if (!item?.id?.startsWith?.("drama-")) return;
+    if (state.activeDramaBook && state.activeDramaEpisodes.length) return;
+    const bookId = item.dramaBookId;
+    const slug = item.dramaBookSlug;
+    if (!bookId || !slug) return;
+    state.activeDramaBook = {
+        id: String(bookId),
+        title: item.dramaBookTitle || seriesTitleKey(item.name || "") || "Drama",
+        slug,
+        image: normalizeImageSource(item.image, "/assets/images/poster-2.jpg"),
+        episodeCount: 0,
+        summary: ""
+    };
+    const payload = await api(
+        `/dramas/episodes/${encodeURIComponent(bookId)}?filtered_title=${encodeURIComponent(slug)}&lang=${encodeURIComponent(state.dramaLang)}`
+    );
+    state.activeDramaEpisodes = payload.episodes || [];
+}
+
+async function ensurePlayerSeriesContext(item) {
+    if (item?.type !== "series" || !item?.isEpisode) return;
+    if (state.activeSeries?.seasons?.length && seriesContainsEpisode(state.activeSeries, item.id)) return;
+
+    const tmdbId = tmdbIdFromItem(item);
+    const catalogSeries = findSeriesCatalogParent(item);
+    try {
+        const series = tmdbId && nodeApiEnabled()
+            ? await nodeApi(`/catalog/series/${encodeURIComponent(tmdbId)}`)
+            : await api(
+                `/catalog/series/${encodeURIComponent(catalogSeries?.id || seriesCatalogIdFromEpisode(item))}?title=${encodeURIComponent(seriesTitleKey(item.name || "") || item.name || "")}`
+            );
+        state.activeSeries = normalizeSeriesContext(series, item, catalogSeries);
+    } catch {
+        if (catalogSeries && catalogSeries !== item) {
+            state.activeSeries = {
+                id: catalogSeries.id,
+                name: catalogSeries.name || seriesTitleKey(item.name || "") || item.name,
+                poster: catalogSeries.poster || catalogSeries.image || item.image,
+                backdrop: catalogSeries.backdrop || item.backdrop,
+                seasons: [[item.season || 1, item]].map(([season, episode]) => ({
+                    season,
+                    name: `Saison ${season}`,
+                    episodes: [episode]
+                }))
+            };
+        }
+    }
+}
+
+function normalizeSeriesContext(series, item, fallbackSeries) {
+    const poster = normalizeImageSource(
+        series.poster || fallbackSeries?.poster || fallbackSeries?.image || item.image,
+        "/assets/images/poster-2.jpg"
+    );
+    const seasons = (series.seasons || []).map((season) => ({
+        ...season,
+        episodes: (season.episodes || []).map((episode) => ({
+            ...episode,
+            type: "series",
+            isEpisode: true,
+            tmdbId: tmdbIdFromItem(episode) || tmdbIdFromItem(series) || tmdbIdFromItem(item) || undefined,
+            source: episode.source || series.source || item.source,
+            sourceCode: episode.sourceCode || series.sourceCode || item.sourceCode,
+            playbackProvider: episode.playbackProvider || series.playbackProvider || item.playbackProvider,
+            playbackProviderName: episode.playbackProviderName || series.playbackProviderName || item.playbackProviderName,
+            externalPlayback: episode.externalPlayback || series.externalPlayback || item.externalPlayback,
+            streamAvailable: episode.streamAvailable ?? series.streamAvailable ?? item.streamAvailable,
+            categoryName: series.categoryName || fallbackSeries?.categoryName || item.categoryName,
+            image: normalizeImageSource(episode.poster || poster, "/assets/images/landscape-1.jpg")
+        }))
+    }));
+    return {
+        ...series,
+        poster,
+        backdrop: normalizeImageSource(series.backdrop || fallbackSeries?.backdrop || poster, poster),
+        seasons
+    };
+}
+
+function seriesContainsEpisode(series, episodeId) {
+    return (series.seasons || [])
+        .flatMap((season) => season.episodes || [])
+        .some((episode) => String(episode.id) === String(episodeId));
+}
+
+function seriesEpisodeKey(seasonNumber, episode) {
+    const season = positiveInteger(seasonNumber) || positiveInteger(episode?.season) || 1;
+    const episodeNumber = positiveInteger(episode?.episode) || 1;
+    return `s${season}e${episodeNumber}:${String(episode?.id || "")}`;
+}
+
+function findSeriesEpisodeByKey(series, episodeKey) {
+    const requested = String(episodeKey || "");
+    for (const season of series?.seasons || []) {
+        for (const episode of season.episodes || []) {
+            const key = seriesEpisodeKey(season.season, episode);
+            if (key === requested || String(episode.id) === requested) {
+                return { season, episode, key };
+            }
+        }
+    }
+    return null;
+}
+
+function seriesEpisodeMatchesItem(season, episode, item) {
+    if (!item) return false;
+    const seasonNumber = positiveInteger(season?.season) || positiveInteger(episode?.season) || 1;
+    const episodeNumber = positiveInteger(episode?.episode) || 1;
+    if (positiveInteger(item.season) && positiveInteger(item.episode)) {
+        return positiveInteger(item.season) === seasonNumber
+            && positiveInteger(item.episode) === episodeNumber;
+    }
+    return String(episode.id) === String(item.id);
+}
+
+function seriesEpisodeDisplayName(episode, episodeNumber) {
+    const name = String(episode?.name || "").trim();
+    const genericMatch = name.match(/^(?:episode|épisode|ep\.?)\s*(\d+)/i);
+    if (genericMatch && Number(genericMatch[1]) !== Number(episodeNumber)) {
+        return `Episode ${episodeNumber}`;
+    }
+    return name || `Episode ${episodeNumber}`;
+}
+
+function seriesCatalogIdFromEpisode(item) {
+    const tmdbId = tmdbIdFromItem(item);
+    if (tmdbId) return `tmdb~series~${tmdbId}`;
+    return String(item?.seriesId || item?.parentId || item?.id || "");
+}
+
+function findSeriesCatalogParent(item) {
+    const tmdbId = String(tmdbIdFromItem(item) || "");
+    const title = seriesTitleKey(item?.name || "");
+    return state.catalog.find((candidate) => (
+        candidate.type === "series"
+        && !candidate.isEpisode
+        && (
+            (tmdbId && String(tmdbIdFromItem(candidate) || candidate.tmdbId || "") === tmdbId)
+            || (title && seriesTitleKey(candidate.name || "") === title)
+        )
+    )) || null;
+}
+
+function refreshPlayerRoom(item, badgeLabel = "") {
+    if (!item) return;
+    const titleParts = String(item.name || "Programme").split(/\s+Â·\s+|\s+·\s+/);
+    const mainTitle = titleParts[0] || item.name || "Programme";
+    const subtitle = titleParts.slice(1).join(" · ") || playerSubtitleForItem(item);
+    const badge = badgeLabel || elements.playerBadge?.textContent || typeLabel(item.type).toUpperCase();
+    const pills = playerPillsForItem(item, badge);
+    const synopsis = item.summary || item.description || item.overview || item.categoryName
+        || "Selectionnez un episode, reprenez la lecture ou changez de version depuis cette interface.";
+
+    if (elements.playerTitle) elements.playerTitle.textContent = mainTitle;
+    if (elements.playerEpisodeSubtitle) elements.playerEpisodeSubtitle.textContent = subtitle;
+    if (elements.playerInfoTitle) elements.playerInfoTitle.textContent = mainTitle;
+    if (elements.playerInfoSubtitle) elements.playerInfoSubtitle.textContent = subtitle;
+    if (elements.playerInfoPills) {
+        elements.playerInfoPills.innerHTML = pills.map((pill) => `<span>${escapeHtml(pill)}</span>`).join("");
+    }
+    if (elements.playerSynopsis) elements.playerSynopsis.textContent = synopsis;
+    if (elements.playerRoomUserName) elements.playerRoomUserName.textContent = state.user?.name || state.user?.email?.split("@")[0] || "Nexora";
+    if (elements.playerRoomAvatar) {
+        const label = state.user?.name || state.user?.email || "N";
+        elements.playerRoomAvatar.textContent = label.trim().charAt(0).toUpperCase() || "N";
+    }
+    renderPlayerEpisodePanel(item);
+}
+
+function playerSubtitleForItem(item) {
+    if (item.type === "live") return item.categoryName || "En direct";
+    if (item.isEpisode) return "Episode en cours";
+    if (item.episode) return `Episode ${item.episode}`;
+    return item.categoryName || typeLabel(item.type);
+}
+
+function playerPillsForItem(item, badge) {
+    return [
+        item.season ? `Saison ${item.season}` : "",
+        item.episode ? `Episode ${item.episode}` : "",
+        item.duration || item.runtime || "",
+        badge,
+        item.type === "series" || item.type === "movie" ? "VF disponible" : ""
+    ].filter(Boolean).slice(0, 5);
+}
+
+function renderPlayerEpisodePanel(item) {
+    const entries = playerEpisodeEntries(item);
+    const activeIndex = entries.findIndex((entry) => entry.active);
+    const isMovie = item?.type === "movie";
+    const hasEpisodes = !isMovie && (entries.length > 1 || item?.type === "series");
+    if (elements.playerEpisodePanelTitle) {
+        elements.playerEpisodePanelTitle.textContent = isMovie
+            ? "Films similaires"
+            : hasEpisodes ? "Autres episodes" : "A regarder";
+    }
+    if (elements.playerEpisodePanelCount) {
+        elements.playerEpisodePanelCount.textContent = entries.length ? `${entries.length} items` : "";
+    }
+    if (elements.playerAllEpisodesButton) {
+        elements.playerAllEpisodesButton.textContent = isMovie ? "Voir plus de films" : "Voir tous les episodes";
+    }
+    if (elements.playerEpisodePanelList) {
+        elements.playerEpisodePanelList.innerHTML = entries.map(playerEpisodeCardTemplate).join("");
+    }
+    setPlayerEpisodeNav(entries, activeIndex);
+    if (elements.playerEpisodePanel) {
+        elements.playerEpisodePanel.hidden = false;
+    }
+}
+
+function playerEpisodeEntries(item) {
+    if (item?.id?.startsWith?.("drama-") && state.activeDramaBook && state.activeDramaEpisodes.length) {
+        return state.activeDramaEpisodes.map((episode) => ({
+            kind: "drama",
+            id: String(episode.episode),
+            chapterId: episode.chapter_id || "",
+            title: `Episode ${episode.episode}`,
+            subtitle: state.activeDramaBook.title,
+            image: state.activeDramaBook.image,
+            duration: "ReelShort",
+            active: Number(episode.episode) === Number(item.episode)
+        }));
+    }
+
+    if (item?.isEpisode && state.activeSeries?.seasons?.length) {
+        return state.activeSeries.seasons.flatMap((season) => (season.episodes || []).map((episode) => ({
+            kind: "series",
+            id: seriesEpisodeKey(season.season, episode),
+            title: seriesEpisodeDisplayName(episode, positiveInteger(episode.episode) || 1),
+            subtitle: `Saison ${season.season} · Episode ${episode.episode || ""}`,
+            image: normalizeImageSource(episode.poster || state.activeSeries.poster || item.image, "/assets/images/landscape-1.jpg"),
+            duration: episode.duration || "",
+            active: seriesEpisodeMatchesItem(season, episode, item)
+        })));
+    }
+
+    const candidates = relatedPlayerCandidates(item);
+    const related = candidates
+        .slice(0, 18)
+        .map((candidate) => ({
+            kind: "catalog",
+            id: candidate.id,
+            type: candidate.type,
+            title: candidate.name,
+            subtitle: candidate.categoryName || typeLabel(candidate.type),
+            image: normalizeImageSource(candidate.image, "/assets/images/landscape-1.jpg"),
+            duration: candidate.type === "live" ? "Direct" : "",
+            active: false
+        }));
+    return [{
+        kind: "current",
+        id: item?.id || "current",
+        title: item?.name || "Programme",
+        subtitle: item?.categoryName || typeLabel(item?.type),
+        image: normalizeImageSource(item?.image, "/assets/images/landscape-1.jpg"),
+        duration: item?.duration || "",
+        active: true
+    }, ...related];
+}
+
+function relatedPlayerCandidates(item) {
+    const currentType = item?.type || "";
+    const currentId = String(item?.id || "");
+    const currentCategory = String(item?.categoryId || item?.categoryName || "").toLowerCase();
+    const currentTmdbId = String(item?.tmdbId || tmdbIdFromItem(item) || "");
+    const currentSeriesTitle = seriesTitleKey(item?.name || "");
+    const pool = uniqueCatalogItems([...state.recentlyWatched, ...state.catalog])
+        .filter((candidate) => candidate?.id && String(candidate.id) !== currentId)
+        .filter((candidate) => !currentType || candidate.type === currentType);
+
+    if (currentType === "movie") {
+        return pool
+            .filter((candidate) => candidate.type === "movie")
+            .sort((a, b) => relatedScore(b, item, currentCategory, currentTmdbId) - relatedScore(a, item, currentCategory, currentTmdbId));
+    }
+
+    if (currentType === "series") {
+        const sameSeries = pool.filter((candidate) => (
+            isSameSeriesCandidate(candidate, currentTmdbId, currentSeriesTitle)
+        ));
+        const sameCategory = pool.filter((candidate) => (
+            !sameSeries.includes(candidate)
+            && String(candidate.categoryId || candidate.categoryName || "").toLowerCase() === currentCategory
+        ));
+        return [...sameSeries, ...sameCategory];
+    }
+
+    return pool;
+}
+
+function relatedScore(candidate, item, currentCategory, currentTmdbId) {
+    let score = 0;
+    if (currentTmdbId && String(candidate.tmdbId || tmdbIdFromItem(candidate) || "") === currentTmdbId) score += 12;
+    if (currentCategory && String(candidate.categoryId || candidate.categoryName || "").toLowerCase() === currentCategory) score += 8;
+    if (candidate.sourceCode && candidate.sourceCode === item?.sourceCode) score += 2;
+    if (candidate.watchedAt) score += 1;
+    return score;
+}
+
+function isSameSeriesCandidate(candidate, currentTmdbId, currentSeriesTitle) {
+    const candidateTmdbId = String(candidate.tmdbId || tmdbIdFromItem(candidate) || "");
+    if (currentTmdbId && candidateTmdbId && candidateTmdbId === currentTmdbId) return true;
+    return currentSeriesTitle && seriesTitleKey(candidate.name || "") === currentSeriesTitle;
+}
+
+function seriesTitleKey(value) {
+    return String(value || "")
+        .replace(/\s+[·-]\s+(?:Episode|Épisode|Episodio|EP)\b.*$/i, "")
+        .replace(/\s+S\d+\s*E\d+.*$/i, "")
+        .trim()
+        .toLowerCase();
+}
+
+function playerEpisodeCardTemplate(entry) {
+    const stateIcon = entry.active ? "Ⅱ" : "✓";
+    const attrs = entry.kind === "drama"
+        ? `data-player-drama-episode="${escapeHtml(entry.id)}" data-player-drama-chapter="${escapeHtml(entry.chapterId)}"`
+        : entry.kind === "series"
+                ? `data-player-series-episode="${escapeHtml(entry.id)}"`
+            : entry.kind === "catalog"
+                ? `data-player-catalog-item="${escapeHtml(entry.id)}" data-player-catalog-type="${escapeHtml(entry.type || "")}"`
+                : "";
+    return `
+        <button class="player-episode-card ${entry.active ? "active" : ""}" type="button" ${attrs} ${entry.active ? "aria-current=\"true\"" : ""}>
+            <img src="${escapeHtml(entry.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')">
+            <span>
+                <strong>${escapeHtml(entry.title)}</strong>
+                <span>${escapeHtml([entry.subtitle, entry.duration].filter(Boolean).join(" · "))}</span>
+            </span>
+            <i class="player-episode-state" aria-hidden="true">${stateIcon}</i>
+        </button>
+    `;
+}
+
+function setPlayerEpisodeNav(entries, activeIndex) {
+    const previous = activeIndex > 0 ? entries[activeIndex - 1] : null;
+    const next = activeIndex >= 0 && activeIndex < entries.length - 1 ? entries[activeIndex + 1] : null;
+    setPlayerNavButton(elements.playerPrevEpisodeButton, previous);
+    setPlayerNavButton(elements.playerNextEpisodeButton, next);
+}
+
+function setPlayerNavButton(button, entry) {
+    if (!button) return;
+    button.disabled = !entry || !["series", "drama", "catalog"].includes(entry.kind);
+    button.dataset.playerEpisodeKind = entry?.kind || "";
+    button.dataset.playerEpisodeId = entry?.id || "";
+    button.dataset.playerDramaChapter = entry?.chapterId || "";
+    button.dataset.playerCatalogType = entry?.type || "";
+}
+
+function playPlayerPanelEntry(entryKind, id, chapterId = "", type = "") {
+    if (entryKind === "drama") {
+        return playDramaEpisode(Number(id), chapterId);
+    }
+    if (entryKind === "series") {
+        return playSeriesEpisode(id);
+    }
+    if (entryKind === "catalog") {
+        const item = [...state.catalog, ...state.recentlyWatched].find((candidate) => (
+            String(candidate.id) === String(id) && (!type || candidate.type === type)
+        ));
+        if (item) return playItem(item);
+    }
+    return undefined;
+}
+
 function renderCatalogLoadingBanner(searching) {
     return `
         <div class="catalog-loading-strip" role="status" aria-live="polite">
@@ -1007,6 +2057,266 @@ function renderCatalogLoadingBanner(searching) {
                 ? "Nexora interroge les sources distantes, les resultats arrivent."
                 : "Nexora met a jour les chaines, films et series disponibles."}</span>
         </div>
+    `;
+}
+
+function homeImage(item, fallback = "/assets/images/landscape-1.jpg") {
+    return escapeHtml(item?.backdrop || item?.image || item?.poster || item?.logo || fallback);
+}
+
+function homeMeta(item) {
+    return [
+        typeLabel(item?.type),
+        item?.categoryName,
+        item?.releaseYear || item?.year
+    ].filter(Boolean).join(" · ");
+}
+
+function renderHomeForYou(items) {
+    if (!elements.homeFeaturedCard || !elements.homeForYouList || !elements.homeForYouPanel) return;
+    const unique = uniqueCatalogItems(items).filter((item) => ["movie", "series"].includes(item.type));
+    const featured = unique.find((item) => item.type === "series") || unique[0];
+    const miniItems = unique.filter((item) => item.id !== featured?.id || item.type !== featured?.type).slice(0, 3);
+
+    elements.homeForYouPanel.hidden = state.activeType !== "all" || Boolean(state.query.trim());
+    if (!featured) {
+        elements.homeFeaturedCard.innerHTML = "";
+        elements.homeForYouList.innerHTML = "";
+        return;
+    }
+
+    elements.homeFeaturedCard.innerHTML = `
+        <button class="home-featured-card" type="button" data-item-id="${escapeHtml(featured.id)}" data-item-type="${featured.type}">
+            <img src="${homeImage(featured)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-2.jpg')">
+            <span class="home-featured-play" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"></path></svg>
+            </span>
+            <span class="home-featured-copy">
+                <strong>${escapeHtml(featured.name)}</strong>
+                <small>${escapeHtml(homeMeta(featured))}</small>
+            </span>
+        </button>
+    `;
+
+    elements.homeForYouList.innerHTML = miniItems.map((item) => `
+        <button class="home-mini-item" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}">
+            <img src="${homeImage(item)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-3.jpg')">
+            <span>
+                <strong>${escapeHtml(item.name)}</strong>
+                <small>${escapeHtml(homeMeta(item))}</small>
+            </span>
+        </button>
+    `).join("");
+}
+
+function renderHomeDashboard(items) {
+    const unique = uniqueCatalogItems(items).filter((item) => ["movie", "series", "live"].includes(item.type));
+    const availableForContinue = unique.filter((item) => !state.hiddenContinueCards.has(catalogCardKey(item.type, item.id)));
+    const recent = recentlyWatchedItems(availableForContinue).slice(0, 8);
+    const fallbackContinue = balancedHomeItems(availableForContinue, 18, ["series", "movie", "live"]);
+    const continueItems = uniqueCatalogItems([...recent, ...fallbackContinue]).slice(0, 18);
+    const trending = balancedHomeItems(unique.filter((item) => item.type !== "live"), 18, ["series", "movie"]);
+    const recommended = balancedHomeItems(unique.filter((item) => item.type === "series"), 18, ["series"]);
+    const moodItems = [
+        ["Action", "movie", "/assets/images/landscape-1.jpg"],
+        ["Suspense", "series", "/assets/images/landscape-2.jpg"],
+        ["Romance", "series", "/assets/images/landscape-3.jpg"],
+        ["Drame", "series", "/assets/images/landscape-4.jpg"],
+        ["Science-Fiction", "movie", "/assets/images/poster-2.jpg"],
+        ["Animation", "movie", "/assets/images/poster-3.jpg"]
+    ];
+
+    return `
+        <section class="home-dashboard" aria-label="Accueil Nexora">
+            <div class="home-panel home-continue">
+                <div class="home-panel-heading">
+                    <h2>Continuer la lecture</h2>
+                    ${renderHomeScrollControls("homeContinueTrack")}
+                </div>
+                <div class="home-continue-track" id="homeContinueTrack">
+                    ${continueItems.map(renderHomeContinueCard).join("")}
+                </div>
+            </div>
+
+            <div class="home-panel home-moods">
+                <div class="home-panel-heading">
+                    <h2>Raccourcis par humeur</h2>
+                    <button class="circle-link" type="button" data-filter-shortcut="movie" aria-label="Explorer les humeurs">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                    </button>
+                </div>
+                <div class="home-mood-grid">
+                    ${moodItems.map(([label, type, image]) => `
+                        <button class="home-mood-card" type="button" data-filter-shortcut="${type}" style="--mood-image: url('${image}')">
+                            <span>${escapeHtml(label)}</span>
+                        </button>
+                    `).join("")}
+                </div>
+            </div>
+
+            <div class="home-panel home-trending">
+                <div class="home-panel-heading">
+                    <h2>Tendances du moment</h2>
+                    ${renderHomeScrollControls("homeTrendingTrack")}
+                </div>
+                <div class="home-poster-track" id="homeTrendingTrack">
+                    ${trending.map((item, index) => renderHomePosterCard(item, index)).join("")}
+                </div>
+            </div>
+
+            <div class="home-panel home-recommended">
+                <div class="home-panel-heading">
+                    <h2>S\u00e9ries recommand\u00e9es pour vous</h2>
+                    ${renderHomeScrollControls("homeRecommendedTrack")}
+                </div>
+                <div class="home-poster-track" id="homeRecommendedTrack">
+                    ${recommended.map((item, index) => renderHomePosterCard(item, index + 6)).join("")}
+                </div>
+            </div>
+        </section>
+    `;
+}
+
+function renderHomeScrollControls(targetId) {
+    return `
+        <span class="home-panel-actions">
+            <button class="circle-link" type="button" data-home-scroll="${targetId}" data-home-scroll-direction="-1" aria-label="Faire defiler vers la gauche">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+            </button>
+            <button class="circle-link" type="button" data-home-scroll="${targetId}" data-home-scroll-direction="1" aria-label="Faire defiler vers la droite">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+            </button>
+        </span>
+    `;
+}
+
+function scrollRail(track, direction) {
+    if (!track) return;
+    const amount = Math.max(track.clientWidth * 0.86, 320);
+    const nextLeft = Math.max(0, Math.min(track.scrollWidth - track.clientWidth, track.scrollLeft + direction * amount));
+    if (Math.abs(nextLeft - track.scrollLeft) < 2 && direction < 0) {
+        track.scrollLeft = 0;
+        return;
+    }
+    if (track.scrollTo) {
+        track.scrollTo({ left: nextLeft, behavior: "smooth" });
+    } else {
+        track.scrollLeft = nextLeft;
+    }
+}
+
+function renderHomeContinueCard(item) {
+    if (!item) return "";
+    const progress = Math.min(92, 24 + Math.abs(String(item.id).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0)) % 55);
+    return `
+        <article class="home-continue-card" role="button" tabindex="0" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}">
+            <button class="home-continue-remove" type="button" data-continue-remove="${escapeHtml(item.id)}" data-continue-type="${item.type}" aria-label="Retirer ${escapeHtml(item.name)} de Continuer la lecture">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            <img src="${homeImage(item)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')">
+            <span>
+                <strong>${escapeHtml(item.name)}</strong>
+                <small>${escapeHtml(item.isEpisode ? `S${item.season || 1} E${item.episode || 1}` : homeMeta(item))}</small>
+            </span>
+            <i style="--progress: ${progress}%"></i>
+        </article>
+    `;
+}
+
+function renderHomePosterCard(item, index = 0) {
+    if (!item) return "";
+    const fallback = `/assets/images/poster-${(index % 4) + 1}.jpg`;
+    return `
+        <button class="home-poster-card" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}">
+            <img src="${homeImage(item, fallback)}" alt="" decoding="async" onerror="retryCatalogImage(this, '${fallback}')">
+            <span>
+                <strong>${escapeHtml(item.name)}</strong>
+                <small>${escapeHtml(homeMeta(item))}</small>
+            </span>
+        </button>
+    `;
+}
+
+function renderBrowseDashboard(items) {
+    const type = state.activeType;
+    const unique = uniqueCatalogItems(items).filter((item) => item.type === type);
+    if (!unique.length) return "";
+
+    const originals = balancedHomeItems(unique, 8, ["tmdb", "movie", "series"]);
+    const recommended = balancedHomeItems(unique.filter((item) => item.streamAvailable !== false), 12, [type, "tmdb"]);
+    const recent = recentlyWatchedItems(unique).slice(0, 10);
+    const continueItems = uniqueCatalogItems([...recent, ...balancedHomeItems(unique, 10, [type])]).slice(0, 10);
+    const universes = browseUniverses(unique).slice(0, 8);
+    const featured = originals[0] || recommended[0] || unique[0];
+    const title = type === "movie" ? "Films originaux Nexora" : "Series originales Nexora";
+    const subtitle = type === "movie" ? "Des histoires uniques. Des emotions vraies." : "Des saisons a enchainer, selectionnees pour vous.";
+
+    return `
+        <section class="browse-dashboard" aria-label="${escapeHtml(typeLabel(type))}">
+            <article class="browse-originals" data-item-id="${escapeHtml(featured.id)}" data-item-type="${featured.type}">
+                <img src="${homeImage(featured, "/assets/images/landscape-7.jpg")}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-7.jpg')">
+                <div>
+                    <p class="section-kicker">${escapeHtml(type === "movie" ? "FILMS ORIGINAUX" : "SERIES ORIGINALES")}</p>
+                    <h3>${escapeHtml(title)}</h3>
+                    <span>${escapeHtml(subtitle)}</span>
+                    <button class="button button-outline" type="button" data-item-id="${escapeHtml(featured.id)}" data-item-type="${featured.type}">Decouvrir</button>
+                </div>
+            </article>
+            ${renderBrowseRail("Recommandes pour vous", "browseRecommendedTrack", recommended, renderHomePosterCard)}
+            ${renderBrowseRail("Continuer la lecture", "browseContinueTrack", continueItems, renderHomeContinueCard)}
+            ${renderUniverseRail(universes)}
+        </section>
+    `;
+}
+
+function renderBrowseRail(title, id, items, renderer) {
+    if (!items.length) return "";
+    return `
+        <section class="browse-rail">
+            <div class="browse-rail-head">
+                <h3>${escapeHtml(title)}</h3>
+                ${renderHomeScrollControls(id)}
+            </div>
+            <div class="browse-track ${id === "browseContinueTrack" ? "browse-continue-track" : "browse-poster-track"}" id="${id}">
+                ${items.map((item, index) => renderer(item, index)).join("")}
+            </div>
+        </section>
+    `;
+}
+
+function browseUniverses(items) {
+    const seen = new Set();
+    return items.reduce((values, item) => {
+        const label = item.categoryName || typeLabel(item.type);
+        const key = normalizeSearchText(label);
+        if (!key || seen.has(key)) return values;
+        seen.add(key);
+        values.push({
+            label,
+            type: item.type,
+            categoryId: item.categoryId || "",
+            image: homeImage(item, "/assets/images/landscape-4.jpg")
+        });
+        return values;
+    }, []);
+}
+
+function renderUniverseRail(universes) {
+    if (!universes.length) return "";
+    return `
+        <section class="browse-rail browse-universes">
+            <div class="browse-rail-head">
+                <h3>Explorer par univers</h3>
+                ${renderHomeScrollControls("browseUniverseTrack")}
+            </div>
+            <div class="browse-universe-track" id="browseUniverseTrack">
+                ${universes.map((universe) => `
+                    <button class="browse-universe-card" type="button" data-browse-category="${escapeHtml(universe.categoryId)}" data-browse-type="${escapeHtml(universe.type)}" style="--universe-image: url('${escapeHtml(universe.image)}')">
+                        <span>${escapeHtml(universe.label)}</span>
+                    </button>
+                `).join("")}
+            </div>
+        </section>
     `;
 }
 
@@ -1115,8 +2425,9 @@ function balancedHomeItems(items, limit, order) {
 
 function findCatalogItem(id, type) {
     const key = `${type}:${id}`;
-    return [...state.catalog, ...state.browseCatalog, ...state.searchResults, ...state.recentlyWatched]
-        .find((entry) => `${entry.type}:${entry.id}` === key);
+    const pool = [...state.catalog, ...state.browseCatalog, ...state.searchResults, ...state.recentlyWatched];
+    return pool.find((entry) => `${entry.type}:${entry.id}` === key)
+        || pool.find((entry) => String(entry.id) === String(id));
 }
 
 function recentlyWatchedItems(items = state.catalog) {
@@ -1387,7 +2698,7 @@ function watchPosterCard(item) {
         <button class="watch-poster-card" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}" aria-label="${escapeHtml(`Ouvrir ${item.name}`)}">
             ${addonBadge}
             ${removeCardControl(item)}
-            <img src="${escapeHtml(item.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/poster-1.jpg')">
+            <img src="${escapeHtml(item.image)}" alt="" loading="lazy" decoding="async" data-image-title="${escapeHtml(item.name)}" data-image-type="${escapeHtml(item.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '/assets/images/poster-1.jpg')">
             <span class="watch-poster-year">${escapeHtml(year)}</span>
             <strong>${escapeHtml(item.name)}</strong>
             <small><span>${escapeHtml(genre)}</span><b>${escapeHtml(typeLabel(item.type))}</b></small>
@@ -1398,7 +2709,7 @@ function watchPosterCard(item) {
 function watchOrbitCard(item) {
     return `
         <button class="watch-orbit-card" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}" aria-label="${escapeHtml(`Ouvrir ${item.name}`)}">
-            <span><img src="${escapeHtml(item.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')"></span>
+            <span><img src="${escapeHtml(item.image)}" alt="" loading="lazy" decoding="async" data-image-title="${escapeHtml(item.name)}" data-image-type="${escapeHtml(item.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')"></span>
             <strong>${escapeHtml(item.name)}</strong>
             <small>${escapeHtml(typeLabel(item.type))}</small>
         </button>
@@ -1454,8 +2765,8 @@ function buildCatalogShelves(definition, allItems, visibleItems, searching) {
 
     return orderedGroups.flatMap((group) => {
         const total = totals.get(group.key) || group.items.length;
-        return chunkCatalogItems(group.items, 24).map((chunk, chunkIndex) => {
-            const firstItem = chunkIndex * 24 + 1;
+        return chunkCatalogItems(group.items, 30).map((chunk, chunkIndex) => {
+            const firstItem = chunkIndex * 30 + 1;
             const lastItem = firstItem + chunk.length - 1;
             const noun = definition.type === "live"
                 ? "chaînes"
@@ -1522,7 +2833,7 @@ function renderCatalogShelf(shelf, index) {
                     <h3 id="${rowId}-title">${escapeHtml(shelf.title)}</h3>
                     <span>${escapeHtml(shelf.label)}</span>
                 </div>
-                ${hasShortcut ? `<button class="row-see-more" type="button" data-filter-shortcut="${shelf.type}">Voir plus</button>` : ""}
+                ${hasShortcut ? `<button class="row-see-more" type="button" data-filter-shortcut="${shelf.type}">Voir plus ${escapeHtml(typeLabel(shelf.type).toLowerCase())}</button>` : ""}
                 ${controls}
             </div>
             <div class="card-track ${posterLayout ? "poster-card-track" : ""} card-track-${shelf.type}" id="${rowId}">
@@ -1564,7 +2875,7 @@ function posterMediaCard(item) {
         <button class="media-card poster-media-card ${item.type}" type="button" data-item-id="${escapeHtml(item.id)}" data-item-type="${item.type}" aria-label="${escapeHtml(actionLabel)}">
             ${addonBadge}
             ${removeCardControl(item)}
-            <img src="${escapeHtml(item.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/poster-1.jpg')">
+            <img src="${escapeHtml(item.image)}" alt="" loading="lazy" decoding="async" data-image-title="${escapeHtml(item.name)}" data-image-type="${escapeHtml(item.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '/assets/images/poster-1.jpg')">
             <span class="poster-card-copy">
                 <strong>${escapeHtml(item.name)}</strong>
                 <span>${escapeHtml(meta)}</span>
@@ -1593,7 +2904,7 @@ function mediaCard(item) {
             ${live}
             ${addonBadge}
             ${removeCardControl(item)}
-            <img src="${escapeHtml(item.image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')">
+            <img src="${escapeHtml(item.image)}" alt="" loading="lazy" decoding="async" data-image-title="${escapeHtml(item.name)}" data-image-type="${escapeHtml(item.type)}" onload="repairCatalogImage(this)" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')">
             <span class="card-content">
                 <span class="card-copy">
                     <strong>${escapeHtml(item.name)}</strong>
@@ -1939,9 +3250,18 @@ async function setFilter(type) {
     state.activeAddonFilter = "";
     state.addonPages = 1;
     state.addonHasMore = false;
+    elements.navLinks.forEach((link) => link.classList.toggle("active", link.dataset.filter === type));
+    if (type === "drama") {
+        elements.catalogRows.hidden = true;
+        elements.emptyState.hidden = true;
+        await loadDramaHome();
+        document.querySelector("#catalogue").scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+    }
+    elements.dramaSection.hidden = true;
+    elements.catalogRows.hidden = false;
     if (type !== "all") state.visibleCatalog[type] = defaultCatalogLimit(type);
     renderLanguageFilter();
-    elements.navLinks.forEach((link) => link.classList.toggle("active", link.dataset.filter === type));
     renderCategories();
     renderAddonFilter();
     renderCatalog();
@@ -1968,6 +3288,7 @@ function closeModal(id) {
     modal.hidden = true;
 
     if (id === "playerModal") {
+        clearActivePlayback();
         state.activePlayerItem = null;
         stopPlayer();
     }
@@ -2268,6 +3589,7 @@ async function restoreSession() {
         state.recentlyWatched = loadRecentlyWatched(state.user);
         updateAccountUi();
         await loadCatalog();
+        restoreActivePlayback();
     } catch {
         clearSession();
         if (state.authRequired) {
@@ -2280,6 +3602,10 @@ async function restoreSession() {
 
 function applyLaunchIntent() {
     const mode = launchParams.get("mode");
+    const requestedFilter = launchParams.get("filter");
+    if (requestedFilter && ["all", "live", "movie", "series", "drama"].includes(requestedFilter)) {
+        window.setTimeout(() => setFilter(requestedFilter), 80);
+    }
     if (mode === "register" && !state.token) {
         const signupParams = new URLSearchParams();
         const email = launchParams.get("email");
@@ -2693,19 +4019,20 @@ function renderSeriesSeason(seasonNumber) {
             "/assets/images/landscape-1.jpg"
         );
         const episodeNumber = Number(episode.episode || 1);
+        const episodeName = seriesEpisodeDisplayName(episode, episodeNumber);
         const episodeMetadata = [
             `S${String(season.season).padStart(2, "0")} · E${String(episodeNumber).padStart(2, "0")}`,
             episode.duration,
             episode.rating ? `★ ${episode.rating}` : ""
         ].filter(Boolean).join(" · ");
         return `
-            <button class="episode-row" type="button" data-episode-id="${escapeHtml(episode.id)}" aria-label="Regarder ${escapeHtml(episode.name)}">
+            <button class="episode-row" type="button" data-episode-id="${escapeHtml(seriesEpisodeKey(season.season, episode))}" aria-label="Regarder ${escapeHtml(episodeName)}">
                 <span class="episode-number">${episodeNumber}</span>
                 <span class="episode-thumb">
                     <img src="${escapeHtml(image)}" alt="" decoding="async" onerror="retryCatalogImage(this, '/assets/images/landscape-1.jpg')">
                 </span>
                 <span class="episode-copy">
-                    <strong>${escapeHtml(episode.name || `Épisode ${episodeNumber}`)}</strong>
+                    <strong>${escapeHtml(episodeName)}</strong>
                     <span>${escapeHtml(episodeMetadata)}</span>
                     ${episode.summary ? `<p>${escapeHtml(episode.summary)}</p>` : ""}
                 </span>
@@ -2725,10 +4052,12 @@ function setOptionalText(element, value) {
 function playSeriesEpisode(episodeId) {
     const series = state.activeSeries;
     if (!series) return;
-    const episode = (series.seasons || [])
-        .flatMap((season) => season.episodes || [])
-        .find((item) => item.id === episodeId);
-    if (!episode) return;
+    const resolved = findSeriesEpisodeByKey(series, episodeId);
+    if (!resolved) return;
+    const { season, episode } = resolved;
+    const seasonNumber = positiveInteger(season.season) || positiveInteger(episode.season) || 1;
+    const episodeNumber = positiveInteger(episode.episode) || 1;
+    const episodeName = seriesEpisodeDisplayName(episode, episodeNumber);
     const tmdbEpisode = isTmdbPlayable(episode) || isTmdbPlayable(series);
     if ((episode.streamAvailable === false || series.streamAvailable === false) && !tmdbEpisode) {
         showToast("Cet add-on fournit les informations sans flux de lecture.", true);
@@ -2740,6 +4069,8 @@ function playSeriesEpisode(episodeId) {
         ...episode,
         type: "series",
         isEpisode: true,
+        season: seasonNumber,
+        episode: episodeNumber,
         tmdbId: tmdbIdFromItem(episode) || tmdbIdFromItem(series) || undefined,
         source: episode.source || series.source,
         sourceCode: episode.sourceCode || series.sourceCode,
@@ -2747,7 +4078,7 @@ function playSeriesEpisode(episodeId) {
         playbackProviderName: episode.playbackProviderName || series.playbackProviderName,
         externalPlayback: episode.externalPlayback || series.externalPlayback,
         streamAvailable: tmdbEpisode ? true : episode.streamAvailable,
-        name: `${series.name} · ${episode.name}`,
+        name: `${series.name} · ${episodeName}`,
         categoryName: series.categoryName,
         image: normalizeImageSource(
             episode.poster || series.poster,
@@ -2781,6 +4112,7 @@ async function playItem(item, options = {}) {
     }
     if (state.playerOpening) return;
     trackRecentlyWatched(item);
+    saveActivePlayback(item);
     state.playerOpening = true;
     setPlayerControlsBusy(true);
     state.playerErrorShown = false;
@@ -2791,12 +4123,14 @@ async function playItem(item, options = {}) {
     state.activePlayerItem = item;
     const requestedQuality = requestedPlaybackQuality(item, options);
     elements.playerQuality.value = requestedQuality;
+    await ensurePlayerContext(item);
 
     openModal("playerModal");
     elements.playerTitle.textContent = item.name;
     elements.playerBadge.textContent = isEpornerSource(item)
         ? "18+"
         : item.type === "live" ? "DIRECT" : typeLabel(item.type).toUpperCase();
+    refreshPlayerRoom(item, elements.playerBadge.textContent);
     state.playerHasStarted = false;
     setPlayerLoading("Préparation de votre programme...", "Connexion au flux sécurisé Nexora.");
 
@@ -2809,8 +4143,13 @@ async function playItem(item, options = {}) {
                 await playNodeFrenchItem(item);
                 return;
             } catch (directError) {
-                detachPlayerMedia();
-                showPlayerError(directError.message || "Source FR directe indisponible.");
+                const opened = await switchToUniversalEmbedFallback(
+                    directError.message || "Aucune source FR disponible; bascule vers Videasy."
+                );
+                if (!opened) {
+                    detachPlayerMedia();
+                    showPlayerError(directError.message || "Source FR directe indisponible.");
+                }
                 return;
             }
         }
@@ -2824,6 +4163,12 @@ async function playItem(item, options = {}) {
         });
         await startStreamFromPayload(item, stream, requestedQuality);
     } catch (error) {
+        if (["movie", "series"].includes(item.type) && videasyUrlForItem(item)) {
+            const opened = await switchToUniversalEmbedFallback(
+                playerOpenErrorMessage(error, item) || "Aucune source directe disponible; bascule vers Videasy."
+            );
+            if (opened) return;
+        }
         detachPlayerMedia();
         showPlayerError(playerOpenErrorMessage(error, item));
         showPlayerError(error.message || "Ce flux est momentanément indisponible.");
@@ -3048,6 +4393,8 @@ async function playTmdbItem(item) {
     }
     if (state.playerOpening) return;
 
+    trackRecentlyWatched(item);
+    saveActivePlayback(item);
     state.playerOpening = true;
     setPlayerControlsBusy(true);
     state.playerErrorShown = false;
@@ -3062,10 +4409,12 @@ async function playTmdbItem(item) {
         state.activePlayerItem = item;
         state.activePlaybackQuality = "auto";
         elements.playerQuality.value = "auto";
+        await ensurePlayerContext(item);
 
         openModal("playerModal");
         elements.playerTitle.textContent = item.name || "Programme TMDB";
         elements.playerBadge.textContent = "TMDB";
+        refreshPlayerRoom(item, "TMDB");
         setPlayerLoading(
             "Ouverture du lecteur TMDB...",
             "Injection automatique du code TMDB dans Videasy."
@@ -3475,7 +4824,8 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
         try {
             await attachHlsPlayer(player, elements.streamPlayer, streamUrl, {
                 preferredAudioLanguage: state.activePreferredAudioLanguage,
-                preferredSubtitleLanguage: state.activePreferredSubtitleLanguage
+                preferredSubtitleLanguage: state.activePreferredSubtitleLanguage,
+                enableSubtitles: Boolean(options.enableSubtitles)
             });
             await attemptStreamPlayerPlay(generation, { waitForAttempt: true });
         } catch (error) {
@@ -3547,6 +4897,68 @@ function shouldGateEmbedLaunch(item) {
     return isTmdbPlayable(item) && isMobileEmbedEnvironment();
 }
 
+function configureEmbedFrame() {
+    elements.embedPlayer.removeAttribute("sandbox");
+    elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
+    elements.embedPlayer.setAttribute("allowfullscreen", "");
+    elements.embedPlayer.setAttribute("webkitallowfullscreen", "");
+    elements.embedPlayer.referrerPolicy = "no-referrer";
+}
+
+function clearEmbedFrame() {
+    elements.embedPlayer.hidden = true;
+    elements.embedPlayer.src = "about:blank";
+    lockEmbedShield(true);
+}
+
+function loadEmbedFrame(streamUrl) {
+    configureEmbedFrame();
+    elements.embedPlayer.hidden = false;
+    if (elements.embedPlayer.src !== streamUrl) {
+        elements.embedPlayer.src = streamUrl;
+    }
+    unlockEmbedShield();
+}
+
+function lockEmbedShield(forceHide = false) {
+    if (!elements.embedClickShield) return;
+    if (state.embedShieldTimer) {
+        window.clearTimeout(state.embedShieldTimer);
+        state.embedShieldTimer = null;
+    }
+    state.embedShieldUnlockedUntil = 0;
+    const shouldShow = !forceHide
+        && state.activePlaybackMode === "embed"
+        && !elements.embedPlayer.hidden
+        && Boolean(state.activeEmbedUrl);
+    elements.embedClickShield.hidden = !shouldShow;
+}
+
+function unlockEmbedShield(milliseconds = 0) {
+    if (!elements.embedClickShield || state.activePlaybackMode !== "embed") return;
+    if (state.embedShieldTimer) {
+        window.clearTimeout(state.embedShieldTimer);
+        state.embedShieldTimer = null;
+    }
+    state.embedShieldUnlockedUntil = milliseconds > 0 ? Date.now() + milliseconds : Number.POSITIVE_INFINITY;
+    elements.embedClickShield.hidden = true;
+    elements.playerMessage.textContent = "Interaction avec le lecteur autorisee.";
+    if (milliseconds > 0) {
+        state.embedShieldTimer = window.setTimeout(() => {
+            lockEmbedShield();
+            elements.playerMessage.textContent = "Protection anti-redirection reactivee.";
+        }, milliseconds);
+    }
+}
+
+function isExternalEmbedDomRemovalError(event) {
+    const message = String(event?.message || event?.error?.message || "");
+    const filename = String(event?.filename || "");
+    return message.includes("removeChild")
+        && message.includes("not a child")
+        && /(?:player\.videasy|69be39811437728d|\/_next\/static\/chunks\/).*\.js/i.test(filename);
+}
+
 function prepareEmbedPlayer(streamUrl) {
     state.activeEmbedUrl = streamUrl;
     state.embedRequiresUserLaunch = false;
@@ -3555,13 +4967,8 @@ function prepareEmbedPlayer(streamUrl) {
     state.embedManualRetryUsed = false;
     state.embedLoadCount = 0;
     state.embedReloading = false;
-    elements.embedPlayer.removeAttribute("sandbox");
-    elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
-    elements.embedPlayer.setAttribute("allowfullscreen", "");
-    elements.embedPlayer.setAttribute("webkitallowfullscreen", "");
-    elements.embedPlayer.referrerPolicy = "no-referrer";
-    elements.embedPlayer.removeAttribute("src");
-    elements.embedPlayer.hidden = true;
+    configureEmbedFrame();
+    clearEmbedFrame();
     elements.embedLaunchPanel.hidden = true;
     elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
     elements.embedLaunchInlineButton.textContent = "Lancer ici";
@@ -3572,8 +4979,7 @@ function prepareEmbedPlayer(streamUrl) {
 function showEmbedLaunchPanel() {
     state.embedRequiresUserLaunch = true;
     state.nativePlaybackRequiresUserLaunch = false;
-    elements.embedPlayer.hidden = true;
-    elements.embedPlayer.removeAttribute("src");
+    clearEmbedFrame();
     elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
     elements.embedLaunchInlineButton.textContent = "Lancer ici";
     elements.embedLaunchPanel.hidden = false;
@@ -3598,8 +5004,7 @@ function launchEmbedInline() {
     if (!state.activeEmbedUrl) return;
     state.embedRequiresUserLaunch = false;
     elements.embedLaunchPanel.hidden = true;
-    elements.embedPlayer.hidden = false;
-    elements.embedPlayer.src = state.activeEmbedUrl;
+    loadEmbedFrame(state.activeEmbedUrl);
     setEmbedPlayerOpened(embedOpenedMessage());
     scheduleEmbedAssistMessage();
     syncEmbedActionLinks();
@@ -3607,12 +5012,12 @@ function launchEmbedInline() {
 
 function embedOpenedMessage() {
     if (isNodeFrenchPlayerItem()) {
-        return "Lecteur FR ouvert. Si le chargement reste bloque, utilisez Ouvrir.";
+        return "Lecteur FR ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
     }
     if (isEpornerSource(state.activePlayerItem)) {
-        return "Lecteur Adults ouvert. Si le chargement reste bloque, utilisez Ouvrir.";
+        return "Lecteur Adults ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
     }
-    return "Lecteur TMDB ouvert. Si le chargement reste bloque sur mobile, utilisez Ouvrir.";
+    return "Lecteur TMDB ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
 }
 
 function confirmNonFrenchPlayback(source) {
@@ -3690,19 +5095,19 @@ function handleEmbedLaunchInlineButtonClick() {
 function retryEmbedInline() {
     if (!state.activeEmbedUrl) return;
     if (state.embedManualRetryUsed) {
-        showToast("Le lecteur a deja ete relance. Utilisez Ouvrir si le blocage continue.", true);
+        showToast("Le lecteur a deja ete relance. Cette source bloque la lecture integree.", true);
         return;
     }
     state.embedManualRetryUsed = true;
     state.embedAssistShown = false;
     clearEmbedAssistTimer();
     elements.playerEmbedRetryButton.hidden = true;
-    elements.embedPlayer.hidden = false;
-    elements.embedPlayer.removeAttribute("src");
+    clearEmbedFrame();
     elements.playerMessage.textContent = embedRetryMessage();
     window.setTimeout(() => {
         if (state.activePlaybackMode !== "embed" || !state.activeEmbedUrl) return;
-        elements.embedPlayer.src = state.activeEmbedUrl;
+        loadEmbedFrame(state.activeEmbedUrl);
+        lockEmbedShield();
         scheduleEmbedAssistMessage();
     }, 80);
 }
@@ -3713,13 +5118,12 @@ function syncPlayerEmbedMode(isEmbed) {
 
 function syncEmbedActionLinks() {
     const hasEmbed = state.activePlaybackMode === "embed" && Boolean(state.activeEmbedUrl);
-    const href = hasEmbed ? state.activeEmbedUrl : "#";
-    elements.embedOpenExternalLink.href = href;
-    elements.embedOpenExternalLink.hidden = !hasEmbed;
-    elements.embedOpenExternalLink.setAttribute("aria-disabled", String(!hasEmbed));
-    elements.playerEmbedOpenLink.href = href;
-    elements.playerEmbedOpenLink.hidden = !hasEmbed;
-    elements.playerEmbedOpenLink.setAttribute("aria-disabled", String(!hasEmbed));
+    elements.embedOpenExternalLink.href = "#";
+    elements.embedOpenExternalLink.hidden = true;
+    elements.embedOpenExternalLink.setAttribute("aria-disabled", "true");
+    elements.playerEmbedOpenLink.href = "#";
+    elements.playerEmbedOpenLink.hidden = true;
+    elements.playerEmbedOpenLink.setAttribute("aria-disabled", "true");
     elements.playerEmbedRetryButton.hidden = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
     elements.playerEmbedRetryButton.disabled = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
 }
@@ -3734,7 +5138,7 @@ function scheduleEmbedAssistMessage() {
         elements.playerMessage.textContent = embedAssistMessage();
         elements.playerEmbedRetryButton.hidden = state.embedManualRetryUsed;
         elements.playerEmbedRetryButton.disabled = state.embedManualRetryUsed;
-        elements.playerEmbedOpenLink.hidden = false;
+        elements.playerEmbedOpenLink.hidden = true;
     }, 14000);
 }
 
@@ -3981,8 +5385,16 @@ function inspectPlayerVisualTrack(generation) {
         return;
     }
 
-    detachPlayerMedia();
-    showPlayerError("Ce flux FR renvoie du son, mais aucune image lisible dans ce navigateur.");
+    if (isNodeFrenchPlayerItem()) {
+        void switchToNodeTmdbFallback(
+            "Le flux FR donne du son sans image; bascule vers une source alternative."
+        );
+        return;
+    }
+
+    void switchToUniversalEmbedFallback(
+        "Ce flux renvoie du son sans image; bascule vers le lecteur integre."
+    );
 }
 
 async function switchToEmbedFallback(reason) {
@@ -4007,8 +5419,101 @@ async function switchToEmbedFallback(reason) {
         elements.playerMessage.textContent = "Lecteur FR ouvert: le flux direct donnait du son sans image.";
         return true;
     } catch (error) {
+        const opened = await switchToUniversalEmbedFallback(
+            error.message || "Impossible d'ouvrir le lecteur FR alternatif."
+        );
+        if (!opened) {
+            detachPlayerMedia();
+            showPlayerError(error.message || "Impossible d'ouvrir le lecteur FR alternatif.");
+        }
+        return false;
+    } finally {
+        state.playerVisualFallbackPending = false;
+        setPlayerControlsBusy(false);
+    }
+}
+
+async function switchToNodeTmdbFallback(reason) {
+    const item = state.activePlayerItem;
+    if (!item || item.playbackProvider === "node-fr-embed" || !nodeApiEnabled()) {
+        return switchToUniversalEmbedFallback(reason);
+    }
+    const fallbackEndpoint = nodeTmdbEmbedFallbackEndpointForItem(item);
+    if (!fallbackEndpoint) {
+        return switchToUniversalEmbedFallback(reason);
+    }
+
+    state.playerVisualFallbackPending = true;
+    try {
+        setPlayerControlsBusy(true);
+        setPlayerLoading("Bascule vers une autre source...", reason);
         detachPlayerMedia();
-        showPlayerError(error.message || "Impossible d'ouvrir le lecteur FR alternatif.");
+        await settleDetachedPlayer();
+        const source = await nodeApi(fallbackEndpoint);
+        const stream = nodeFrenchStreamFromSource(source);
+        const sourceLabel = [
+            stream.hoster.nom || "Source alternative",
+            stream.hoster.lang || ""
+        ].filter(Boolean).join(" - ");
+        const fallbackItem = {
+            ...item,
+            playbackProvider: "node-fr-embed",
+            playbackProviderName: sourceLabel || "Source alternative"
+        };
+        state.activePlayerItem = fallbackItem;
+        elements.playerBadge.textContent = source.requiresLanguageConfirmation ? "VO" : "FR";
+        await startStreamPlayback(fallbackItem, stream.proxyUrl, stream.playbackMode, {
+            embedFallbackUrl: stream.playbackMode === "hls" ? stream.embedUrl : "",
+            embedFallbackLabel: sourceLabel,
+            preferredAudioLanguage: stream.preferredAudioLanguage,
+            preferredSubtitleLanguage: stream.preferredSubtitleLanguage,
+            visualWatch: false
+        });
+        elements.playerMessage.textContent = "Source alternative ouverte.";
+        return true;
+    } catch (error) {
+        const opened = await switchToUniversalEmbedFallback(
+            error.message || "Impossible d'ouvrir une source alternative."
+        );
+        if (!opened) {
+            detachPlayerMedia();
+            showPlayerError(error.message || "Impossible d'ouvrir une source alternative.");
+        }
+        return false;
+    } finally {
+        state.playerVisualFallbackPending = false;
+        setPlayerControlsBusy(false);
+    }
+}
+
+async function switchToUniversalEmbedFallback(reason) {
+    const item = state.activePlayerItem;
+    const fallbackUrl = videasyUrlForItem(item);
+    if (!item || !fallbackUrl) {
+        detachPlayerMedia();
+        showPlayerError("Ce flux FR renvoie du son, mais aucune image lisible dans ce navigateur.");
+        return false;
+    }
+
+    state.playerVisualFallbackPending = true;
+    try {
+        setPlayerControlsBusy(true);
+        setPlayerLoading("Bascule vers le lecteur integre...", reason);
+        detachPlayerMedia();
+        await settleDetachedPlayer();
+        const fallbackItem = {
+            ...item,
+            playbackProvider: "videasy",
+            playbackProviderName: "Lecteur integre"
+        };
+        state.activePlayerItem = fallbackItem;
+        elements.playerBadge.textContent = "ALT";
+        await startStreamPlayback(fallbackItem, fallbackUrl, "embed");
+        elements.playerMessage.textContent = "Lecteur integre ouvert: la source FR directe donnait du son sans image.";
+        return true;
+    } catch (error) {
+        detachPlayerMedia();
+        showPlayerError(error.message || "Impossible d'ouvrir le lecteur integre.");
         return false;
     } finally {
         state.playerVisualFallbackPending = false;
@@ -4027,6 +5532,14 @@ function schedulePlayerStartupWatchdog(generation) {
             return;
         }
         if (!state.activeSessionToken) {
+            if (state.activeEmbedFallbackUrl) {
+                void switchToEmbedFallback("La source FR directe ne demarre pas; bascule vers le lecteur du provider.");
+                return;
+            }
+            if (isNodeFrenchPlayerItem()) {
+                void switchToNodeTmdbFallback("La source FR directe ne demarre pas; recherche d'une alternative.");
+                return;
+            }
             showPlayerError("La source FR ne produit aucune image lisible pour le moment.");
             return;
         }
@@ -4196,10 +5709,10 @@ function detachPlayerMedia() {
         destroyHlsPlayer(state.hlsPlayer);
         state.hlsPlayer = null;
     }
-    elements.embedPlayer.removeAttribute("src");
-    elements.embedPlayer.hidden = true;
+    clearEmbedFrame();
     state.activeEmbedUrl = null;
     state.embedRequiresUserLaunch = false;
+    lockEmbedShield(true);
     state.embedAssistShown = false;
     state.embedManualRetryUsed = false;
     state.embedLoadCount = 0;
@@ -4291,6 +5804,14 @@ function selectPreferredHlsSubtitleTrack(player, language) {
     return true;
 }
 
+function selectAnyHlsSubtitleTrack(player) {
+    if (!Array.isArray(player.subtitleTracks) || !player.subtitleTracks.length) return false;
+    player.subtitleDisplay = true;
+    player.subtitleTrack = 0;
+    elements.playerMessage.textContent = "Sous-titres disponibles actives.";
+    return true;
+}
+
 function attachHlsPlayer(player, video, streamUrl, options = {}) {
     return new Promise((resolve, reject) => {
         let settled = false;
@@ -4316,7 +5837,11 @@ function attachHlsPlayer(player, video, streamUrl, options = {}) {
         };
         const onParsed = () => {
             const audioSelected = selectPreferredHlsAudioTrack(player, options.preferredAudioLanguage);
-            if (!audioSelected) {
+            const subtitlesSelected = selectPreferredHlsSubtitleTrack(player, options.preferredSubtitleLanguage);
+            if (!subtitlesSelected && options.enableSubtitles) {
+                selectAnyHlsSubtitleTrack(player);
+            }
+            if (audioSelected && !subtitlesSelected && options.preferredSubtitleLanguage) {
                 selectPreferredHlsSubtitleTrack(player, options.preferredSubtitleLanguage);
             }
             finish();
@@ -4530,15 +6055,49 @@ function escapeCssUrl(value) {
         .replaceAll("\n", "");
 }
 
+function configureHomeNavigation() {
+    const nav = document.querySelector(".main-nav");
+    if (!nav) return;
+    nav.innerHTML = `
+        <button class="nav-link active" type="button" data-filter="all">Accueil</button>
+        <button class="nav-link" type="button" data-filter="series">S\u00e9ries</button>
+        <button class="nav-link" type="button" data-filter="drama">Dramas</button>
+        <button class="nav-link" type="button" data-filter="movie">Films</button>
+        <a class="adult-nav-entry" href="/adults.html" aria-label="Ouvrir Adults 18+">Adults 18+</a>
+        <button class="nav-link" type="button" data-filter="live">TV en direct</button>
+        <button class="nav-link" type="button" data-nav-action="list">Ma liste</button>
+    `;
+    elements.navLinks = [...document.querySelectorAll(".nav-link")];
+}
+
+function handleNavAction(action) {
+    if (action !== "list") return;
+    const target = document.querySelector(".home-continue, .recent-row, #catalogue");
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    elements.navLinks.forEach((link) => link.classList.toggle("active", link.dataset.navAction === action));
+}
+
+function bindNavigationLinks() {
+    elements.navLinks.forEach((link) => {
+        link.addEventListener("click", async () => {
+            const action = link.dataset.navAction;
+            if (action) {
+                handleNavAction(action);
+                return;
+            }
+            await setFilter(link.dataset.filter || "all");
+        });
+    });
+}
+
 window.addEventListener("scroll", () => {
     elements.topbar.classList.toggle("scrolled", window.scrollY > 35);
 }, { passive: true });
 
 window.addEventListener("pagehide", releasePlayerSession);
 
-elements.navLinks.forEach((link) => {
-    link.addEventListener("click", () => setFilter(link.dataset.filter));
-});
+configureHomeNavigation();
+bindNavigationLinks();
 
 let searchTimer;
 elements.searchShell.addEventListener("click", (event) => {
@@ -4612,6 +6171,45 @@ elements.searchClear.addEventListener("click", async () => {
     if (state.token) await loadCatalog();
 });
 
+elements.playerSearchInput?.addEventListener("input", () => {
+    const hasQuery = Boolean(elements.playerSearchInput.value.trim());
+    elements.playerSearchForm?.classList.toggle("has-query", hasQuery);
+    if (elements.playerSearchClear) elements.playerSearchClear.hidden = !hasQuery;
+});
+
+elements.playerSearchClear?.addEventListener("click", () => {
+    elements.playerSearchInput.value = "";
+    elements.playerSearchInput.focus();
+    elements.playerSearchForm?.classList.remove("has-query");
+    elements.playerSearchClear.hidden = true;
+});
+
+elements.playerSearchForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const query = elements.playerSearchInput.value.trim();
+    if (!query) {
+        elements.playerSearchInput.focus();
+        return;
+    }
+    closeModal("playerModal");
+    window.clearTimeout(searchTimer);
+    clearHiddenCatalogCards();
+    state.query = query;
+    state.activeType = "all";
+    state.activeCategory = "";
+    state.activeAddonFilter = "";
+    state.addonPages = 1;
+    state.addonHasMore = false;
+    elements.searchInput.value = query;
+    elements.navLinks.forEach((link) => link.classList.toggle("active", link.dataset.filter === "all"));
+    elements.dramaSection.hidden = true;
+    elements.catalogRows.hidden = false;
+    updateSearchChrome();
+    closeSearchSuggestions();
+    await loadCatalog();
+    document.querySelector("#catalogue").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 elements.searchPanel.addEventListener("click", (event) => {
     const result = event.target.closest("[data-search-index]");
     if (result) {
@@ -4679,11 +6277,36 @@ elements.movieSort.addEventListener("change", async (event) => {
 });
 
 elements.catalogRows.addEventListener("click", async (event) => {
+    const clickedCard = event.target.closest("[data-item-id]");
+    if (activeHomeDrag?.moved && !clickedCard) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+    }
+
     const removeCard = event.target.closest("[data-remove-card]");
     if (removeCard) {
         event.preventDefault();
         event.stopPropagation();
         hideCatalogCard(removeCard.dataset.itemType, removeCard.dataset.itemId);
+        return;
+    }
+
+    const browseCategory = event.target.closest("[data-browse-category]");
+    if (browseCategory) {
+        const type = browseCategory.dataset.browseType || state.activeType;
+        state.activeType = type;
+        state.activeCategory = browseCategory.dataset.browseCategory || "";
+        state.activeAddonFilter = "";
+        state.addonPages = 1;
+        state.addonHasMore = false;
+        state.visibleCatalog[type] = defaultCatalogLimit(type);
+        elements.navLinks.forEach((link) => link.classList.toggle("active", link.dataset.filter === type));
+        renderCategories();
+        renderAddonFilter();
+        renderLanguageFilter();
+        await loadCatalog();
+        document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
     }
 
@@ -4698,9 +6321,26 @@ elements.catalogRows.addEventListener("click", async (event) => {
         const track = document.getElementById(rowScroll.dataset.rowTarget);
         if (track) {
             const direction = Number(rowScroll.dataset.rowScroll);
-            const distance = Math.max(track.clientWidth * 0.82, 260);
-            track.scrollBy({ left: direction * distance, behavior: "smooth" });
+            scrollRail(track, direction);
         }
+        return;
+    }
+
+    const homeScroll = event.target.closest("[data-home-scroll]");
+    if (homeScroll) {
+        const track = document.getElementById(homeScroll.dataset.homeScroll);
+        if (track) {
+            const direction = Number(homeScroll.dataset.homeScrollDirection || 1);
+            scrollRail(track, direction);
+        }
+        return;
+    }
+
+    const continueRemove = event.target.closest("[data-continue-remove]");
+    if (continueRemove) {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissContinueCard(continueRemove.dataset.continueType, continueRemove.dataset.continueRemove);
         return;
     }
 
@@ -4716,6 +6356,63 @@ elements.catalogRows.addEventListener("click", async (event) => {
         await loadCatalog();
         return;
     }
+    const card = clickedCard || event.target.closest("[data-item-id]");
+    if (!card) return;
+    const item = findCatalogItem(card.dataset.itemId, card.dataset.itemType);
+    if (item) selectCatalogItem(item);
+});
+
+elements.catalogRows.addEventListener("wheel", (event) => {
+    const track = event.target.closest(".home-continue-track, .home-poster-track, .card-track, .browse-track, .browse-universe-track");
+    if (!track) return;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    if (track.scrollWidth <= track.clientWidth) return;
+    event.preventDefault();
+    track.scrollLeft += event.deltaY;
+}, { passive: false });
+
+let activeHomeDrag = null;
+
+elements.catalogRows.addEventListener("pointerdown", (event) => {
+    const track = event.target.closest(".home-continue-track, .home-poster-track, .card-track, .browse-track, .browse-universe-track");
+    if (!track || event.button !== 0 || track.scrollWidth <= track.clientWidth) return;
+    if (event.target.closest("[data-item-id], button, a, input, select, textarea")) return;
+    activeHomeDrag = {
+        track,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        scrollLeft: track.scrollLeft,
+        moved: false
+    };
+    track.classList.add("dragging");
+    track.setPointerCapture?.(event.pointerId);
+});
+
+elements.catalogRows.addEventListener("pointermove", (event) => {
+    if (!activeHomeDrag || activeHomeDrag.pointerId !== event.pointerId) return;
+    const delta = event.clientX - activeHomeDrag.startX;
+    if (Math.abs(delta) > 12) activeHomeDrag.moved = true;
+    activeHomeDrag.track.scrollLeft = activeHomeDrag.scrollLeft - delta;
+});
+
+["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
+    elements.catalogRows.addEventListener(eventName, (event) => {
+        if (!activeHomeDrag || activeHomeDrag.pointerId !== event.pointerId) return;
+        activeHomeDrag.track.classList.remove("dragging");
+        activeHomeDrag.track.releasePointerCapture?.(event.pointerId);
+        window.setTimeout(() => {
+            activeHomeDrag = null;
+        }, activeHomeDrag.moved ? 80 : 0);
+    });
+});
+
+elements.hero?.addEventListener("click", async (event) => {
+    const filterShortcut = event.target.closest("[data-filter-shortcut]");
+    if (filterShortcut) {
+        await setFilter(filterShortcut.dataset.filterShortcut || "all");
+        return;
+    }
+
     const card = event.target.closest("[data-item-id]");
     if (!card) return;
     const item = findCatalogItem(card.dataset.itemId, card.dataset.itemType);
@@ -4723,11 +6420,213 @@ elements.catalogRows.addEventListener("click", async (event) => {
 });
 
 elements.catalogRows.addEventListener("keydown", (event) => {
+    if (event.target.closest("[data-continue-remove]")) return;
+
+    const continueCard = event.target.closest(".home-continue-card[data-item-id]");
+    if (continueCard && ["Enter", " "].includes(event.key)) {
+        event.preventDefault();
+        const item = findCatalogItem(continueCard.dataset.itemId, continueCard.dataset.itemType);
+        if (item) selectCatalogItem(item);
+        return;
+    }
+
     const removeCard = event.target.closest("[data-remove-card]");
     if (!removeCard || !["Enter", " "].includes(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
     hideCatalogCard(removeCard.dataset.itemType, removeCard.dataset.itemId);
+});
+
+elements.dramaSearchForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+        await searchDramas();
+    } catch (error) {
+        setDramaStatus(error.message || "Recherche drama impossible.", true);
+    }
+});
+
+elements.dramaLang?.addEventListener("change", async (event) => {
+    state.dramaLang = event.target.value || "fr";
+    state.dramaLoaded = false;
+    state.dramaShelves = [];
+    state.dramaShelfVisible = {};
+    state.dramaShelfPaging = {};
+    try {
+        await loadDramaHome();
+    } catch (error) {
+        setDramaStatus(error.message || "Impossible de changer la langue drama.", true);
+    }
+});
+
+elements.dramaShelves?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-drama-shelf]");
+    if (!button) return;
+    elements.dramaShelves.querySelectorAll(".drama-chip").forEach((chip) => chip.classList.remove("active"));
+    button.classList.add("active");
+    const value = button.dataset.dramaShelf;
+    try {
+        if (value === "search") {
+            await searchDramas();
+            return;
+        }
+        state.dramaMode = "shelf";
+        state.dramaCurrentShelfIndex = Number(value);
+        state.dramaSearchHasMore = false;
+        renderDramaShelves();
+        renderDramaShelfRows();
+        document.querySelector(`#dramaShelfRow-${value}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const shelf = state.dramaShelves[Number(value)];
+        setDramaStatus(`${shelf?.books?.length || 0} dramas dans ${shelf?.bookshelf_name || "ce rayon"}`);
+    } catch (error) {
+        setDramaStatus(error.message || "Rayon drama indisponible.", true);
+    }
+});
+
+elements.dramaGrid?.addEventListener("click", async (event) => {
+    const card = event.target.closest("[data-drama-book]");
+    if (!card) return;
+    try {
+        await playDramaBook(card.dataset.dramaBook);
+    } catch (error) {
+        setDramaStatus(error.message || "Impossible de lancer ce drama.", true);
+    }
+});
+
+elements.dramaShelfRows?.addEventListener("click", async (event) => {
+    const more = event.target.closest("[data-drama-row-more]");
+    if (more) {
+        const index = Number(more.dataset.dramaRowMore);
+        const shelf = state.dramaShelves[index];
+        const currentVisible = state.dramaShelfVisible[index] || DRAMA_VISIBLE_INCREMENT;
+        if (currentVisible >= (shelf?.books?.length || 0)) {
+            await loadMoreDramaShelf(index, DRAMA_VISIBLE_INCREMENT);
+        }
+        state.dramaShelfVisible[index] = currentVisible + DRAMA_VISIBLE_INCREMENT;
+        renderDramaShelfRows();
+        document.querySelector(`#dramaShelfRow-${index}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+    }
+    const card = event.target.closest("[data-drama-book]");
+    if (!card) return;
+    try {
+        await playDramaBook(card.dataset.dramaBook);
+    } catch (error) {
+        setDramaStatus(error.message || "Impossible de lancer ce drama.", true);
+    }
+});
+
+elements.dramaEpisodeList?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-drama-episode]");
+    if (!button) return;
+    try {
+        await playDramaEpisode(Number(button.dataset.dramaEpisode), button.dataset.dramaChapter);
+    } catch (error) {
+        setDramaStatus(error.message || "Lecture drama impossible.", true);
+    }
+});
+
+elements.playerEpisodePanelList?.addEventListener("click", async (event) => {
+    const drama = event.target.closest("[data-player-drama-episode]");
+    if (drama) {
+        await playPlayerPanelEntry("drama", drama.dataset.playerDramaEpisode, drama.dataset.playerDramaChapter);
+        return;
+    }
+    const series = event.target.closest("[data-player-series-episode]");
+    if (series) {
+        await playPlayerPanelEntry("series", series.dataset.playerSeriesEpisode);
+        return;
+    }
+    const catalog = event.target.closest("[data-player-catalog-item]");
+    if (catalog) {
+        await playPlayerPanelEntry("catalog", catalog.dataset.playerCatalogItem, "", catalog.dataset.playerCatalogType);
+    }
+});
+
+elements.playerPrevEpisodeButton?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await playPlayerPanelEntry(button.dataset.playerEpisodeKind, button.dataset.playerEpisodeId, button.dataset.playerDramaChapter, button.dataset.playerCatalogType);
+});
+
+elements.playerNextEpisodeButton?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await playPlayerPanelEntry(button.dataset.playerEpisodeKind, button.dataset.playerEpisodeId, button.dataset.playerDramaChapter, button.dataset.playerCatalogType);
+});
+
+elements.playerResumeButton?.addEventListener("click", () => {
+    if (!elements.streamPlayer.hidden) {
+        elements.streamPlayer.play().catch(() => {});
+    }
+});
+
+elements.playerFavoriteButton?.addEventListener("click", () => {
+    if (!state.activePlayerItem) return;
+    trackRecentlyWatched(state.activePlayerItem);
+    showToast("Ajoute a votre liste recente.");
+});
+
+elements.playerVfButton?.addEventListener("click", () => {
+    state.activePreferredAudioLanguage = "fr";
+    elements.playerMessage.textContent = "VF demandee quand la source la propose.";
+});
+
+elements.playerVostfrButton?.addEventListener("click", () => {
+    state.activePreferredSubtitleLanguage = "fr";
+    elements.playerMessage.textContent = "Sous-titres FR demandes quand la source les propose.";
+});
+
+elements.playerAllEpisodesButton?.addEventListener("click", () => {
+    if (state.activePlayerItem?.type === "movie") {
+        closeModal("playerModal");
+        setFilter("movie");
+        return;
+    }
+    if (state.activeDramaBook && state.activeDramaEpisodes.length) {
+        closeModal("playerModal");
+        elements.dramaEpisodes.hidden = false;
+        elements.dramaEpisodes.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+    }
+    if (state.activeSeries) {
+        closeModal("playerModal");
+        openModal("seriesModal");
+    }
+});
+
+document.querySelector(".player-room-nav")?.addEventListener("click", async (event) => {
+    const filterButton = event.target.closest("[data-player-filter]");
+    if (filterButton) {
+        closeModal("playerModal");
+        await setFilter(filterButton.dataset.playerFilter || "all");
+        return;
+    }
+
+    const actionButton = event.target.closest("[data-player-nav-action]");
+    if (actionButton) {
+        closeModal("playerModal");
+        handleNavAction(actionButton.dataset.playerNavAction);
+    }
+});
+
+elements.dramaLoadMore?.addEventListener("click", async () => {
+    try {
+        if (state.dramaMode === "search") {
+            await searchDramas(state.dramaSearchPage + 1, true);
+            return;
+        }
+        state.dramaVisibleLimit += DRAMA_VISIBLE_INCREMENT;
+        renderDramaBooks(state.dramaBooks.map((book) => ({
+            book_id: book.id,
+            book_title: book.title,
+            filtered_title: book.slug,
+            book_pic: book.image,
+            chapter_count: book.episodeCount,
+            special_desc: book.summary
+        })), state.dramaCurrentTitle || "Dramas", true);
+        setDramaStatus(`${Math.min(state.dramaVisibleLimit, state.dramaBooks.length)} / ${state.dramaBooks.length} dramas affiches`);
+    } catch (error) {
+        setDramaStatus(error.message || "Impossible de charger la suite.", true);
+    }
 });
 
 elements.seriesSeasonSelect.addEventListener("change", (event) => {
@@ -4794,7 +6693,16 @@ elements.logoutAllButton.addEventListener("click", logoutAllDevices);
 elements.logoutButton.addEventListener("click", logout);
 elements.playerFullscreenButton.addEventListener("click", requestPlayerFullscreen);
 elements.embedLaunchInlineButton.addEventListener("click", handleEmbedLaunchInlineButtonClick);
+elements.embedUnlockButton?.addEventListener("click", () => unlockEmbedShield());
 elements.playerEmbedRetryButton.addEventListener("click", retryEmbedInline);
+
+window.addEventListener("error", (event) => {
+    if (isExternalEmbedDomRemovalError(event)) {
+        event.preventDefault();
+        return true;
+    }
+    return false;
+}, true);
 
 document.addEventListener("click", (event) => {
     if (!elements.searchShell.contains(event.target)) {

@@ -6,6 +6,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
@@ -28,19 +29,42 @@ public class CatalogImageController {
         this.images = images;
     }
 
+    @GetMapping("/api/catalog/images/proxy")
+    public ResponseEntity<byte[]> proxiedImage(@RequestParam("url") String url) {
+        try {
+            CatalogImageService.CachedImage image = images.loadRemote(url);
+            return imageResponse(image);
+        } catch (ApiException exception) {
+            return placeholderResponse();
+        }
+    }
+
+    @GetMapping("/api/catalog/image-proxy")
+    public ResponseEntity<byte[]> remoteImage(@RequestParam("url") String url) {
+        return proxiedImage(url);
+    }
+
     @GetMapping("/api/catalog/images/{key}")
     public ResponseEntity<byte[]> image(@PathVariable String key) {
         try {
             CatalogImageService.CachedImage image = images.load(key);
-            return ResponseEntity.ok()
-                    .cacheControl(CacheControl.maxAge(Duration.ofDays(7)).cachePublic())
-                    .contentType(MediaType.parseMediaType(image.contentType()))
-                    .body(image.bytes());
+            return imageResponse(image);
         } catch (ApiException exception) {
-            return ResponseEntity.ok()
-                    .cacheControl(CacheControl.noStore())
-                    .contentType(SVG)
-                    .body(PLACEHOLDER);
+            return placeholderResponse();
         }
+    }
+
+    private ResponseEntity<byte[]> imageResponse(CatalogImageService.CachedImage image) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(7)).cachePublic())
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .body(image.bytes());
+    }
+
+    private ResponseEntity<byte[]> placeholderResponse() {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .contentType(SVG)
+                .body(PLACEHOLDER);
     }
 }

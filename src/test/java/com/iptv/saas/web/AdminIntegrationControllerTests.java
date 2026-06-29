@@ -3,6 +3,7 @@ package com.iptv.saas.web;
 import com.iptv.saas.service.AuditService;
 import com.iptv.saas.service.EmailTemplateService;
 import com.iptv.saas.service.InvoicePdfService;
+import com.iptv.saas.service.ReelShortService;
 import com.iptv.saas.service.TelegramAdminBotService;
 import com.iptv.saas.service.TelegramAlertService;
 import com.iptv.saas.service.TransactionalMailService;
@@ -27,11 +28,13 @@ class AdminIntegrationControllerTests {
         AuditService audit = mock(AuditService.class);
         TorBoxTorrentResolver torBox = mock(TorBoxTorrentResolver.class);
         TmdbMetadataService tmdb = mock(TmdbMetadataService.class);
+        ReelShortService reelShort = mock(ReelShortService.class);
         when(mail.status()).thenReturn(Map.of("configured", true, "username", "a***@example.test"));
         when(telegram.status()).thenReturn(Map.of("configured", false, "botToken", ""));
         when(telegramAdmin.status()).thenReturn(Map.of("configured", true, "polling", true));
         when(torBox.status()).thenReturn(Map.of("configured", true, "provider", "TorBox"));
         when(tmdb.status()).thenReturn(Map.of("configured", true, "provider", "TMDB", "authentication", "bearer"));
+        when(reelShort.status()).thenReturn(Map.of("configured", true, "provider", "ReelShort", "authentication", "bearer"));
         AdminIntegrationController controller = new AdminIntegrationController(
                 mail,
                 telegram,
@@ -40,7 +43,8 @@ class AdminIntegrationControllerTests {
                 invoicePdf,
                 audit,
                 torBox,
-                tmdb
+                tmdb,
+                reelShort
         );
 
         @SuppressWarnings("unchecked")
@@ -53,5 +57,6 @@ class AdminIntegrationControllerTests {
         assertEquals(true, ((Map<?, ?>) data.get("telegramAdmin")).get("configured"));
         assertEquals(true, ((Map<?, ?>) data.get("torbox")).get("configured"));
         assertEquals(true, ((Map<?, ?>) data.get("tmdb")).get("configured"));
+        assertEquals(true, ((Map<?, ?>) data.get("reelshort")).get("configured"));
     }
 }

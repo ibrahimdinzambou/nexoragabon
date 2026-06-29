@@ -51,18 +51,23 @@ const state = {
     profileLoaded: false,
     openingItemId: "",
     activeSessionToken: "",
+    activeExternalUrl: "",
     heartbeatId: null,
+    playerLoadTimer: null,
     searchTimer: null
 };
 
 const el = {
     userLabel: document.querySelector("#userLabel"),
+    accountButton: document.querySelector("#adultAccountButton"),
+    accountAvatar: document.querySelector("#accountAvatar"),
     adminLink: document.querySelector("#adminLink"),
     logoutButton: document.querySelector("#logoutButton"),
     statusBar: document.querySelector("#statusBar"),
     accessLabel: document.querySelector("#accessLabel"),
     searchForm: document.querySelector("#searchForm"),
     searchInput: document.querySelector("#searchInput"),
+    topbarSearchInput: document.querySelector("#adultTopbarSearchInput"),
     loginPanel: document.querySelector("#loginPanel"),
     loginForm: document.querySelector("#loginForm"),
     loginSubmit: document.querySelector("#loginSubmit"),
@@ -84,6 +89,9 @@ const el = {
     playerModal: document.querySelector("#playerModal"),
     embedFrame: document.querySelector("#embedFrame"),
     playerTitle: document.querySelector("#playerTitle"),
+    playerExternalLink: document.querySelector("#playerExternalLink"),
+    playerNotice: document.querySelector("#playerNotice"),
+    playerNoticeLink: document.querySelector("#playerNoticeLink"),
     toast: document.querySelector("#toast")
 };
 
@@ -382,6 +390,82 @@ function renderGroupedItems(items) {
     `).join("");
 }
 
+function setPlayerNotice(visible, externalUrl = state.activeExternalUrl) {
+    if (!el.playerNotice) return;
+    el.playerNotice.hidden = !visible;
+    if (el.playerNoticeLink && externalUrl) {
+        el.playerNoticeLink.href = externalUrl;
+    }
+}
+
+function armPlayerFallback(externalUrl) {
+    window.clearTimeout(state.playerLoadTimer);
+    setPlayerNotice(false, externalUrl);
+    state.playerLoadTimer = window.setTimeout(() => {
+        if (el.playerModal.hidden || !state.activeExternalUrl) return;
+        setPlayerNotice(true, state.activeExternalUrl);
+        setStatus("Lecteur externe a ouvrir si besoin", "");
+    }, 6500);
+}
+
+function clearPlayerFallback() {
+    window.clearTimeout(state.playerLoadTimer);
+    state.playerLoadTimer = null;
+}
+
+function renderAdultBrowseDashboard(items) {
+    if (!items.length) return "";
+    const trending = [...items]
+        .sort((left, right) => Number(right.views || 0) - Number(left.views || 0))
+        .slice(0, 12);
+    const recommended = [...items]
+        .sort((left, right) => Number(right.rating || 0) - Number(left.rating || 0))
+        .slice(0, 12);
+    const universes = state.categories.slice(0, 8);
+    return `
+        <section class="adult-browse-dashboard" aria-label="Selection Reserve">
+            ${renderAdultBrowseRail("Tendances du moment", trending)}
+            ${renderAdultBrowseRail("Recommandes pour vous", recommended)}
+            ${renderAdultUniverseRail(universes)}
+        </section>
+    `;
+}
+
+function renderAdultBrowseRail(title, items) {
+    if (!items.length) return "";
+    return `
+        <section class="adult-browse-rail">
+            <div class="adult-browse-head">
+                <h2>${escapeHtml(title)}</h2>
+                <span>${items.length} selections</span>
+            </div>
+            <div class="adult-card-track">
+                ${items.map(cardTemplate).join("")}
+            </div>
+        </section>
+    `;
+}
+
+function renderAdultUniverseRail(categories) {
+    if (!categories.length) return "";
+    return `
+        <section class="adult-browse-rail">
+            <div class="adult-browse-head">
+                <h2>Explorer par univers</h2>
+                <span>${categories.length} categories</span>
+            </div>
+            <div class="adult-universe-track">
+                ${categories.map((category) => `
+                    <button class="adult-universe-card" type="button" data-adult-category="${escapeHtml(categoryKey(category.label))}">
+                        <strong>${escapeHtml(category.label)}</strong>
+                        <span>${category.count} videos</span>
+                    </button>
+                `).join("")}
+            </div>
+        </section>
+    `;
+}
+
 function renderGrid() {
     if (!state.token || !state.hasAccess) {
         el.adultGrid.innerHTML = "";
@@ -411,7 +495,7 @@ function renderGrid() {
     }
     const content = state.categoryFilter
         ? `<div class="adult-card-grid">${items.map(cardTemplate).join("")}</div>`
-        : renderGroupedItems(items);
+        : `${renderAdultBrowseDashboard(items)}${renderGroupedItems(items)}`;
     el.adultGrid.innerHTML = `${content}${loadMoreTemplate()}`;
 }
 
@@ -426,14 +510,28 @@ function loadMoreTemplate() {
     `;
 }
 
+function isReserveItem(item) {
+    const id = String(item?.id || "");
+    const categoryId = String(item?.categoryId || "");
+    const sourceCode = String(item?.sourceCode || "").toLowerCase();
+    const playbackProvider = String(item?.playbackProvider || "").toLowerCase();
+    const source = String(item?.source || item?.provider || "").toLowerCase();
+    return id.startsWith("eporner~")
+        || categoryId === CATEGORY_ID
+        || categoryId.startsWith(`${CATEGORY_ID}-`)
+        || sourceCode === "eporner"
+        || playbackProvider === "eporner"
+        || source.includes("eporner");
+}
+
 function mergeItems(nextItems, replace = false) {
     const values = replace ? [] : [...state.items];
-    const seen = new Set(values.map((item) => item.id));
+    const seen = new Set(values.map((item) => String(item.id)));
     (nextItems || []).forEach((item) => {
-        if (item?.id && String(item.id).startsWith("eporner~video~") && !seen.has(item.id)) {
-            seen.add(item.id);
-            values.push(item);
-        }
+        const id = String(item?.id || "");
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        values.push(item);
     });
     state.items = values;
 }
@@ -462,6 +560,10 @@ async function loadProfile() {
 function syncChrome() {
     const user = state.user;
     el.userLabel.textContent = user ? `${user.name || user.email}` : "Connexion requise";
+    if (el.accountAvatar) {
+        const label = user?.name || user?.email || "A";
+        el.accountAvatar.textContent = label.trim().charAt(0).toUpperCase() || "A";
+    }
     el.logoutButton.hidden = !state.token;
     el.adminLink.hidden = !["SUPER_ADMIN", "ADMIN", "OPS", "SUPPORT", "BILLING"].includes(String(user?.role || ""));
     el.loginPanel.hidden = Boolean(state.token);
@@ -638,13 +740,12 @@ async function logout() {
 }
 
 async function playItem(itemId) {
-    if (!String(itemId || "").startsWith("eporner~video~")) {
-        showToast("Cette page ouvre uniquement les contenus Reserve Eporner.");
+    const item = state.items.find((value) => String(value.id) === String(itemId));
+    if (!item) {
+        showToast("Contenu Reserve introuvable.");
         return;
     }
     if (state.openingItemId) return;
-    const item = state.items.find((value) => value.id === itemId);
-    if (!item) return;
     state.openingItemId = itemId;
     try {
         setStatus("Ouverture du lecteur...", "loading");
@@ -661,9 +762,16 @@ async function playItem(itemId) {
             throw new Error("Le provider Reserve doit s'ouvrir en iframe.");
         }
         state.activeSessionToken = stream.token;
+        state.activeExternalUrl = resolveApiResourceUrl(stream.proxyUrl);
         el.playerTitle.textContent = item.name || "Reserve";
-        el.embedFrame.src = resolveApiResourceUrl(stream.proxyUrl);
+        if (el.playerExternalLink) {
+            el.playerExternalLink.href = state.activeExternalUrl;
+            el.playerExternalLink.hidden = false;
+        }
         el.playerModal.hidden = false;
+        el.embedFrame.removeAttribute("src");
+        el.embedFrame.src = state.activeExternalUrl;
+        armPlayerFallback(state.activeExternalUrl);
         startHeartbeat();
         setStatus("Lecture Reserve ouverte", "ready");
     } catch (error) {
@@ -702,6 +810,13 @@ async function closeActiveSession() {
 }
 
 async function closePlayer() {
+    clearPlayerFallback();
+    setPlayerNotice(false);
+    state.activeExternalUrl = "";
+    if (el.playerExternalLink) {
+        el.playerExternalLink.hidden = true;
+        el.playerExternalLink.href = "#";
+    }
     el.embedFrame.removeAttribute("src");
     el.playerModal.hidden = true;
     await closeActiveSession();
@@ -724,12 +839,41 @@ function boot() {
     loadAdults();
 }
 
+document.querySelectorAll("[data-watch-filter]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+        event.preventDefault();
+        const filter = link.dataset.watchFilter || "all";
+        window.location.href = `/watch.html?filter=${encodeURIComponent(filter)}#catalogue`;
+    });
+});
 el.ageConfirmButton.addEventListener("click", confirmAge);
 el.loginForm.addEventListener("submit", submitLogin);
 el.logoutButton.addEventListener("click", logout);
+el.accountButton?.addEventListener("click", () => {
+    if (state.token) {
+        logout();
+        return;
+    }
+    el.loginPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+el.embedFrame?.addEventListener("load", () => {
+    clearPlayerFallback();
+    setPlayerNotice(false);
+    if (!el.playerModal.hidden) {
+        setStatus("Lecteur Reserve charge", "ready");
+    }
+});
+
+el.embedFrame?.addEventListener("error", () => {
+    clearPlayerFallback();
+    setPlayerNotice(true, state.activeExternalUrl);
+    setStatus("Lecteur externe indisponible en iframe", "");
+});
 el.searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     state.query = el.searchInput.value.trim();
+    if (el.topbarSearchInput) el.topbarSearchInput.value = state.query;
     state.browseKey = "search";
     state.browseQuery = "";
     state.categoryFilter = "";
@@ -739,6 +883,18 @@ el.searchInput.addEventListener("input", () => {
     window.clearTimeout(state.searchTimer);
     state.searchTimer = window.setTimeout(() => {
         state.query = el.searchInput.value.trim();
+        if (el.topbarSearchInput) el.topbarSearchInput.value = state.query;
+        state.browseKey = state.query ? "search" : "all";
+        state.browseQuery = "";
+        state.categoryFilter = "";
+        loadAdults();
+    }, SEARCH_DELAY_MS);
+});
+el.topbarSearchInput?.addEventListener("input", () => {
+    window.clearTimeout(state.searchTimer);
+    state.searchTimer = window.setTimeout(() => {
+        state.query = el.topbarSearchInput.value.trim();
+        el.searchInput.value = state.query;
         state.browseKey = state.query ? "search" : "all";
         state.browseQuery = "";
         state.categoryFilter = "";
@@ -754,6 +910,7 @@ el.browseRails.addEventListener("click", (event) => {
     state.sort = rail.sort || state.sort || "latest";
     state.query = "";
     el.searchInput.value = "";
+    if (el.topbarSearchInput) el.topbarSearchInput.value = "";
     state.categoryFilter = "";
     loadAdults();
 });
@@ -769,6 +926,13 @@ el.categoryTabs.addEventListener("click", (event) => {
     renderGrid();
 });
 el.adultGrid.addEventListener("click", (event) => {
+    const category = event.target.closest(".adult-universe-card[data-adult-category]");
+    if (category) {
+        state.categoryFilter = category.dataset.adultCategory || "";
+        renderGrid();
+        el.categoryTabs.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+    }
     if (event.target.closest("[data-retry-adults]")) {
         loadAdults();
         return;

@@ -62,6 +62,7 @@ public class CatalogController {
 
     @GetMapping({"/api/catalog/categories", "/api/v1/catalog/categories"})
     public Object categories(@RequestParam(required = false) String type) {
+        type = normalizeCatalogType(type);
         UserEntity user = currentUser();
         List<Map<String, Object>> values = new ArrayList<>();
         if (shouldIncludeNativeCatalog(user)) {
@@ -83,6 +84,7 @@ public class CatalogController {
 
     @GetMapping("/api/catalog/languages")
     public Object languages(@RequestParam(required = false) String type) {
+        type = normalizeCatalogType(type);
         return Responses.ok(nativeLanguages(currentUser(), type));
     }
 
@@ -98,6 +100,7 @@ public class CatalogController {
             @RequestParam(required = false) String addonFilter,
             @RequestParam(required = false, defaultValue = "1") int addonPages
     ) {
+        type = normalizeCatalogType(type);
         UserEntity user = currentUser();
         List<List<Map<String, Object>>> resultSets = new ArrayList<>();
         if (shouldIncludeNativeCatalog(user) && shouldQueryNativeCatalog(categoryId)) {
@@ -136,7 +139,16 @@ public class CatalogController {
             String addonFilter,
             int addonPages
     ) {
+        type = normalizeCatalogType(type);
         return items(type, q, categoryId, language, sort, limit, 1, addonFilter, addonPages);
+    }
+
+    private String normalizeCatalogType(String type) {
+        if (type == null) {
+            return null;
+        }
+        String normalized = type.strip().toLowerCase(java.util.Locale.ROOT);
+        return "drama".equals(normalized) || "kdrama".equals(normalized) ? "series" : type;
     }
 
     @GetMapping("/api/catalog/series/{seriesId}")

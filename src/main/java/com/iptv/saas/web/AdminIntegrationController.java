@@ -9,6 +9,7 @@ import com.iptv.saas.security.SecurityUtils;
 import com.iptv.saas.service.AuditService;
 import com.iptv.saas.service.EmailTemplateService;
 import com.iptv.saas.service.InvoicePdfService;
+import com.iptv.saas.service.ReelShortService;
 import com.iptv.saas.service.TelegramAdminBotService;
 import com.iptv.saas.service.TelegramAlertService;
 import com.iptv.saas.service.TransactionalMailService;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
@@ -39,6 +41,7 @@ public class AdminIntegrationController {
     private final AuditService audit;
     private final TorBoxTorrentResolver torBox;
     private final TmdbMetadataService tmdb;
+    private final ReelShortService reelShort;
 
     public AdminIntegrationController(
             TransactionalMailService mail,
@@ -48,7 +51,8 @@ public class AdminIntegrationController {
             InvoicePdfService invoicePdf,
             AuditService audit,
             TorBoxTorrentResolver torBox,
-            TmdbMetadataService tmdb
+            TmdbMetadataService tmdb,
+            ReelShortService reelShort
     ) {
         this.mail = mail;
         this.telegram = telegram;
@@ -58,6 +62,7 @@ public class AdminIntegrationController {
         this.audit = audit;
         this.torBox = torBox;
         this.tmdb = tmdb;
+        this.reelShort = reelShort;
     }
 
     @GetMapping("/status")
@@ -67,8 +72,45 @@ public class AdminIntegrationController {
                 "telegram", telegram.status(),
                 "telegramAdmin", telegramAdmin.status(),
                 "torbox", torBox.status(),
-                "tmdb", tmdb.status()
+                "tmdb", tmdb.status(),
+                "reelshort", reelShort.status()
         ));
+    }
+
+    @PostMapping("/reelshort/test")
+    public Object testReelShort() {
+        var actor = SecurityUtils.currentUser();
+        var result = reelShort.test();
+        boolean success = result.values().stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .allMatch(item -> Boolean.TRUE.equals(item.get("success")));
+        audit.log(actor, "integration.reelshort.test", "Integration", null, success ? "success" : "failed");
+        return Responses.ok(result);
+    }
+
+    @GetMapping("/reelshort/trending")
+    public Object reelShortTrending(@RequestParam(defaultValue = "in") String lang) {
+        return Responses.ok(reelShort.trending(lang));
+    }
+
+    @GetMapping("/reelshort/search")
+    public Object reelShortSearch(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "in") String lang
+    ) {
+        return Responses.ok(reelShort.search(q, page, lang));
+    }
+
+    @GetMapping("/reelshort/book")
+    public Object reelShortBook(@RequestParam String id, @RequestParam(defaultValue = "in") String lang) {
+        return Responses.ok(reelShort.book(id, lang));
+    }
+
+    @GetMapping("/reelshort/chapters")
+    public Object reelShortChapters(@RequestParam String id, @RequestParam(defaultValue = "in") String lang) {
+        return Responses.ok(reelShort.chapters(id, lang));
     }
 
     @PostMapping("/smtp/test")

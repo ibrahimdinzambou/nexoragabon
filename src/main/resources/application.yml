@@ -164,6 +164,15 @@ app:
     include-adult: ${TMDB_INCLUDE_ADULT:false}
     timeout-seconds: ${TMDB_TIMEOUT_SECONDS:12}
     max-response-bytes: ${TMDB_MAX_RESPONSE_BYTES:2097152}
+  reelshort:
+    base-url: ${REELSHORT_API_BASE_URL:https://captain.sapimu.au/reelshort/api/v1}
+    auth-token: ${REELSHORT_AUTH_TOKEN:}
+    default-language: ${REELSHORT_DEFAULT_LANGUAGE:in}
+    timeout-seconds: ${REELSHORT_TIMEOUT_SECONDS:15}
+    max-response-bytes: ${REELSHORT_MAX_RESPONSE_BYTES:2097152}
+  dramas:
+    base-url: ${DRAMA_API_BASE_URL:http://127.0.0.1:5000/api/v1/reelshort}
+    timeout-seconds: ${DRAMA_API_TIMEOUT_SECONDS:20}
   telegram:
     alerts:
       enabled: ${TELEGRAM_ALERTS_ENABLED:false}

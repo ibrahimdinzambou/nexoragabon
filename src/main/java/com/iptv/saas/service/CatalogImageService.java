@@ -40,8 +40,9 @@ public class CatalogImageService {
         this.maxImageBytes = Math.max(262_144, maxImageBytes);
         this.maxCachedImages = Math.max(16, maxCachedImages);
         this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NEVER)
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
         this.cache = java.util.Collections.synchronizedMap(new LinkedHashMap<>(64, 0.75f, true) {
             @Override
@@ -69,9 +70,11 @@ public class CatalogImageService {
         }
         URI uri = publicImageUri(source);
         HttpRequest request = HttpRequest.newBuilder(uri)
+                .version(HttpClient.Version.HTTP_1_1)
                 .timeout(Duration.ofSeconds(25))
                 .header("Accept", "image/avif,image/webp,image/png,image/jpeg,image/gif,*/*;q=0.1")
-                .header("User-Agent", "Nexora-IPTV/1.0")
+                .header("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.7")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Nexora-IPTV/1.0")
                 .GET()
                 .build();
         try {
@@ -98,6 +101,12 @@ public class CatalogImageService {
         } catch (IOException exception) {
             throw ApiException.serviceUnavailable("Impossible de charger l'image distante");
         }
+    }
+
+    public CachedImage loadRemote(String source) {
+        String key = digest(source);
+        sources.putIfAbsent(key, source);
+        return load(key);
     }
 
     private Object rewriteValue(Object value) {

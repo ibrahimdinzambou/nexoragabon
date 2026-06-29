@@ -7,23 +7,54 @@
     <meta name="robots" content="noindex,nofollow">
     <title>Nexora Reserve</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/adults.css?v=20260624-4">
+    <link rel="stylesheet" href="/assets/adults.css?v=20260628-player-1">
 </head>
 <body>
 <div class="adult-grain" aria-hidden="true"></div>
 
-<header class="adult-topbar">
-    <a class="adult-brand" href="/watch.html" aria-label="Nexora Watch">
-        <span>N</span>
-        <strong>NEXORA</strong>
+<header class="topbar adult-topbar" id="topbar">
+    <a class="brand adult-brand" href="/watch.html#accueil" aria-label="Nexora, accueil">
+        <span class="brand-mark">N</span>
+        <span class="brand-name">NEXORA</span>
     </a>
-    <nav class="adult-nav" aria-label="Navigation Reserve">
-        <a href="/watch.html">Catalogue</a>
-        <a class="active" href="/adults.html">Reserve</a>
-        <a href="/admin.html" id="adminLink" hidden>Admin</a>
+
+    <nav class="main-nav adult-nav" aria-label="Navigation principale">
+        <a class="nav-link" href="/watch.html#accueil">Accueil</a>
+        <a class="nav-link" href="/watch.html" data-watch-filter="series">Series</a>
+        <a class="nav-link" href="/watch.html" data-watch-filter="drama">Dramas</a>
+        <a class="nav-link" href="/watch.html" data-watch-filter="movie">Films</a>
+        <a class="adult-nav-entry active" href="/adults.html" aria-label="Ouvrir Adults 18+">Adults 18+</a>
+        <a class="nav-link" href="/admin.html" id="adminLink" hidden>Admin</a>
     </nav>
-    <div class="adult-user">
-        <span id="userLabel">Connexion requise</span>
+
+    <div class="topbar-actions adult-user">
+        <div class="search-shell adult-topbar-search">
+            <div class="search-box">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <path d="m20 20-4-4"></path>
+                </svg>
+                <input
+                    id="adultTopbarSearchInput"
+                    type="search"
+                    placeholder="Rechercher dans Adults..."
+                    autocomplete="off"
+                    aria-label="Rechercher dans Adults"
+                >
+            </div>
+        </div>
+        <button class="icon-button notification-button" type="button" aria-label="Notifications">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+                <path d="M10 21h4"></path>
+            </svg>
+            <span class="notification-dot"></span>
+        </button>
+        <button class="account-button" id="adultAccountButton" type="button">
+            <span class="avatar" id="accountAvatar">A</span>
+            <span id="userLabel">Connexion requise</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5"></path></svg>
+        </button>
         <button id="logoutButton" type="button" hidden>Sortir</button>
     </div>
 </header>
@@ -144,16 +175,24 @@
                 <h2 id="playerTitle">Reserve</h2>
             </div>
             <div class="player-actions">
+                <a id="playerExternalLink" href="#" target="_blank" rel="noopener noreferrer" hidden>Ouvrir externe</a>
                 <button type="button" data-close-player>Fermer</button>
             </div>
         </header>
-        <iframe id="embedFrame" title="Lecteur Reserve" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen referrerpolicy="no-referrer"></iframe>
+        <div class="adult-player-stage">
+            <iframe id="embedFrame" title="Lecteur Reserve" allow="autoplay; fullscreen; picture-in-picture; encrypted-media; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+            <div class="adult-player-notice" id="playerNotice" hidden>
+                <strong>Le lecteur externe met du temps a repondre.</strong>
+                <span>Si la video reste noire, ouvrez-la directement dans un nouvel onglet.</span>
+                <a id="playerNoticeLink" href="#" target="_blank" rel="noopener noreferrer">Ouvrir externe</a>
+            </div>
+        </div>
     </section>
 </div>
 
 <div class="adult-toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="/assets/runtime-config.js?v=20260620-1" defer></script>
-<script src="/assets/adults.js?v=20260624-5" defer></script>
+<script src="/assets/adults.js?v=20260628-player-1" defer></script>
 </body>
 </html>

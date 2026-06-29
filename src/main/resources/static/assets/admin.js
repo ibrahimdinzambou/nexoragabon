@@ -154,6 +154,10 @@ const el = {
     torboxFacts: document.querySelector("#torboxFacts"),
     tmdbStatusBadge: document.querySelector("#tmdbStatusBadge"),
     tmdbFacts: document.querySelector("#tmdbFacts"),
+    reelshortStatusBadge: document.querySelector("#reelshortStatusBadge"),
+    reelshortFacts: document.querySelector("#reelshortFacts"),
+    reelshortTestButton: document.querySelector("#reelshortTestButton"),
+    reelshortTestOutput: document.querySelector("#reelshortTestOutput"),
     addonInstallButton: document.querySelector("#addonInstallButton"),
     addonGrid: document.querySelector("#addonGrid"),
     legalGrid: document.querySelector("#legalGrid"),
@@ -783,6 +787,7 @@ async function loadIntegrations() {
     const telegramAdmin = state.integrations.telegramAdmin || {};
     const torbox = state.integrations.torbox || {};
     const tmdb = state.integrations.tmdb || {};
+    const reelshort = state.integrations.reelshort || {};
     el.smtpStatusBadge.textContent = smtp.configured ? "Paramétré" : "Incomplet";
     el.smtpStatusBadge.className = `badge ${smtp.configured ? "good" : "bad"}`;
     el.smtpFacts.innerHTML = connectorFacts([
@@ -833,6 +838,20 @@ async function loadIntegrations() {
         ["Langue", tmdb.language || "fr-FR"],
         ["Région", tmdb.region || "FR"]
     ]);
+    if (el.reelshortStatusBadge) {
+        el.reelshortStatusBadge.textContent = reelshort.configured ? "ConfigurÃ©" : "Token manquant";
+        el.reelshortStatusBadge.className = `badge ${reelshort.configured ? "good" : "bad"}`;
+    }
+    if (el.reelshortFacts) {
+        el.reelshortFacts.innerHTML = connectorFacts([
+            ["Fournisseur", reelshort.provider || "ReelShort"],
+            ["API", reelshort.endpoint || "https://captain.sapimu.au/reelshort/api/v1/"],
+            ["Auth", reelshort.authentication === "bearer" ? "Token Bearer" : "Non dÃ©finie"],
+            ["Langue", reelshort.defaultLanguage || "in"]
+        ]);
+    }
+    if (el.reelshortTestButton) el.reelshortTestButton.disabled = !reelshort.configured;
+    if (el.reelshortTestOutput) el.reelshortTestOutput.hidden = true;
     el.addonInstallButton.hidden = !canManageAddons;
     renderAddons(canManageAddons);
 }
@@ -897,6 +916,23 @@ async function loadLegal() {
 
 function connectorFacts(items) {
     return items.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("");
+}
+
+function reelshortTestSummary(result) {
+    const labels = { trending: "Tendances", search: "Recherche", suggestions: "Suggestions" };
+    return ["trending", "search", "suggestions"].map(key => {
+        const step = result?.[key] || {};
+        if (step.success) {
+            const body = step.body || {};
+            const count = body.data?.lists?.[0]?.books?.length
+                ?? body.data?.lists?.length
+                ?? body.data?.book_rank_data?.length
+                ?? body.data?.length
+                ?? 0;
+            return `${labels[key]}: OK (${count} element(s))`;
+        }
+        return `${labels[key]}: ${step.status || "Erreur"} - ${step.message || step.code || "Echec"}`;
+    }).join("\n");
 }
 
 function updateNavCounters() {
@@ -1727,6 +1763,30 @@ if (el.telegramAdminTestButton) {
             showToast(result.message, !result.success);
         } catch (error) {
             showToast(error.message, true);
+        }
+    });
+}
+if (el.reelshortTestButton) {
+    el.reelshortTestButton.addEventListener("click", async () => {
+        el.reelshortTestButton.disabled = true;
+        el.reelshortTestButton.textContent = "Test en cours...";
+        if (el.reelshortTestOutput) {
+            el.reelshortTestOutput.hidden = false;
+            el.reelshortTestOutput.textContent = "Connexion a ReelShort...";
+        }
+        try {
+            const result = await api("/admin/integrations/reelshort/test", { method: "POST" });
+            if (el.reelshortTestOutput) {
+                el.reelshortTestOutput.textContent = reelshortTestSummary(result);
+            }
+            const ok = ["trending", "search", "suggestions"].every(key => result?.[key]?.success);
+            showToast(ok ? "ReelShort repond correctement." : "Test ReelShort termine avec erreur.", !ok);
+        } catch (error) {
+            if (el.reelshortTestOutput) el.reelshortTestOutput.textContent = error.message;
+            showToast(error.message, true);
+        } finally {
+            el.reelshortTestButton.disabled = !state.integrations.reelshort?.configured;
+            el.reelshortTestButton.textContent = "Tester ReelShort";
         }
     });
 }

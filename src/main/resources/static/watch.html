@@ -7,7 +7,7 @@
     <meta name="description" content="Votre espace de streaming personnel Nexora.">
     <title>Nexora Watch | TV, films et séries</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/app.css?v=20260623-1">
+    <link rel="stylesheet" href="/assets/app.css?v=20260629-episode-key-fix-1">
 </head>
 <body>
 <div class="noise" aria-hidden="true"></div>
@@ -24,6 +24,7 @@
         <button class="nav-link" type="button" data-filter="movie">Films</button>
         <a class="adult-nav-entry" href="/adults.html" aria-label="Ouvrir Adults 18+">Adults 18+</a>
         <button class="nav-link" type="button" data-filter="series">Séries</button>
+        <button class="nav-link" type="button" data-filter="drama">Dramas</button>
     </nav>
 
     <div class="topbar-actions">
@@ -109,6 +110,17 @@
             <span id="heroTotal">04</span>
         </div>
         <div class="hero-dots" id="heroDots" aria-label="Choisir une sélection"></div>
+        <aside class="home-for-you" id="homeForYouPanel" aria-labelledby="homeForYouTitle">
+            <div class="home-panel-heading">
+                <h2 id="homeForYouTitle">Pour vous</h2>
+                <button class="circle-link" type="button" data-filter-shortcut="series" aria-label="Voir les recommandations">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                </button>
+            </div>
+            <div id="homeFeaturedCard"></div>
+            <div class="home-mini-list" id="homeForYouList"></div>
+            <button class="button button-outline home-all-recommendations" type="button" data-filter-shortcut="series">Voir toutes les recommandations</button>
+        </aside>
     </section>
 
     <section class="catalog-shell" id="catalogue" aria-labelledby="catalogTitle">
@@ -149,6 +161,44 @@
                 </label>
             </div>
         </div>
+
+        <section class="drama-section" id="dramaSection" aria-labelledby="dramaTitle" hidden>
+            <div class="drama-panel">
+                <div class="drama-heading">
+                    <div>
+                        <p class="section-kicker">REELSHORT</p>
+                        <h2 id="dramaTitle">Dramas courts</h2>
+                        <span id="dramaStatus">Connexion a l'API dramas...</span>
+                    </div>
+                    <form class="drama-search" id="dramaSearchForm">
+                        <select id="dramaLang" aria-label="Langue dramas">
+                            <option value="fr" selected>FR</option>
+                            <option value="en">EN</option>
+                            <option value="id">ID</option>
+                            <option value="es">ES</option>
+                            <option value="pt">PT</option>
+                            <option value="de">DE</option>
+                        </select>
+                        <input id="dramaSearchInput" type="search" value="love" placeholder="Rechercher un drama">
+                        <button class="button button-primary" type="submit">Chercher</button>
+                    </form>
+                </div>
+                <div class="drama-shelves" id="dramaShelves"></div>
+                <div class="drama-shelf-rows" id="dramaShelfRows" aria-live="polite"></div>
+                <div class="drama-grid" id="dramaGrid" aria-live="polite"></div>
+                <button class="button button-outline drama-more" id="dramaLoadMore" type="button" hidden>Charger plus</button>
+                <div class="drama-episodes" id="dramaEpisodes" hidden>
+                    <div class="drama-episode-heading">
+                        <div>
+                            <p class="section-kicker">EPISODES</p>
+                            <h3 id="dramaEpisodeTitle">Selectionnez un drama</h3>
+                        </div>
+                        <span id="dramaEpisodeCount"></span>
+                    </div>
+                    <div id="dramaEpisodeList" class="drama-episode-list"></div>
+                </div>
+            </div>
+        </section>
 
         <div id="catalogRows" class="catalog-rows" aria-live="polite"></div>
 
@@ -473,10 +523,66 @@
 
 <div class="modal" id="playerModal" hidden>
     <div class="modal-backdrop" data-close-modal="playerModal"></div>
-    <section class="player-card" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
+    <section class="player-card player-room" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
+        <header class="topbar player-watch-topbar">
+            <a class="brand" href="#accueil" data-close-modal="playerModal" aria-label="Nexora, accueil">
+                <span class="brand-mark">N</span>
+                <span class="brand-name">NEXORA</span>
+            </a>
+
+            <nav class="main-nav player-room-nav" aria-label="Navigation lecteur">
+                <button class="nav-link" type="button" data-close-modal="playerModal" data-player-filter="all">Accueil</button>
+                <a class="adult-nav-entry" href="/adults.html" aria-label="Ouvrir Adults 18+">Adults 18+</a>
+                <button class="nav-link" type="button" data-close-modal="playerModal" data-player-filter="series">Series</button>
+                <button class="nav-link" type="button" data-close-modal="playerModal" data-player-filter="drama">Dramas</button>
+                <button class="nav-link" type="button" data-close-modal="playerModal" data-player-filter="movie">Films</button>
+                <button class="nav-link" type="button" data-close-modal="playerModal" data-player-nav-action="list">Ma liste</button>
+            </nav>
+
+            <div class="topbar-actions">
+                <form class="search-shell player-search-shell" id="playerSearchForm" role="search">
+                    <div class="search-box">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <path d="m20 20-4-4"></path>
+                        </svg>
+                        <input
+                            id="playerSearchInput"
+                            type="search"
+                            placeholder="Titres, chaînes..."
+                            autocomplete="off"
+                            aria-label="Rechercher depuis le lecteur"
+                        >
+                        <button class="search-clear" id="playerSearchClear" type="button" aria-label="Effacer la recherche" hidden>×</button>
+                    </div>
+                </form>
+                <button class="icon-button notification-button" type="button" aria-label="Notifications">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+                        <path d="M10 21h4"></path>
+                    </svg>
+                    <span class="notification-dot"></span>
+                </button>
+                <button class="account-button" id="playerAccountButton" type="button">
+                    <span class="avatar" id="playerRoomAvatar">N</span>
+                    <span id="playerRoomUserName">Nexora</span>
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5"></path></svg>
+                </button>
+            </div>
+        </header>
+        <div class="player-room-layout">
+            <main class="player-room-main">
+                <div class="player-screen" id="playerScreen">
         <button class="modal-close player-close" type="button" data-close-modal="playerModal" aria-label="Fermer">×</button>
         <video id="streamPlayer" controls playsinline webkit-playsinline></video>
         <iframe id="embedPlayer" title="Lecteur externe" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen webkitallowfullscreen referrerpolicy="no-referrer" hidden></iframe>
+        <div class="embed-click-shield" id="embedClickShield" hidden>
+            <div>
+                <strong>Protection anti-redirection activee</strong>
+                <span>Les clics vers le lecteur externe sont bloques pour eviter les popups.</span>
+                <button class="button button-primary" id="embedUnlockButton" type="button">Deverrouiller</button>
+            </div>
+        </div>
         <div class="embed-launch-panel" id="embedLaunchPanel" hidden>
             <p>Appuyez pour lancer le lecteur TMDB.</p>
             <div class="embed-launch-actions">
@@ -488,10 +594,12 @@
             <span class="spinner large" aria-hidden="true"></span>
             <p>Préparation de votre programme...</p>
         </div>
+                </div>
         <div class="player-caption">
             <div class="player-title-group">
                 <span class="live-badge" id="playerBadge">DIRECT</span>
                 <h2 id="playerTitle">Programme</h2>
+                <p id="playerEpisodeSubtitle">Lecture Nexora</p>
             </div>
             <div class="player-tools">
                 <label class="player-quality">
@@ -510,6 +618,39 @@
                 <p id="playerMessage">Connexion au flux sécurisé Nexora.</p>
             </div>
         </div>
+
+                <section class="player-info-panel">
+                    <h3 id="playerInfoTitle">Programme</h3>
+                    <h4 id="playerInfoSubtitle">Pret a regarder</h4>
+                    <div class="player-info-pills" id="playerInfoPills"></div>
+                    <p id="playerSynopsis">Nexora prepare votre lecture.</p>
+                    <div class="player-primary-actions">
+                        <button class="button button-primary" id="playerResumeButton" type="button">
+                            <svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"></path></svg>
+                            Reprendre
+                        </button>
+                        <button class="button button-outline" id="playerVfButton" type="button">VF</button>
+                        <button class="button button-outline" id="playerVostfrButton" type="button">VOSTFR</button>
+                        <button class="button button-outline" id="playerFavoriteButton" type="button">
+                            <svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"></path></svg>
+                            Favori
+                        </button>
+                    </div>
+                    <div class="player-nextprev">
+                        <button class="button button-outline" id="playerPrevEpisodeButton" type="button" disabled>Episode precedent</button>
+                        <button class="button button-outline" id="playerNextEpisodeButton" type="button" disabled>Episode suivant</button>
+                    </div>
+                </section>
+            </main>
+            <aside class="player-episode-panel" id="playerEpisodePanel" aria-labelledby="playerEpisodePanelTitle">
+                <div class="player-episode-panel-head">
+                    <h3 id="playerEpisodePanelTitle">Autres episodes</h3>
+                    <span id="playerEpisodePanelCount"></span>
+                </div>
+                <div class="player-episode-list" id="playerEpisodePanelList"></div>
+                <button class="button button-outline player-all-episodes" id="playerAllEpisodesButton" type="button">Voir tous les episodes</button>
+            </aside>
+        </div>
     </section>
 </div>
 
@@ -519,6 +660,6 @@
 <script src="/assets/vendor/mpegts.js" defer></script>
 <script src="/assets/vendor/hls.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js" defer></script>
-<script src="/assets/app.js?v=20260627-3" defer></script>
+<script src="/assets/app.js?v=20260629-episode-key-fix-1" defer></script>
 </body>
 </html>
