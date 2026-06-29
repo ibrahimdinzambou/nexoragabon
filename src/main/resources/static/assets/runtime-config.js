@@ -1,6 +1,7 @@
 (function () {
     const publicApiBase = "https://api.nexoragabon.com";
     const publicNodeApiBase = "https://api.nexoragabon.com/node-fr";
+    const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";
     const publicSiteUrl = "https://nexoragabon.com";
     const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
     const proxiedFrontHosts = new Set(["nexoragabon.com", "www.nexoragabon.com"]);
@@ -28,10 +29,18 @@
         return publicNodeApiBase;
     }
 
+    function configuredDramaBase() {
+        const explicit = trimSlash(window.NEXORA_DRAMA_API_BASE_URL || "");
+        if (explicit) return explicit;
+        return publicDramaApiBase;
+    }
+
     const apiBaseUrl = configuredBase();
     const apiRoot = `${apiBaseUrl}/api`;
     const nodeApiBaseUrl = configuredNodeBase();
     const nodeApiRoot = nodeApiBaseUrl ? `${nodeApiBaseUrl}/api` : "";
+    const dramaApiBaseUrl = configuredDramaBase();
+    const dramaApiRoot = dramaApiBaseUrl ? `${dramaApiBaseUrl}/api/v1/reelshort` : "";
 
     function apiUrl(path) {
         const value = String(path || "");
@@ -66,15 +75,27 @@
         return new URL(raw, nodeApiBaseUrl || window.location.origin).href;
     }
 
+    function dramaApiUrl(path) {
+        if (!dramaApiBaseUrl) return "";
+        const value = String(path || "");
+        if (/^https?:\/\//i.test(value)) return value;
+        if (value.startsWith("/api/v1/reelshort/")) return `${dramaApiBaseUrl}${value}`;
+        if (value.startsWith("api/v1/reelshort/")) return `${dramaApiBaseUrl}/${value}`;
+        return `${dramaApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
+    }
+
     window.NEXORA_CONFIG = {
         apiBaseUrl,
         apiRoot,
         nodeApiBaseUrl,
         nodeApiRoot,
+        dramaApiBaseUrl,
+        dramaApiRoot,
         orionApiBaseUrl: nodeApiBaseUrl,
         publicSiteUrl,
         railwayApiBase: publicApiBase,
-        railwayNodeApiBase: publicNodeApiBase
+        railwayNodeApiBase: publicNodeApiBase,
+        railwayDramaApiBase: publicDramaApiBase
     };
     window.NexoraApi = {
         baseUrl: apiBaseUrl,
@@ -88,5 +109,11 @@
         enabled: function () { return Boolean(nodeApiBaseUrl); },
         url: nodeApiUrl,
         resolve: resolveNodeUrl
+    };
+    window.NexoraDramaApi = {
+        baseUrl: dramaApiBaseUrl,
+        root: function () { return dramaApiRoot; },
+        enabled: function () { return Boolean(dramaApiBaseUrl); },
+        url: dramaApiUrl
     };
 }());

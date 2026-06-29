@@ -1,5 +1,6 @@
 const API_ROOT = window.NexoraApi?.root?.() || "/api";
 const NODE_API_ROOT = window.NexoraNodeApi?.root?.() || "";
+const DRAMA_API_ROOT = window.NexoraDramaApi?.root?.() || "";
 const TOKEN_KEY = "nexora_access_token";
 const MOVIE_SORT_KEY = "nexora_movie_sort";
 const SETTINGS_KEY = "nexora_profile_settings";
@@ -34,7 +35,6 @@ const DEFAULT_VISIBLE_CATALOG = { live: 300, movie: 900, series: 900 };
 const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
-const KOREAN_DRAMA_CATEGORY_ID = "tmdb-series-korean-drama";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const NODE_MOVIE_PROVIDER = "auto";
@@ -417,6 +417,48 @@ async function nodeApi(path, options = {}) {
 async function nodeCatalogApi(path, options = {}) {
     const body = await nodeApi(path, options);
     return Array.isArray(body) ? body : (body.data || body.items || []);
+}
+
+function dramaApiUrl(path) {
+    return window.NexoraDramaApi?.url ? window.NexoraDramaApi.url(path) : "";
+}
+
+function dramaApiEnabled() {
+    return Boolean(DRAMA_API_ROOT || window.NexoraDramaApi?.enabled?.());
+}
+
+async function dramaApi(path, options = {}) {
+    const url = dramaApiUrl(path);
+    if (!url) {
+        throw new Error("API Dramas non configuree.");
+    }
+
+    const headers = new Headers(options.headers || {});
+    headers.set("Accept", "application/json");
+    if (state.token) {
+        headers.set("Authorization", `Bearer ${state.token}`);
+    }
+
+    const response = await fetchWithRetry(url, { ...options, headers });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok || body.ok === false) {
+        const error = new Error(body.message || body.error || body.erreur || "API Dramas indisponible.");
+        error.status = response.status;
+        throw error;
+    }
+    return body;
+}
+
+async function dramaApiOrSpring(directPath, springPath) {
+    if (dramaApiEnabled()) {
+        try {
+            return await dramaApi(directPath);
+        } catch {
+            // Spring keeps the same API as a protected fallback when the direct drama proxy is not deployed yet.
+        }
+    }
+    return api(springPath);
 }
 
 async function fetchWithRetry(url, options) {
@@ -1454,19 +1496,36 @@ function renderKoreanDramaRail(items, searching) {
     if (searching || !["all", "series"].includes(state.activeType)) {
         return "";
     }
-    const dramas = uniqueCatalogItems(items)
-        .filter((item) => item.type === "series" && item.categoryId === KOREAN_DRAMA_CATEGORY_ID)
-        .slice(0, 50);
-    if (!dramas.length) {
-        return "";
-    }
-    return renderCatalogShelf({
-        type: "series",
-        title: "Drama coreens",
-        label: "Series TMDB jouables avec le lecteur Videasy",
-        items: dramas,
-        posterLayout: true
-    }, "kdrama");
+    return renderDramaApiRail();
+}
+
+function renderDramaApiRail() {
+    const cards = [
+        ["Rayons ReelShort", "Catalogue FR via l'API dramas", "Explorer"],
+        ["Kdramas courts", "Episodes et saisons depuis la source dediee", "Ouvrir"],
+        ["VF disponible", "Lecture HLS retournee par l'API drama", "Voir"]
+    ];
+    return `
+        <section class="content-row content-row-drama-api" aria-labelledby="drama-api-rail-title">
+            <div class="row-heading">
+                <div class="row-heading-copy">
+                    <h3 id="drama-api-rail-title">Kdramas & dramas courts</h3>
+                    <span>Catalogue ReelShort via l'API Dramas, pas via TMDB</span>
+                </div>
+                <button class="row-see-more" type="button" data-filter-shortcut="drama">Ouvrir Dramas</button>
+            </div>
+            <div class="card-track drama-api-track">
+                ${cards.map(([title, label, action], index) => `
+                    <button class="drama-api-card" type="button" data-filter-shortcut="drama" aria-label="${escapeHtml(`${action} ${title}`)}">
+                        <span class="drama-api-card-index">${String(index + 1).padStart(2, "0")}</span>
+                        <strong>${escapeHtml(title)}</strong>
+                        <span>${escapeHtml(label)}</span>
+                        <b>${escapeHtml(action)}</b>
+                    </button>
+                `).join("")}
+            </div>
+        </section>
+    `;
 }
 
 function normalizeDramaBook(book) {
@@ -1486,6 +1545,53 @@ function setDramaStatus(message, isError = false) {
     elements.dramaStatus.classList.toggle("error", Boolean(isError));
 }
 
+function dramaQuery(parameters) {
+    return new URLSearchParams(parameters).toString();
+}
+
+function springDramaPath(path, parameters = {}) {
+    const query = dramaQuery(parameters);
+    return `/dramas/${path}${query ? `?${query}` : ""}`;
+}
+
+function directDramaPath(path, parameters = {}) {
+    const query = dramaQuery(parameters);
+    return `/${path}${query ? `?${query}` : ""}`;
+}
+
+function fetchDramaBookshelves(language) {
+    const parameters = { lang: language };
+    return dramaApiOrSpring(
+        directDramaPath("bookshelves", parameters),
+        springDramaPath("bookshelves", parameters)
+    );
+}
+
+function fetchDramaSearch(query, page, language) {
+    return dramaApiOrSpring(
+        directDramaPath("search", { keywords: query, page, lang: language }),
+        springDramaPath("search", { q: query, page, lang: language })
+    );
+}
+
+function fetchDramaEpisodes(bookId, filteredTitle, language) {
+    const encodedBookId = encodeURIComponent(bookId);
+    const parameters = { filtered_title: filteredTitle, lang: language };
+    return dramaApiOrSpring(
+        directDramaPath(`episodes/${encodedBookId}`, parameters),
+        springDramaPath(`episodes/${encodedBookId}`, parameters)
+    );
+}
+
+function fetchDramaVideo(bookId, episodeNumber, filteredTitle, chapterId, language) {
+    const encodedBookId = encodeURIComponent(bookId);
+    const parameters = { filtered_title: filteredTitle, chapter_id: chapterId, lang: language };
+    return dramaApiOrSpring(
+        directDramaPath(`video/${encodedBookId}/${episodeNumber}`, parameters),
+        springDramaPath(`video/${encodedBookId}/${episodeNumber}`, parameters)
+    );
+}
+
 async function loadDramaHome() {
     if (!state.token && state.authRequired) {
         requestLogin("Connectez-vous pour ouvrir les dramas.");
@@ -1500,7 +1606,7 @@ async function loadDramaHome() {
     if (state.dramaLoaded) return;
     setDramaStatus("Chargement des rayons dramas...");
     try {
-        const payload = await api(`/dramas/bookshelves?lang=${encodeURIComponent(state.dramaLang)}`);
+        const payload = await fetchDramaBookshelves(state.dramaLang);
         state.dramaShelves = payload.bookshelves || [];
         state.dramaShelfVisible = {};
         state.dramaLoaded = true;
@@ -1715,9 +1821,7 @@ async function fetchDramaSearchBatchForQuery(query, startPage, targetCount) {
     let page = Math.max(1, startPage);
     let hasMore = false;
     while (books.length < targetCount) {
-        const payload = await api(
-            `/dramas/search?q=${encodeURIComponent(query)}&page=${page}&lang=${encodeURIComponent(state.dramaLang)}`
-        );
+        const payload = await fetchDramaSearch(query, page, state.dramaLang);
         const results = payload.results || [];
         books.push(...results);
         hasMore = results.length >= DRAMA_SEARCH_PAGE_SIZE;
@@ -1736,9 +1840,7 @@ async function selectDramaBook(bookId, options = {}) {
     if (!book) return [];
     state.activeDramaBook = book;
     setDramaStatus(`Chargement des episodes de ${book.title}...`);
-    const payload = await api(
-        `/dramas/episodes/${encodeURIComponent(book.id)}?filtered_title=${encodeURIComponent(book.slug)}&lang=${encodeURIComponent(state.dramaLang)}`
-    );
+    const payload = await fetchDramaEpisodes(book.id, book.slug, state.dramaLang);
     state.activeDramaEpisodes = payload.episodes || [];
     elements.dramaEpisodes.hidden = false;
     elements.dramaEpisodeTitle.textContent = book.title;
@@ -1769,9 +1871,7 @@ async function playDramaEpisode(episodeNumber, chapterId) {
     const book = state.activeDramaBook;
     if (!book || !chapterId) return;
     setDramaStatus(`Preparation episode ${episodeNumber}...`);
-    const payload = await api(
-        `/dramas/video/${encodeURIComponent(book.id)}/${episodeNumber}?filtered_title=${encodeURIComponent(book.slug)}&chapter_id=${encodeURIComponent(chapterId)}&lang=${encodeURIComponent(state.dramaLang)}`
-    );
+    const payload = await fetchDramaVideo(book.id, episodeNumber, book.slug, chapterId, state.dramaLang);
     const url = payload.proxy_video_url || payload.video_url;
     if (!url) {
         setDramaStatus("Aucune URL video pour cet episode", true);
@@ -1855,9 +1955,7 @@ async function ensurePlayerDramaContext(item) {
         episodeCount: 0,
         summary: ""
     };
-    const payload = await api(
-        `/dramas/episodes/${encodeURIComponent(bookId)}?filtered_title=${encodeURIComponent(slug)}&lang=${encodeURIComponent(state.dramaLang)}`
-    );
+    const payload = await fetchDramaEpisodes(bookId, slug, state.dramaLang);
     state.activeDramaEpisodes = payload.episodes || [];
 }
 

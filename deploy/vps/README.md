@@ -128,6 +128,7 @@ Si ton front est sur Netlify/Vercel, ajoute:
 ```html
 <script>
   window.NEXORA_API_BASE_URL = "https://api.nexoragabon.com";
+  window.NEXORA_DRAMA_API_BASE_URL = "https://api.nexoragabon.com/drama-api";
 </script>
 ```
 
