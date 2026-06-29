@@ -10245,3 +10245,244 @@ svg {
         margin-left: auto !important;
     }
 }
+
+/* Mobile player layout guard: keep controls, metadata, and episode rail separated. */
+@media (max-width: 760px) {
+    #playerModal:not([hidden]) {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    #playerModal .player-room {
+        min-height: 100svh !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-room-topbar {
+        position: sticky !important;
+        top: 0 !important;
+        min-height: 58px !important;
+        padding: 6px 10px !important;
+    }
+
+    #playerModal .player-room-layout {
+        display: flex !important;
+        height: auto !important;
+        min-height: 0 !important;
+        flex-direction: column !important;
+        gap: 14px !important;
+        overflow: visible !important;
+        padding: 12px 10px 24px !important;
+    }
+
+    #playerModal .player-room-main {
+        display: flex !important;
+        min-height: 0 !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-screen {
+        width: 100% !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        aspect-ratio: 16 / 9 !important;
+        border-radius: 14px !important;
+    }
+
+    #playerModal .player-screen > video,
+    #playerModal .player-screen > iframe,
+    #playerModal .player-screen > .embed-launch-panel,
+    #playerModal .player-screen > .player-placeholder {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+    #playerModal .player-placeholder {
+        padding: 18px !important;
+        text-align: center !important;
+    }
+
+    #playerModal .player-room .player-caption {
+        display: grid !important;
+        min-height: 0 !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 12px !important;
+        padding: 4px 0 0 !important;
+        background: transparent !important;
+    }
+
+    #playerModal .player-title-group {
+        display: grid !important;
+        grid-template-columns: auto minmax(0, 1fr) !important;
+        gap: 6px 10px !important;
+        align-items: end !important;
+    }
+
+    #playerModal .player-title-group .live-badge {
+        grid-row: 1 / span 2 !important;
+        align-self: start !important;
+        margin-top: 3px !important;
+    }
+
+    #playerModal .player-caption h2 {
+        overflow-wrap: anywhere !important;
+        white-space: normal !important;
+        font-size: clamp(30px, 9.8vw, 42px) !important;
+        line-height: 0.96 !important;
+    }
+
+    #playerModal #playerEpisodeSubtitle {
+        font-size: 12px !important;
+        white-space: normal !important;
+    }
+
+    #playerModal .player-tools {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        gap: 8px 10px !important;
+        justify-content: stretch !important;
+    }
+
+    #playerModal .player-quality {
+        width: 100% !important;
+    }
+
+    #playerModal .player-quality select {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    #playerModal .player-fullscreen,
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        min-width: 112px !important;
+    }
+
+    #playerModal #playerMessage {
+        grid-column: 1 / -1 !important;
+        width: 100% !important;
+        font-size: 12px !important;
+        line-height: 1.45 !important;
+    }
+
+    #playerModal .player-info-panel {
+        display: grid !important;
+        gap: 12px !important;
+        margin-top: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: transparent !important;
+    }
+
+    #playerModal .player-info-panel h3 {
+        display: none !important;
+    }
+
+    #playerModal .player-info-panel h4 {
+        margin: 0 !important;
+        font-size: 18px !important;
+        line-height: 1.25 !important;
+    }
+
+    #playerModal .player-info-pills {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        margin: 0 !important;
+    }
+
+    #playerModal .player-info-pills span {
+        min-height: 34px !important;
+        max-width: 100% !important;
+        padding: 0 12px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    #playerModal #playerSynopsis {
+        margin: 0 !important;
+        font-size: 12px !important;
+        line-height: 1.45 !important;
+    }
+
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+        gap: 8px !important;
+        margin: 0 !important;
+    }
+
+    #playerModal .player-primary-actions .button,
+    #playerModal .player-nextprev .button {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 42px !important;
+        padding: 0 10px !important;
+        font-size: 11px !important;
+    }
+
+    #playerModal .player-primary-actions #playerResumeButton {
+        grid-column: 1 / -1 !important;
+    }
+
+    #playerModal .player-episode-panel {
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        margin-top: 2px !important;
+        padding: 12px !important;
+        overflow: visible !important;
+        border-radius: 12px !important;
+    }
+
+    #playerModal .player-episode-panel-head {
+        align-items: center !important;
+        margin-bottom: 10px !important;
+    }
+
+    #playerModal .player-episode-panel h3 {
+        font-size: 19px !important;
+        line-height: 1.1 !important;
+    }
+
+    #playerModal .player-episode-list {
+        display: grid !important;
+        max-height: min(58svh, 520px) !important;
+        gap: 10px !important;
+        overflow-y: auto !important;
+        padding-right: 4px !important;
+    }
+
+    #playerModal .player-episode-card {
+        display: grid !important;
+        grid-template-columns: 108px minmax(0, 1fr) 34px !important;
+        gap: 10px !important;
+        min-height: 82px !important;
+        padding: 9px !important;
+    }
+
+    #playerModal .player-episode-card img {
+        width: 108px !important;
+        height: 61px !important;
+        object-fit: cover !important;
+    }
+
+    #playerModal .player-episode-card strong,
+    #playerModal .player-episode-card span {
+        min-width: 0 !important;
+    }
+
+    #playerModal .player-episode-card span span {
+        display: -webkit-box !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 2 !important;
+    }
+}

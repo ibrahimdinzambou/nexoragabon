@@ -4,6 +4,7 @@ Cette configuration deploie deux services sur le meme VPS:
 
 - `nexora-api`: application Spring Boot, port local `8080`.
 - `nexora-drama`: API Python ReelShort/Drama, port local `5000`.
+- `node-fr` / Orion: API Node des sources films FR, port local `3000` si activee.
 
 Nginx expose le site et l'API en HTTPS, puis Spring appelle l'API drama en interne avec:
 
@@ -63,6 +64,8 @@ PUBLIC_API_BASE_URL=https://api.nexoragabon.com
 CORS_ALLOWED_ORIGIN_PATTERNS=https://nexoragabon.com,https://www.nexoragabon.com,https://api.nexoragabon.com
 DRAMA_API_BASE_URL=http://127.0.0.1:5000/api/v1/reelshort
 DRAMA_API_TIMEOUT_SECONDS=20
+ORION_BASE_URL=http://127.0.0.1:3000
+ORION_TIMEOUT_SECONDS=30
 ```
 
 Si tu utilises PostgreSQL:

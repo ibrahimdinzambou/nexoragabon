@@ -108,9 +108,9 @@ app:
     heartbeat-timeout-seconds: ${IPTV_HEARTBEAT_TIMEOUT_SECONDS:90}
     session-cleanup-interval-ms: ${IPTV_SESSION_CLEANUP_INTERVAL_MS:30000}
     proxy-range-chunk-bytes: ${IPTV_PROXY_RANGE_CHUNK_BYTES:4194304}
-    proxy-connect-timeout-seconds: ${IPTV_PROXY_CONNECT_TIMEOUT_SECONDS:4}
-    proxy-request-timeout-seconds: ${IPTV_PROXY_REQUEST_TIMEOUT_SECONDS:4}
-    proxy-first-byte-timeout-seconds: ${IPTV_PROXY_FIRST_BYTE_TIMEOUT_SECONDS:3}
+    proxy-connect-timeout-seconds: ${IPTV_PROXY_CONNECT_TIMEOUT_SECONDS:15}
+    proxy-request-timeout-seconds: ${IPTV_PROXY_REQUEST_TIMEOUT_SECONDS:30}
+    proxy-first-byte-timeout-seconds: ${IPTV_PROXY_FIRST_BYTE_TIMEOUT_SECONDS:15}
     health-audit-enabled: ${IPTV_HEALTH_AUDIT_ENABLED:true}
     health-audit-cron: ${IPTV_HEALTH_AUDIT_CRON:0 0 0 * * *}
     health-audit-zone: ${IPTV_HEALTH_AUDIT_ZONE:Africa/Lagos}

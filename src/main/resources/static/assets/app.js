@@ -10,15 +10,15 @@ const NETWORK_RETRY_DELAYS = [700, 1800, 4000];
 const STREAM_OPEN_RETRY_DELAYS = [500, 1200];
 const IMAGE_RETRY_LIMIT = 2;
 const PLAYER_RECOVERY_DELAY_MS = 6000;
-const PLAYER_STARTUP_TIMEOUT_MS = 10000;
-const STREAM_PREFLIGHT_TIMEOUT_MS = 3500;
-const PLAYER_VISUAL_WATCHDOG_MS = 4500;
-const PLAYER_VISUAL_WATCHDOG_MAX_MS = 14000;
+const PLAYER_STARTUP_TIMEOUT_MS = 18000;
+const STREAM_PREFLIGHT_TIMEOUT_MS = 12000;
+const PLAYER_VISUAL_WATCHDOG_MS = 8000;
+const PLAYER_VISUAL_WATCHDOG_MAX_MS = 24000;
 const PLAYER_MAX_RECOVERY_ATTEMPTS = 4;
 const PLAYER_MANUAL_PAUSE_WINDOW_MS = 1400;
 const PLAYER_PAUSE_RESUME_DELAY_MS = 900;
 const DASH_MANIFEST_TIMEOUT_MS = 10000;
-const DASH_PLAY_PROMISE_TIMEOUT_MS = 3500;
+const DASH_PLAY_PROMISE_TIMEOUT_MS = 7000;
 const SEARCH_DEBOUNCE_MS = 550;
 const MIN_REMOTE_SEARCH_LENGTH = 2;
 const HERO_AUTO_ADVANCE_MS = 6500;
@@ -103,6 +103,7 @@ const state = {
     notificationReadIds: loadNotificationReadIds(),
     notificationPanelOpen: false,
     notificationLoading: false,
+    notificationsApiAvailable: true,
     hiddenCatalogCards: new Set(),
     hiddenContinueCards: new Set(),
     movieSort: localStorage.getItem(MOVIE_SORT_KEY) || "title-asc",
@@ -3845,7 +3846,7 @@ async function refreshNotifications(options = {}) {
             [payments, tickets, adminNotifications] = await Promise.all([
                 api("/billing/payments").catch(() => []),
                 api("/support/tickets").catch(() => []),
-                api("/notifications").catch(() => [])
+                fetchAdminNotifications()
             ]);
         }
         state.notifications = buildNotifications(payments || [], tickets || [], adminNotifications || []);
@@ -3853,6 +3854,18 @@ async function refreshNotifications(options = {}) {
     } finally {
         state.notificationLoading = false;
         if (!options.silent && state.notificationPanelOpen) renderNotifications();
+    }
+}
+
+async function fetchAdminNotifications() {
+    if (!state.notificationsApiAvailable) return [];
+    try {
+        return await api("/notifications");
+    } catch (error) {
+        if (error?.status === 404) {
+            state.notificationsApiAvailable = false;
+        }
+        return [];
     }
 }
 
@@ -5253,7 +5266,8 @@ function isMobileEmbedEnvironment() {
 }
 
 function shouldGateEmbedLaunch(item) {
-    return isTmdbPlayable(item) && isMobileEmbedEnvironment();
+    return isMobileEmbedEnvironment()
+        && (isTmdbPlayable(item) || isEpornerSource(item) || isNodeFrenchPlayerItem(item));
 }
 
 function configureEmbedFrame() {
@@ -5261,7 +5275,9 @@ function configureEmbedFrame() {
     elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
     elements.embedPlayer.setAttribute("allowfullscreen", "");
     elements.embedPlayer.setAttribute("webkitallowfullscreen", "");
-    elements.embedPlayer.referrerPolicy = "no-referrer";
+    elements.embedPlayer.referrerPolicy = isEpornerSource(state.activePlayerItem)
+        ? "strict-origin-when-cross-origin"
+        : "no-referrer";
 }
 
 function clearEmbedFrame() {
@@ -5329,8 +5345,7 @@ function prepareEmbedPlayer(streamUrl) {
     configureEmbedFrame();
     clearEmbedFrame();
     elements.embedLaunchPanel.hidden = true;
-    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
-    elements.embedLaunchInlineButton.textContent = "Lancer ici";
+    setEmbedLaunchCopy();
     syncPlayerEmbedMode(true);
     syncEmbedActionLinks();
 }
@@ -5339,9 +5354,27 @@ function showEmbedLaunchPanel() {
     state.embedRequiresUserLaunch = true;
     state.nativePlaybackRequiresUserLaunch = false;
     clearEmbedFrame();
-    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
-    elements.embedLaunchInlineButton.textContent = "Lancer ici";
+    setEmbedLaunchCopy();
     elements.embedLaunchPanel.hidden = false;
+    syncEmbedActionLinks();
+}
+
+function setEmbedLaunchCopy(item = state.activePlayerItem, buttonText = "Lancer ici") {
+    const paragraph = elements.embedLaunchPanel.querySelector("p");
+    if (paragraph) {
+        paragraph.textContent = embedLaunchPrompt(item);
+    }
+    elements.embedLaunchInlineButton.textContent = buttonText;
+}
+
+function embedLaunchPrompt(item = state.activePlayerItem) {
+    if (isNodeFrenchPlayerItem(item)) {
+        return "Appuyez pour lancer le lecteur FR.";
+    }
+    if (isEpornerSource(item)) {
+        return "Appuyez pour lancer le lecteur Adults.";
+    }
+    return "Appuyez pour lancer le lecteur TMDB.";
 }
 
 function showNativePlaybackLaunchPanel() {
@@ -5405,8 +5438,7 @@ function resolveNonFrenchPlaybackConfirmation() {
     if (!pending) return false;
     state.pendingNonFrenchConfirmation = null;
     elements.embedLaunchPanel.hidden = true;
-    elements.embedLaunchInlineButton.textContent = "Lancer ici";
-    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
+    setEmbedLaunchCopy();
     pending.resolve(true);
     return true;
 }
@@ -5440,8 +5472,7 @@ function rejectNonFrenchPlaybackConfirmation() {
     if (!pending) return;
     state.pendingNonFrenchConfirmation = null;
     elements.embedLaunchPanel.hidden = true;
-    elements.embedLaunchInlineButton.textContent = "Lancer ici";
-    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
+    setEmbedLaunchCopy();
     pending.reject(new Error("Lecture annulee: aucune version francaise detectee."));
 }
 
@@ -5477,12 +5508,16 @@ function syncPlayerEmbedMode(isEmbed) {
 
 function syncEmbedActionLinks() {
     const hasEmbed = state.activePlaybackMode === "embed" && Boolean(state.activeEmbedUrl);
-    elements.embedOpenExternalLink.href = "#";
-    elements.embedOpenExternalLink.hidden = true;
-    elements.embedOpenExternalLink.setAttribute("aria-disabled", "true");
-    elements.playerEmbedOpenLink.href = "#";
-    elements.playerEmbedOpenLink.hidden = true;
-    elements.playerEmbedOpenLink.setAttribute("aria-disabled", "true");
+    const externalHref = hasEmbed ? state.activeEmbedUrl : "#";
+    elements.embedOpenExternalLink.href = externalHref;
+    elements.embedOpenExternalLink.hidden = !hasEmbed || !state.embedRequiresUserLaunch;
+    elements.embedOpenExternalLink.setAttribute(
+        "aria-disabled",
+        String(!hasEmbed || !state.embedRequiresUserLaunch)
+    );
+    elements.playerEmbedOpenLink.href = externalHref;
+    elements.playerEmbedOpenLink.hidden = !hasEmbed || !state.embedAssistShown;
+    elements.playerEmbedOpenLink.setAttribute("aria-disabled", String(!hasEmbed || !state.embedAssistShown));
     elements.playerEmbedRetryButton.hidden = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
     elements.playerEmbedRetryButton.disabled = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
 }
@@ -5497,7 +5532,8 @@ function scheduleEmbedAssistMessage() {
         elements.playerMessage.textContent = embedAssistMessage();
         elements.playerEmbedRetryButton.hidden = state.embedManualRetryUsed;
         elements.playerEmbedRetryButton.disabled = state.embedManualRetryUsed;
-        elements.playerEmbedOpenLink.hidden = true;
+        elements.playerEmbedOpenLink.hidden = false;
+        elements.playerEmbedOpenLink.setAttribute("aria-disabled", "false");
     }, 14000);
 }
 
@@ -5590,7 +5626,17 @@ function setEmbedPlayerAwaitingLaunch() {
     state.playerRecoveryShouldFailover = false;
     elements.playerPlaceholder.classList.remove("error");
     elements.playerPlaceholder.hidden = true;
-    elements.playerMessage.textContent = "Lecteur TMDB pret. Lancez-le depuis le bouton affiche.";
+    elements.playerMessage.textContent = embedAwaitingMessage();
+}
+
+function embedAwaitingMessage() {
+    if (isNodeFrenchPlayerItem()) {
+        return "Lecteur FR pret. Lancez-le depuis le bouton affiche.";
+    }
+    if (isEpornerSource(state.activePlayerItem)) {
+        return "Lecteur Adults pret. Lancez-le depuis le bouton affiche.";
+    }
+    return "Lecteur TMDB pret. Lancez-le depuis le bouton affiche.";
 }
 
 function setEmbedPlayerOpened(message = "Lecteur externe ouvert.") {
@@ -6092,8 +6138,7 @@ function detachPlayerMedia() {
     state.embedLoadCount = 0;
     state.embedReloading = false;
     elements.embedLaunchPanel.hidden = true;
-    elements.embedLaunchInlineButton.textContent = "Lancer ici";
-    elements.embedLaunchPanel.querySelector("p").textContent = "Appuyez pour lancer le lecteur TMDB.";
+    setEmbedLaunchCopy();
     elements.streamPlayer.hidden = false;
     elements.streamPlayer.pause();
     elements.streamPlayer.removeAttribute("src");
