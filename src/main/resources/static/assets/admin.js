@@ -1,4 +1,7 @@
-const API_ROOT = window.NexoraApi?.root?.() || "/api";
+const PUBLIC_API_BASE = "https://api.nexoragabon.com";
+const PUBLIC_API_ROOT = `${PUBLIC_API_BASE}/api`;
+const FRONT_HOSTS = new Set(["nexoragabon.com", "www.nexoragabon.com"]);
+const API_ROOT = window.NexoraApi?.root?.() || PUBLIC_API_ROOT;
 const TOKEN_KEY = "nexora_access_token";
 const NETWORK_RETRY_DELAYS = [300, 900];
 const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT", "OPS"];
@@ -204,7 +207,27 @@ async function api(path, options = {}) {
 }
 
 function apiUrl(path) {
-    return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
+    const configured = window.NexoraApi?.url ? window.NexoraApi.url(path) : "";
+    if (configured) return normalizeAdminApiUrl(configured);
+
+    const value = String(path || "");
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith("/api/")) return `${PUBLIC_API_BASE}${value}`;
+    if (value.startsWith("api/")) return `${PUBLIC_API_BASE}/${value}`;
+    return `${API_ROOT}${value.startsWith("/") ? value : `/${value}`}`;
+}
+
+function normalizeAdminApiUrl(url) {
+    const value = String(url || "");
+    const host = String(window.location.hostname || "").toLowerCase();
+    if (!FRONT_HOSTS.has(host)) return value;
+    if (value.startsWith("/api/")) return `${PUBLIC_API_BASE}${value}`;
+
+    const sameOriginApi = `${window.location.origin}/api/`;
+    if (value.startsWith(sameOriginApi)) {
+        return `${PUBLIC_API_ROOT}/${value.slice(sameOriginApi.length)}`;
+    }
+    return value;
 }
 
 async function fetchWithRetry(url, options) {
