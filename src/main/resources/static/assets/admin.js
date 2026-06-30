@@ -850,10 +850,7 @@ async function sendBroadcast(form) {
         email: data.has("email"),
         inApp: data.has("inApp")
     };
-    const result = await api("/admin/notifications/broadcasts", {
-        method: "POST",
-        body: JSON.stringify(payload)
-    });
+    const result = await sendBroadcastPayload(payload);
     if (el.broadcastResult) {
         el.broadcastResult.textContent = `${result.recipients} destinataire(s), ${result.emails} e-mail(s), ${result.notifications} notification(s).`;
     }
@@ -862,6 +859,16 @@ async function sendBroadcast(form) {
     state.messageTargetMode = "USERS";
     renderMessageRecipients();
     showToast("Message envoye aux utilisateurs.");
+}
+
+async function sendBroadcastPayload(payload) {
+    const body = JSON.stringify(payload);
+    try {
+        return await api("/admin/notifications/messages", { method: "POST", body });
+    } catch (error) {
+        if (error.status !== 404) throw error;
+        return api("/admin/notifications/broadcasts", { method: "POST", body });
+    }
 }
 
 async function loadOps() {
