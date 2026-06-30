@@ -3,8 +3,6 @@
     const publicNodeApiBase = "https://api.nexoragabon.com/node-fr";
     const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";
     const publicSiteUrl = "https://nexoragabon.com";
-    const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
-    const proxiedFrontHosts = new Set(["nexoragabon.com", "www.nexoragabon.com"]);
     const apiHost = "api.nexoragabon.com";
 
     function trimSlash(value) {
@@ -15,7 +13,7 @@
         const explicit = trimSlash(window.NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
         const host = String(window.location.hostname || "").toLowerCase();
-        if (proxiedFrontHosts.has(host) || host === apiHost) {
+        if (host === apiHost) {
             return "";
         }
         return publicApiBase;
@@ -32,7 +30,7 @@
     function configuredDramaBase() {
         const explicit = trimSlash(window.NEXORA_DRAMA_API_BASE_URL || "");
         if (explicit) return explicit;
-        return publicDramaApiBase;
+        return "";
     }
 
     const apiBaseUrl = configuredBase();

@@ -451,14 +451,18 @@ async function dramaApi(path, options = {}) {
 }
 
 async function dramaApiOrSpring(directPath, springPath) {
-    if (dramaApiEnabled()) {
+    try {
+        return await api(springPath);
+    } catch (springError) {
+        if (!dramaApiEnabled() || [401, 403].includes(springError.status)) {
+            throw springError;
+        }
         try {
             return await dramaApi(directPath);
         } catch {
-            // Spring keeps the same API as a protected fallback when the direct drama proxy is not deployed yet.
+            throw springError;
         }
     }
-    return api(springPath);
 }
 
 async function fetchWithRetry(url, options) {
