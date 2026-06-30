@@ -2301,3 +2301,147 @@ body {
         max-width: 1920px !important;
     }
 }
+
+/* Small-screen Reserve player guard */
+.adult-player,
+.player-frame,
+.adult-player-stage,
+.adult-player-stage iframe {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+.adult-rails,
+.adult-card-track,
+.adult-universe-track,
+.adult-category-tabs {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+@media (max-width: 640px) {
+    .adult-player:not([hidden]) {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 8px !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    .player-frame {
+        width: min(100%, calc(100dvw - 16px)) !important;
+        max-width: calc(100dvw - 16px) !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: calc(100dvh - 16px) !important;
+        grid-template-rows: auto minmax(0, auto) !important;
+        overflow: hidden !important;
+        border-radius: 12px !important;
+    }
+
+    .player-frame header {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        align-items: start !important;
+        gap: 10px !important;
+        min-height: 0 !important;
+        padding: 10px !important;
+    }
+
+    .player-frame h2 {
+        max-width: 100% !important;
+        overflow-wrap: anywhere !important;
+        white-space: normal !important;
+        font-size: clamp(15px, 4.8vw, 20px) !important;
+        line-height: 1.15 !important;
+    }
+
+    .player-actions {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+        width: 100% !important;
+    }
+
+    .player-actions a,
+    .player-actions button {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 38px !important;
+        padding-right: 8px !important;
+        padding-left: 8px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    .adult-player-stage {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: calc(100dvh - 132px) !important;
+        aspect-ratio: 16 / 9 !important;
+        overflow: hidden !important;
+    }
+
+    .adult-player-stage iframe {
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-width: 100% !important;
+    }
+
+    .adult-player-notice {
+        right: 8px !important;
+        bottom: 8px !important;
+        width: calc(100% - 16px) !important;
+        padding: 12px !important;
+    }
+}
+
+@media (max-width: 360px) {
+    .player-actions {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .adult-player-stage {
+        max-height: calc(100dvh - 174px) !important;
+    }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+    .adult-player:not([hidden]) {
+        align-items: stretch !important;
+        padding: 6px !important;
+    }
+
+    .player-frame {
+        width: calc(100dvw - 12px) !important;
+        max-width: calc(100dvw - 12px) !important;
+        height: calc(100dvh - 12px) !important;
+        max-height: calc(100dvh - 12px) !important;
+        grid-template-rows: auto minmax(0, 1fr) !important;
+    }
+
+    .player-frame header {
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: center !important;
+    }
+
+    .player-actions {
+        grid-template-columns: auto auto !important;
+        width: auto !important;
+    }
+
+    .adult-player-stage {
+        height: 100% !important;
+        max-height: none !important;
+        aspect-ratio: auto !important;
+    }
+}

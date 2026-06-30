@@ -11778,3 +11778,160 @@ svg {
         height: 48px !important;
     }
 }
+
+/* Small-screen rail controls: keep horizontal navigation reachable in portrait. */
+.home-panel-heading,
+.browse-rail-head,
+.row-heading,
+.watch-showcase-heading {
+    min-width: 0 !important;
+}
+
+.home-panel-actions,
+.row-navigation,
+.watch-showcase-controls {
+    flex: 0 0 auto !important;
+    opacity: 1 !important;
+}
+
+.home-panel-actions [data-home-scroll],
+.row-navigation [data-row-scroll],
+.watch-showcase-controls [data-row-scroll] {
+    touch-action: manipulation !important;
+}
+
+.card-track,
+.home-continue-track,
+.home-poster-track,
+.browse-track,
+.browse-universe-track,
+.watch-poster-rail,
+.watch-orbit-rail {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    overscroll-behavior-x: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+@media (max-width: 760px) {
+    .home-panel-heading,
+    .browse-rail-head {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: center !important;
+        gap: 10px !important;
+    }
+
+    .home-panel-heading h2,
+    .browse-rail-head h3 {
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    .home-panel-actions {
+        display: inline-flex !important;
+        justify-self: end !important;
+        gap: 8px !important;
+    }
+
+    .home-panel-actions .circle-link,
+    .row-navigation .row-arrow,
+    .watch-showcase-controls .row-arrow {
+        width: 40px !important;
+        min-width: 40px !important;
+        height: 40px !important;
+        border-radius: 999px !important;
+    }
+
+    .row-heading {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: center !important;
+        gap: 8px 10px !important;
+    }
+
+    .row-heading-copy {
+        grid-column: 1 !important;
+        grid-row: 1 !important;
+        min-width: 0 !important;
+    }
+
+    .row-heading-copy h3 {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    .row-heading .row-see-more {
+        grid-column: 1 !important;
+        grid-row: 2 !important;
+        justify-self: start !important;
+        max-width: 100% !important;
+    }
+
+    .row-heading .row-navigation {
+        grid-column: 2 !important;
+        grid-row: 1 / span 2 !important;
+        align-self: center !important;
+        justify-self: end !important;
+        display: inline-flex !important;
+        gap: 8px !important;
+    }
+
+    .watch-showcase-heading {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: center !important;
+        gap: 10px !important;
+    }
+
+    .watch-showcase-heading > div:first-child {
+        min-width: 0 !important;
+    }
+
+    .watch-showcase-heading h3 {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    .watch-showcase-controls {
+        grid-column: 2 !important;
+        grid-row: 1 !important;
+        justify-self: end !important;
+        margin-left: 0 !important;
+    }
+
+    .watch-showcase-more {
+        grid-column: 1 / -1 !important;
+        grid-row: 2 !important;
+        justify-self: start !important;
+    }
+
+    .card-track,
+    .home-continue-track,
+    .home-poster-track,
+    .browse-track,
+    .browse-universe-track {
+        touch-action: pan-x pan-y !important;
+        scrollbar-width: thin !important;
+    }
+}
+
+@media (max-width: 380px) {
+    .home-panel-actions .circle-link,
+    .row-navigation .row-arrow,
+    .watch-showcase-controls .row-arrow {
+        width: 36px !important;
+        min-width: 36px !important;
+        height: 36px !important;
+    }
+
+    .row-heading {
+        gap: 8px !important;
+    }
+}
