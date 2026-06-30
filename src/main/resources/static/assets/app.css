@@ -10555,3 +10555,1226 @@ svg {
         -webkit-line-clamp: 2 !important;
     }
 }
+
+/* Player responsive hardening: one final geometry pass for XR, Android and TV. */
+#playerModal:not([hidden]) {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 999 !important;
+    display: block !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100svh !important;
+    height: 100dvh !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #020711 !important;
+}
+
+#playerModal .modal-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    background: #020711 !important;
+}
+
+#playerModal .player-room {
+    position: relative !important;
+    z-index: 1 !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: 100vh !important;
+    height: 100svh !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+    background: #020711 !important;
+}
+
+#playerModal .player-watch-topbar {
+    position: relative !important;
+    z-index: 20 !important;
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: clamp(16px, 2.2vw, 40px) !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 72px !important;
+    padding: 0 clamp(18px, 3vw, 54px) !important;
+    overflow: hidden !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+    background: rgba(4, 7, 14, 0.98) !important;
+}
+
+#playerModal .player-watch-topbar .brand,
+#playerModal .player-watch-topbar .main-nav,
+#playerModal .player-watch-topbar .topbar-actions {
+    min-width: 0 !important;
+}
+
+#playerModal .player-watch-topbar .brand {
+    flex: 0 0 auto !important;
+}
+
+#playerModal .player-watch-topbar .brand-name {
+    display: block !important;
+    max-width: 28vw !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#playerModal .player-watch-topbar .main-nav {
+    display: flex !important;
+    align-items: center !important;
+    gap: clamp(14px, 1.7vw, 30px) !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: none !important;
+}
+
+#playerModal .player-watch-topbar .main-nav::-webkit-scrollbar {
+    display: none !important;
+}
+
+#playerModal .player-watch-topbar .nav-link,
+#playerModal .player-watch-topbar .adult-nav-entry {
+    flex: 0 0 auto !important;
+    min-height: 40px !important;
+    white-space: nowrap !important;
+}
+
+#playerModal .player-watch-topbar .topbar-actions {
+    justify-content: flex-end !important;
+    gap: 12px !important;
+}
+
+#playerModal .player-watch-topbar .player-search-shell {
+    width: clamp(200px, 22vw, 380px) !important;
+    flex: 0 1 clamp(200px, 22vw, 380px) !important;
+}
+
+#playerModal .player-watch-topbar .account-button {
+    max-width: min(220px, 22vw) !important;
+}
+
+#playerModal .player-watch-topbar #playerRoomUserName {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#playerModal .player-room-layout {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 31vw, 560px) !important;
+    gap: clamp(16px, 2vw, 32px) !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    padding: clamp(14px, 2.2vw, 36px) clamp(16px, 3vw, 54px) !important;
+    overflow: hidden !important;
+}
+
+#playerModal .player-room-main {
+    display: grid !important;
+    grid-template-rows: auto auto minmax(0, auto) !important;
+    align-content: start !important;
+    gap: clamp(10px, 1.3vw, 16px) !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain !important;
+    padding-right: 2px !important;
+}
+
+#playerModal .player-screen {
+    position: relative !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-height: min(62dvh, 720px) !important;
+    aspect-ratio: 16 / 9 !important;
+    overflow: hidden !important;
+    border-radius: 14px !important;
+    background: #000 !important;
+}
+
+#playerModal .player-screen > video,
+#playerModal .player-screen > iframe,
+#playerModal .player-screen > .embed-launch-panel,
+#playerModal .player-screen > .player-placeholder {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    aspect-ratio: auto !important;
+}
+
+#playerModal .player-screen > video[hidden],
+#playerModal .player-screen > iframe[hidden],
+#playerModal .player-screen > .embed-launch-panel[hidden],
+#playerModal .player-screen > .player-placeholder[hidden] {
+    display: none !important;
+}
+
+#playerModal .player-close {
+    position: absolute !important;
+    top: 10px !important;
+    right: 10px !important;
+    z-index: 9 !important;
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 999px !important;
+    background: rgba(0, 0, 0, 0.68) !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+#playerModal .player-caption {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, auto) !important;
+    align-items: start !important;
+    gap: 14px !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+}
+
+#playerModal .player-title-group,
+#playerModal .player-tools,
+#playerModal .player-info-panel {
+    min-width: 0 !important;
+}
+
+#playerModal .player-title-group {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 6px 10px !important;
+}
+
+#playerModal .player-title-group .live-badge {
+    grid-row: 1 / span 2 !important;
+}
+
+#playerModal .player-caption h2 {
+    display: -webkit-box !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    overflow-wrap: anywhere !important;
+    white-space: normal !important;
+    font-size: clamp(28px, 3.6vw, 58px) !important;
+    line-height: 1 !important;
+}
+
+#playerModal #playerEpisodeSubtitle,
+#playerModal #playerMessage,
+#playerModal #playerSynopsis,
+#playerModal #playerInfoSubtitle {
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+}
+
+#playerModal #playerEpisodeSubtitle {
+    display: -webkit-box !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    white-space: normal !important;
+}
+
+#playerModal .player-tools {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+}
+
+#playerModal .player-quality {
+    min-width: 0 !important;
+}
+
+#playerModal .player-quality select {
+    min-width: 96px !important;
+    max-width: 140px !important;
+}
+
+#playerModal .player-fullscreen,
+#playerModal .player-embed-open,
+#playerModal .player-embed-retry {
+    min-width: 102px !important;
+    min-height: 38px !important;
+    white-space: nowrap !important;
+}
+
+#playerModal #playerMessage {
+    flex: 1 1 100% !important;
+    margin: 0 !important;
+    line-height: 1.4 !important;
+}
+
+#playerModal .player-info-panel {
+    display: grid !important;
+    gap: 12px !important;
+    max-width: 880px !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: transparent !important;
+}
+
+#playerModal .player-info-panel h3 {
+    display: none !important;
+}
+
+#playerModal .player-info-panel h4,
+#playerModal #playerSynopsis {
+    display: -webkit-box !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    -webkit-box-orient: vertical !important;
+}
+
+#playerModal .player-info-panel h4 {
+    -webkit-line-clamp: 2 !important;
+    font-size: clamp(18px, 1.6vw, 28px) !important;
+    line-height: 1.18 !important;
+}
+
+#playerModal #playerSynopsis {
+    -webkit-line-clamp: 3 !important;
+    line-height: 1.45 !important;
+}
+
+#playerModal .player-info-pills,
+#playerModal .player-primary-actions,
+#playerModal .player-nextprev {
+    min-width: 0 !important;
+}
+
+#playerModal .player-info-pills {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    margin: 0 !important;
+}
+
+#playerModal .player-info-pills span {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#playerModal .player-primary-actions,
+#playerModal .player-nextprev {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    margin: 0 !important;
+}
+
+#playerModal .player-primary-actions .button,
+#playerModal .player-nextprev .button {
+    flex: 1 1 150px !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    padding: 0 12px !important;
+    white-space: normal !important;
+}
+
+#playerModal .player-primary-actions #playerResumeButton {
+    flex-basis: 230px !important;
+}
+
+#playerModal .player-episode-panel {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
+    align-self: stretch !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: none !important;
+    overflow: hidden !important;
+}
+
+#playerModal .player-episode-panel-head {
+    flex: 0 0 auto !important;
+    padding: 18px 18px 10px !important;
+}
+
+#playerModal .player-episode-list {
+    display: grid !important;
+    align-content: start !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    gap: 10px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain !important;
+    padding: 8px 12px 14px !important;
+}
+
+#playerModal .player-episode-card {
+    display: grid !important;
+    grid-template-columns: minmax(104px, 36%) minmax(0, 1fr) 34px !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 94px !important;
+    padding: 8px !important;
+}
+
+#playerModal .player-episode-card img {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 16 / 9 !important;
+    object-fit: cover !important;
+}
+
+#playerModal .player-episode-card > span,
+#playerModal .player-episode-card strong,
+#playerModal .player-episode-card span span {
+    min-width: 0 !important;
+}
+
+#playerModal .player-episode-card strong,
+#playerModal .player-episode-card span span {
+    display: -webkit-box !important;
+    overflow: hidden !important;
+    -webkit-box-orient: vertical !important;
+}
+
+#playerModal .player-episode-card strong {
+    -webkit-line-clamp: 2 !important;
+}
+
+#playerModal .player-episode-card span span {
+    -webkit-line-clamp: 2 !important;
+}
+
+@media (min-width: 1600px) {
+    #playerModal .player-room-layout {
+        grid-template-columns: minmax(0, 1fr) clamp(390px, 27vw, 560px) !important;
+        max-width: 2200px !important;
+        width: 100% !important;
+        margin-right: auto !important;
+        margin-left: auto !important;
+    }
+
+    #playerModal .player-screen {
+        max-height: min(66dvh, 820px) !important;
+    }
+}
+
+@media (max-width: 1180px) {
+    #playerModal:not([hidden]) {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    #playerModal .player-room {
+        min-height: 100vh !important;
+        min-height: 100svh !important;
+        min-height: 100dvh !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-watch-topbar {
+        position: sticky !important;
+        top: 0 !important;
+        grid-template-columns: auto minmax(0, 1fr) auto !important;
+        min-height: 96px !important;
+        padding: 8px clamp(12px, 3vw, 28px) !important;
+        gap: 8px 14px !important;
+    }
+
+    #playerModal .player-watch-topbar .main-nav {
+        grid-column: 1 / -1 !important;
+        order: 4 !important;
+        width: 100% !important;
+        gap: 12px !important;
+    }
+
+    #playerModal .player-watch-topbar .player-search-shell {
+        display: none !important;
+    }
+
+    #playerModal .player-room-layout {
+        display: flex !important;
+        height: auto !important;
+        min-height: 0 !important;
+        flex-direction: column !important;
+        gap: 16px !important;
+        overflow: visible !important;
+        padding: 14px clamp(12px, 3vw, 28px) 28px !important;
+    }
+
+    #playerModal .player-room-main {
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-screen {
+        max-height: none !important;
+    }
+
+    #playerModal .player-caption {
+        grid-template-columns: 1fr !important;
+    }
+
+    #playerModal .player-tools {
+        justify-content: flex-start !important;
+    }
+
+    #playerModal .player-episode-panel {
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-episode-list {
+        max-height: min(58svh, 560px) !important;
+    }
+}
+
+@media (max-width: 760px) {
+    #playerModal .player-watch-topbar {
+        min-height: 82px !important;
+        padding: 7px 10px !important;
+    }
+
+    #playerModal .player-watch-topbar .brand-mark,
+    #playerModal .player-watch-topbar .notification-button,
+    #playerModal .player-watch-topbar #playerRoomUserName,
+    #playerModal .player-watch-topbar .account-button > svg {
+        display: none !important;
+    }
+
+    #playerModal .player-watch-topbar .brand-name {
+        max-width: 42vw !important;
+        font-size: 20px !important;
+        letter-spacing: 0.1em !important;
+    }
+
+    #playerModal .player-watch-topbar .avatar {
+        width: 34px !important;
+        height: 34px !important;
+    }
+
+    #playerModal .player-watch-topbar .nav-link,
+    #playerModal .player-watch-topbar .adult-nav-entry {
+        min-height: 34px !important;
+        font-size: 12px !important;
+    }
+
+    #playerModal .player-room-layout {
+        gap: 12px !important;
+        padding: 10px 10px 22px !important;
+    }
+
+    #playerModal .player-screen {
+        border-radius: 12px !important;
+    }
+
+    #playerModal .player-close {
+        top: 8px !important;
+        right: 8px !important;
+        width: 38px !important;
+        height: 38px !important;
+    }
+
+    #playerModal .player-title-group {
+        align-items: start !important;
+        gap: 6px 9px !important;
+    }
+
+    #playerModal .player-title-group .live-badge {
+        margin-top: 4px !important;
+    }
+
+    #playerModal .player-caption h2 {
+        font-size: clamp(25px, 7.6vw, 34px) !important;
+        line-height: 1.02 !important;
+    }
+
+    #playerModal #playerEpisodeSubtitle,
+    #playerModal #playerMessage,
+    #playerModal #playerSynopsis {
+        font-size: 12px !important;
+        line-height: 1.4 !important;
+    }
+
+    #playerModal .player-tools {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: stretch !important;
+        gap: 8px !important;
+    }
+
+    #playerModal .player-quality,
+    #playerModal .player-quality select {
+        width: 100% !important;
+        max-width: none !important;
+    }
+
+    #playerModal .player-fullscreen,
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        min-width: 104px !important;
+        padding: 0 10px !important;
+        font-size: 10px !important;
+    }
+
+    #playerModal #playerMessage {
+        grid-column: 1 / -1 !important;
+    }
+
+    #playerModal .player-info-panel {
+        gap: 10px !important;
+    }
+
+    #playerModal .player-info-panel h4 {
+        font-size: 17px !important;
+    }
+
+    #playerModal #playerSynopsis {
+        -webkit-line-clamp: 4 !important;
+    }
+
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+        gap: 8px !important;
+    }
+
+    #playerModal .player-primary-actions .button,
+    #playerModal .player-nextprev .button {
+        width: 100% !important;
+        min-height: 42px !important;
+        padding: 0 10px !important;
+        font-size: 11px !important;
+    }
+
+    #playerModal .player-primary-actions #playerResumeButton {
+        grid-column: 1 / -1 !important;
+    }
+
+    #playerModal .player-episode-panel {
+        padding: 12px !important;
+        border-radius: 12px !important;
+    }
+
+    #playerModal .player-episode-list {
+        max-height: min(54svh, 480px) !important;
+        gap: 9px !important;
+        padding: 4px 2px 8px !important;
+    }
+
+    #playerModal .player-episode-card {
+        grid-template-columns: 96px minmax(0, 1fr) 30px !important;
+        min-height: 76px !important;
+        gap: 9px !important;
+        padding: 8px !important;
+    }
+}
+
+@media (max-width: 380px) {
+    #playerModal .player-watch-topbar .brand-name {
+        max-width: 38vw !important;
+        font-size: 18px !important;
+    }
+
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        grid-template-columns: 1fr !important;
+    }
+
+    #playerModal .player-episode-card {
+        grid-template-columns: 84px minmax(0, 1fr) 28px !important;
+    }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+    #playerModal .player-watch-topbar {
+        min-height: 54px !important;
+    }
+
+    #playerModal .player-watch-topbar .main-nav {
+        display: none !important;
+    }
+
+    #playerModal .player-room-layout {
+        padding: 8px 10px 16px !important;
+    }
+
+    #playerModal .player-screen {
+        max-height: 72dvh !important;
+    }
+}
+
+/* Desktop and TV height guard: reserve real layout space for the video row. */
+@media (min-width: 1181px) {
+    #playerModal .player-screen {
+        height: min(62dvh, 720px) !important;
+        aspect-ratio: auto !important;
+    }
+}
+
+@media (min-width: 1600px) {
+    #playerModal .player-screen {
+        height: min(66dvh, 820px) !important;
+    }
+}
+
+/* Screenshot pass tuning: prevent text bleed on TV and clipped controls on phones. */
+@media (min-width: 1181px) {
+    #playerModal .player-screen {
+        height: min(58dvh, 700px) !important;
+    }
+
+    #playerModal .player-caption h2 {
+        font-size: clamp(26px, 2.35vw, 42px) !important;
+        line-height: 1.04 !important;
+    }
+
+    #playerModal #playerEpisodeSubtitle {
+        font-size: clamp(13px, 0.9vw, 16px) !important;
+        line-height: 1.35 !important;
+    }
+}
+
+@media (min-width: 1600px) {
+    #playerModal .player-screen {
+        height: min(60dvh, 760px) !important;
+    }
+
+    #playerModal .player-caption h2 {
+        font-size: clamp(30px, 2.2vw, 44px) !important;
+    }
+}
+
+@media (max-width: 760px) {
+    #playerModal .player-tools {
+        grid-template-columns: minmax(0, 1fr) minmax(96px, max-content) !important;
+    }
+
+    #playerModal .player-quality {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 4px !important;
+        align-items: stretch !important;
+    }
+
+    #playerModal .player-quality span {
+        font-size: 9px !important;
+        line-height: 1 !important;
+    }
+
+    #playerModal .player-fullscreen,
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        min-width: 96px !important;
+    }
+}
+
+@media (max-width: 430px) {
+    #playerModal .player-tools {
+        grid-template-columns: minmax(0, 1fr) minmax(88px, 96px) !important;
+    }
+
+    #playerModal .player-fullscreen,
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        min-width: 0 !important;
+        font-size: 9px !important;
+    }
+}
+
+/* Mobile player rebuild: focused playback surface, compact controls, episode rail. */
+@media (max-width: 760px) {
+    body.modal-open {
+        overflow: hidden !important;
+    }
+
+    #playerModal:not([hidden]) {
+        position: fixed !important;
+        inset: 0 !important;
+        display: block !important;
+        width: 100vw !important;
+        height: 100svh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        overscroll-behavior: contain !important;
+        background:
+            linear-gradient(180deg, #050914 0%, #02050b 42%, #050914 100%) !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    #playerModal .modal-backdrop {
+        display: none !important;
+    }
+
+    #playerModal .player-room {
+        display: block !important;
+        width: 100% !important;
+        min-height: 100svh !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
+    #playerModal .player-watch-topbar {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 40 !important;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        width: 100% !important;
+        height: calc(56px + env(safe-area-inset-top, 0px)) !important;
+        min-height: calc(54px + env(safe-area-inset-top, 0px)) !important;
+        padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px !important;
+        gap: 10px !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        background: rgba(2, 5, 11, 0.96) !important;
+        backdrop-filter: blur(18px) !important;
+    }
+
+    #playerModal .player-watch-topbar .brand {
+        min-width: 0 !important;
+    }
+
+    #playerModal .player-watch-topbar .brand-mark,
+    #playerModal .player-watch-topbar .main-nav,
+    #playerModal .player-watch-topbar .topbar-actions,
+    #playerModal .player-watch-topbar .player-search-shell,
+    #playerModal .player-watch-topbar .notification-button,
+    #playerModal .player-watch-topbar #playerRoomUserName,
+    #playerModal .player-watch-topbar .account-button > svg {
+        display: none !important;
+    }
+
+    #playerModal .player-watch-topbar .brand-name {
+        display: block !important;
+        max-width: 100% !important;
+        overflow: hidden !important;
+        color: #f7fbff !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        font-size: 19px !important;
+        letter-spacing: 0.16em !important;
+    }
+
+    #playerModal .player-watch-topbar .topbar-actions {
+        justify-content: end !important;
+        gap: 0 !important;
+    }
+
+    #playerModal .player-watch-topbar .account-button {
+        display: grid !important;
+        width: 36px !important;
+        height: 36px !important;
+        place-items: center !important;
+        padding: 0 !important;
+    }
+
+    #playerModal .player-watch-topbar .avatar {
+        width: 34px !important;
+        height: 34px !important;
+        border-radius: 50% !important;
+    }
+
+    #playerModal .player-room-layout {
+        display: flex !important;
+        width: 100% !important;
+        min-height: 0 !important;
+        height: auto !important;
+        flex-direction: column !important;
+        gap: 14px !important;
+        padding: 0 0 calc(18px + env(safe-area-inset-bottom, 0px)) !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-room-main {
+        display: flex !important;
+        width: 100% !important;
+        min-height: 0 !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+        overflow: visible !important;
+        padding: 0 !important;
+    }
+
+    #playerModal .player-screen {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        aspect-ratio: 16 / 9 !important;
+        border-width: 0 0 1px !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }
+
+    #playerModal .player-screen > video,
+    #playerModal .player-screen > iframe,
+    #playerModal .player-screen > .embed-launch-panel,
+    #playerModal .player-screen > .player-placeholder {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        border-radius: 0 !important;
+    }
+
+    #playerModal .player-placeholder {
+        padding: 20px !important;
+        font-size: 12px !important;
+        text-align: center !important;
+    }
+
+    #playerModal .player-close {
+        position: absolute !important;
+        top: 10px !important;
+        right: 10px !important;
+        z-index: 9 !important;
+        width: 40px !important;
+        height: 40px !important;
+        color: #fff !important;
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        border-radius: 999px !important;
+        background: rgba(0, 0, 0, 0.64) !important;
+        backdrop-filter: blur(14px) !important;
+    }
+
+    #playerModal .player-caption,
+    #playerModal .player-info-panel,
+    #playerModal .player-episode-panel {
+        width: calc(100% - 24px) !important;
+        margin-right: auto !important;
+        margin-left: auto !important;
+    }
+
+    #playerModal .player-caption {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 12px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+
+    #playerModal .player-title-group {
+        display: grid !important;
+        grid-template-columns: auto minmax(0, 1fr) !important;
+        gap: 5px 9px !important;
+        align-items: start !important;
+    }
+
+    #playerModal .player-title-group .live-badge {
+        grid-row: 1 / span 2 !important;
+        align-self: start !important;
+        margin-top: 2px !important;
+        padding: 5px 7px !important;
+        font-size: 8px !important;
+        letter-spacing: 0.08em !important;
+    }
+
+    #playerModal .player-caption h2 {
+        display: -webkit-box !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 2 !important;
+        color: #fff !important;
+        overflow-wrap: anywhere !important;
+        font-size: clamp(24px, 7vw, 31px) !important;
+        line-height: 1.03 !important;
+    }
+
+    #playerModal #playerEpisodeSubtitle {
+        display: -webkit-box !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 2 !important;
+        color: rgba(255, 255, 255, 0.68) !important;
+        font-size: 12px !important;
+        line-height: 1.35 !important;
+    }
+
+    #playerModal .player-tools {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(94px, 104px) !important;
+        align-items: stretch !important;
+        gap: 8px !important;
+    }
+
+    #playerModal .player-quality {
+        display: grid !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        grid-template-columns: 1fr !important;
+        gap: 4px !important;
+    }
+
+    #playerModal .player-quality span {
+        font-size: 9px !important;
+        line-height: 1 !important;
+    }
+
+    #playerModal .player-quality select {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: 42px !important;
+    }
+
+    #playerModal .player-fullscreen,
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 42px !important;
+        padding: 0 8px !important;
+        font-size: 9px !important;
+        white-space: normal !important;
+    }
+
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        grid-column: span 1 !important;
+    }
+
+    #playerModal #playerMessage {
+        grid-column: 1 / -1 !important;
+        margin: 0 !important;
+        color: rgba(255, 255, 255, 0.66) !important;
+        font-size: 12px !important;
+        line-height: 1.4 !important;
+    }
+
+    #playerModal .player-info-panel {
+        display: grid !important;
+        gap: 11px !important;
+        padding: 12px !important;
+        overflow: hidden !important;
+        border: 1px solid rgba(255, 255, 255, 0.09) !important;
+        border-radius: 14px !important;
+        background: rgba(8, 14, 25, 0.78) !important;
+    }
+
+    #playerModal .player-info-panel h3 {
+        display: none !important;
+    }
+
+    #playerModal .player-info-panel h4 {
+        display: -webkit-box !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 2 !important;
+        font-size: 16px !important;
+        line-height: 1.25 !important;
+    }
+
+    #playerModal .player-info-pills {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        margin: 0 -12px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        padding: 0 12px 2px !important;
+        scrollbar-width: none !important;
+    }
+
+    #playerModal .player-info-pills::-webkit-scrollbar {
+        display: none !important;
+    }
+
+    #playerModal .player-info-pills span {
+        flex: 0 0 auto !important;
+        min-height: 32px !important;
+        max-width: 72vw !important;
+        padding: 0 12px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        font-size: 11px !important;
+    }
+
+    #playerModal #playerSynopsis {
+        display: -webkit-box !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 3 !important;
+        color: rgba(255, 255, 255, 0.68) !important;
+        font-size: 12px !important;
+        line-height: 1.45 !important;
+    }
+
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+        margin: 0 !important;
+    }
+
+    #playerModal .player-primary-actions .button,
+    #playerModal .player-nextprev .button {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 42px !important;
+        padding: 0 10px !important;
+        overflow: hidden !important;
+        font-size: 11px !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    #playerModal .player-primary-actions #playerResumeButton {
+        grid-column: 1 / -1 !important;
+    }
+
+    #playerModal .player-episode-panel {
+        display: grid !important;
+        gap: 10px !important;
+        height: auto !important;
+        max-height: none !important;
+        padding: 12px 0 0 !important;
+        overflow: visible !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+    }
+
+    #playerModal .player-episode-panel-head {
+        display: flex !important;
+        align-items: end !important;
+        justify-content: space-between !important;
+        gap: 10px !important;
+        padding: 0 !important;
+    }
+
+    #playerModal .player-episode-panel h3 {
+        margin: 0 !important;
+        font-size: 18px !important;
+        line-height: 1.1 !important;
+    }
+
+    #playerModal .player-episode-panel-head span {
+        flex: 0 0 auto !important;
+        font-size: 11px !important;
+    }
+
+    #playerModal .player-episode-list {
+        display: flex !important;
+        max-height: none !important;
+        gap: 10px !important;
+        margin: 0 -12px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        overscroll-behavior-x: contain !important;
+        padding: 2px 12px 8px !important;
+        scroll-snap-type: x proximity !important;
+        scrollbar-width: none !important;
+    }
+
+    #playerModal .player-episode-list::-webkit-scrollbar {
+        display: none !important;
+    }
+
+    #playerModal .player-episode-card {
+        flex: 0 0 min(82vw, 320px) !important;
+        display: grid !important;
+        grid-template-columns: 96px minmax(0, 1fr) 30px !important;
+        align-items: center !important;
+        gap: 9px !important;
+        min-height: 84px !important;
+        padding: 8px !important;
+        scroll-snap-align: start !important;
+    }
+
+    #playerModal .player-episode-card img {
+        width: 96px !important;
+        height: 54px !important;
+        object-fit: cover !important;
+    }
+
+    #playerModal .player-episode-card strong,
+    #playerModal .player-episode-card span,
+    #playerModal .player-episode-card span span {
+        min-width: 0 !important;
+    }
+
+    #playerModal .player-episode-card strong,
+    #playerModal .player-episode-card span span {
+        display: -webkit-box !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+    }
+
+    #playerModal .player-episode-card strong {
+        -webkit-line-clamp: 2 !important;
+        font-size: 12px !important;
+    }
+
+    #playerModal .player-episode-card span span {
+        -webkit-line-clamp: 2 !important;
+        font-size: 11px !important;
+        line-height: 1.25 !important;
+    }
+
+    #playerModal .player-all-episodes {
+        width: 100% !important;
+        min-height: 42px !important;
+        margin: 0 !important;
+    }
+}
+
+@media (max-width: 380px) {
+    #playerModal .player-caption,
+    #playerModal .player-info-panel,
+    #playerModal .player-episode-panel {
+        width: calc(100% - 20px) !important;
+    }
+
+    #playerModal .player-tools,
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        grid-template-columns: 1fr !important;
+    }
+
+    #playerModal .player-episode-card {
+        flex-basis: min(86vw, 300px) !important;
+        grid-template-columns: 84px minmax(0, 1fr) 28px !important;
+    }
+
+    #playerModal .player-episode-card img {
+        width: 84px !important;
+        height: 48px !important;
+    }
+}
