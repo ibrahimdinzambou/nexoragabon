@@ -11,6 +11,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.blankOrNullString;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -36,7 +37,8 @@ class AuthApiIntegrationTests {
         mvc.perform(get("/api/docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.title").value("IPTV SaaS API"));
+                .andExpect(jsonPath("$.data.title").value("IPTV SaaS API"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/api/admin/notifications/messages")));
     }
 
     @Test
@@ -156,6 +158,41 @@ class AuthApiIntegrationTests {
         mvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.user.email").value("alexandredinzambou@gmail.com"));
+    }
+
+    @Test
+    void adminCanBroadcastInAppNotification() throws Exception {
+        String token = mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "alexandredinzambou@gmail.com",
+                                  "password": "password"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString()
+                .replaceAll(".*\\\"token\\\":\\\"([^\\\"]+)\\\".*", "$1");
+
+        mvc.perform(post("/api/admin/notifications/messages")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "targetMode": "ALL",
+                                  "userIds": [],
+                                  "title": "Annonce test",
+                                  "body": "Message de test",
+                                  "email": false,
+                                  "inApp": true
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.recipients", greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data.notifications", greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data.emails").value(0));
     }
 
     @Test

@@ -867,7 +867,12 @@ async function sendBroadcastPayload(payload) {
         return await api("/admin/notifications/messages", { method: "POST", body });
     } catch (error) {
         if (error.status !== 404) throw error;
-        return api("/admin/notifications/broadcasts", { method: "POST", body });
+        try {
+            return await api("/admin/notifications/broadcasts", { method: "POST", body });
+        } catch (fallbackError) {
+            if (fallbackError.status !== 404) throw fallbackError;
+            throw new Error("API notifications admin non deployee. Redemarre l'API Nexora puis reessaie.");
+        }
     }
 }
 

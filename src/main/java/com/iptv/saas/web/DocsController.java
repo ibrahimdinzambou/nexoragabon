@@ -36,7 +36,15 @@ public class DocsController {
                         ),
                         group("Streaming", "/api/stream/open", "/api/stream/url/{sessionToken}", "/api/stream/preflight/{sessionToken}", "/api/stream/quality/{sessionToken}", "/api/stream/heartbeat/{sessionToken}", "/api/stream/close/{sessionToken}"),
                         group("Support", "/api/support/tickets"),
-                        group("Admin", "/api/admin/saas/dashboard", "/api/admin/accounts", "/api/admin/billing/payments", "/api/admin/ops/health")
+                        group(
+                                "Admin",
+                                "/api/admin/saas/dashboard",
+                                "/api/admin/accounts",
+                                "/api/admin/billing/payments",
+                                "/api/admin/notifications/messages",
+                                "/api/admin/notifications/broadcasts",
+                                "/api/admin/ops/health"
+                        )
                 )
         ));
     }
