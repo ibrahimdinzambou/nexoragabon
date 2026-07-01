@@ -82,7 +82,7 @@ class ConsumetContentServiceTests {
     @Test
     void mapsAnilistCatalogAndEmbedPlayback() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/", this::handleAnilistRequest);
+        server.createContext("/", this::handleCombinedRequest);
         server.start();
         String root = "http://127.0.0.1:" + server.getAddress().getPort();
         ConsumetContentService service = new ConsumetContentService(
@@ -105,6 +105,18 @@ class ConsumetContentServiceTests {
                 ""
         );
 
+        List<Map<String, Object>> movies = service.items(
+                "movie",
+                null,
+                "consumet-movie-flixhq",
+                "fr",
+                "title-asc",
+                10
+        );
+        assertEquals(1, movies.size());
+        assertEquals("Demo Movie", movies.get(0).get("name"));
+        assertEquals("fr", movies.get(0).get("language"));
+
         List<Map<String, Object>> items = service.items("series", null, null, null, "title-asc", 10);
 
         assertEquals(1, items.size());
@@ -123,6 +135,15 @@ class ConsumetContentServiceTests {
         ConsumetContentService.StreamResolution stream = service.selectStream(episodeId);
         assertEquals("https://embed.test/ani/20/2/sub", stream.streamUrl());
         assertTrue(service.isEmbedPlayback(episodeId, stream.streamUrl()));
+    }
+
+    private void handleCombinedRequest(HttpExchange exchange) throws IOException {
+        String path = exchange.getRequestURI().getPath();
+        if (path.startsWith("/movies/")) {
+            handleRequest(exchange);
+            return;
+        }
+        handleAnilistRequest(exchange);
     }
 
     private void handleRequest(HttpExchange exchange) throws IOException {

@@ -320,10 +320,6 @@ public class ConsumetContentService {
             int requestedLimit,
             String language
     ) {
-        if (preferAnilistMode()) {
-            searchAnilist(result, type, query, categoryId, requestedLimit, language);
-            return;
-        }
         if (matchesCategory(categoryId, FAMILY_MOVIES, type)) {
             addItems(result, fetchItems(endpoint(
                     Map.of("page", "1"),
@@ -340,7 +336,7 @@ public class ConsumetContentService {
                     query
             )), FAMILY_ANIME, animeProvider, TYPE_SERIES, type, categoryId, language);
         }
-        if (result.isEmpty()) {
+        if (preferAnilistMode() || result.isEmpty()) {
             searchAnilist(result, type, query, categoryId, requestedLimit, language);
         }
     }
@@ -352,18 +348,17 @@ public class ConsumetContentService {
             int requestedLimit,
             String language
     ) {
-        if (preferAnilistMode()) {
-            browseAnilist(result, type, categoryId, requestedLimit, language);
-            return;
-        }
         if (TYPE_MOVIE.equals(type)) {
             if (matchesCategory(categoryId, FAMILY_MOVIES, TYPE_MOVIE)) {
                 addItems(result, fetchItems(endpoint(FAMILY_MOVIES, movieProvider, "recent-movies")),
                         FAMILY_MOVIES, movieProvider, TYPE_MOVIE, type, categoryId, language);
             }
-            if (matchesCategory(categoryId, FAMILY_ANIME, TYPE_MOVIE)) {
+            if (!preferAnilistMode() && matchesCategory(categoryId, FAMILY_ANIME, TYPE_MOVIE)) {
                 addItems(result, fetchItems(endpoint(Map.of("page", "1"), FAMILY_ANIME, animeProvider, "movie")),
                         FAMILY_ANIME, animeProvider, TYPE_MOVIE, type, categoryId, language);
+            }
+            if (preferAnilistMode() || result.isEmpty()) {
+                browseAnilist(result, type, categoryId, requestedLimit, language);
             }
             return;
         }
@@ -371,11 +366,11 @@ public class ConsumetContentService {
             addItems(result, fetchItems(endpoint(FAMILY_MOVIES, movieProvider, "recent-shows")),
                     FAMILY_MOVIES, movieProvider, TYPE_SERIES, type, categoryId, language);
         }
-        if (matchesCategory(categoryId, FAMILY_ANIME, TYPE_SERIES)) {
+        if (!preferAnilistMode() && matchesCategory(categoryId, FAMILY_ANIME, TYPE_SERIES)) {
             addItems(result, fetchItems(endpoint(Map.of("page", "1"), FAMILY_ANIME, animeProvider, "top-airing")),
                     FAMILY_ANIME, animeProvider, TYPE_SERIES, type, categoryId, language);
         }
-        if (result.isEmpty()) {
+        if (preferAnilistMode() || result.isEmpty()) {
             browseAnilist(result, type, categoryId, requestedLimit, language);
         }
     }
