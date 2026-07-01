@@ -119,6 +119,22 @@ public class ConsumetContentService {
         return List.copyOf(categories);
     }
 
+    public List<Map<String, Object>> languages(String type) {
+        if (!isEnabled()) {
+            return List.of();
+        }
+        String normalizedType = catalogType(type);
+        List<String> types = normalizedType == null
+                ? List.of(TYPE_MOVIE, TYPE_SERIES)
+                : List.of(normalizedType);
+        return List.of(Map.of(
+                "id", "fr",
+                "name", "Francais / VF",
+                "types", types,
+                "source", "Consumet"
+        ));
+    }
+
     public List<Map<String, Object>> items(
             String type,
             String query,
@@ -127,7 +143,11 @@ public class ConsumetContentService {
             String sort,
             int requestedLimit
     ) {
-        if (!isEnabled() || (language != null && !language.isBlank())) {
+        if (!isEnabled()) {
+            return List.of();
+        }
+        String normalizedLanguage = normalizeLanguageFilter(language);
+        if (normalizedLanguage != null && !"fr".equals(normalizedLanguage)) {
             return List.of();
         }
         String normalizedType = catalogType(type);
@@ -136,9 +156,9 @@ public class ConsumetContentService {
         }
         List<Map<String, Object>> result = new ArrayList<>();
         if (query != null && !query.isBlank()) {
-            search(result, normalizedType, query, categoryId, requestedLimit);
+            search(result, normalizedType, query, categoryId, requestedLimit, normalizedLanguage);
         } else {
-            browse(result, normalizedType, categoryId, requestedLimit);
+            browse(result, normalizedType, categoryId, requestedLimit, normalizedLanguage);
         }
         result = deduplicate(result, "id");
         Comparator<Map<String, Object>> byName = Comparator.comparing(
@@ -292,9 +312,16 @@ public class ConsumetContentService {
         ));
     }
 
-    private void search(List<Map<String, Object>> result, String type, String query, String categoryId, int requestedLimit) {
+    private void search(
+            List<Map<String, Object>> result,
+            String type,
+            String query,
+            String categoryId,
+            int requestedLimit,
+            String language
+    ) {
         if (preferAnilistMode()) {
-            searchAnilist(result, type, query, categoryId, requestedLimit);
+            searchAnilist(result, type, query, categoryId, requestedLimit, language);
             return;
         }
         if (matchesCategory(categoryId, FAMILY_MOVIES, type)) {
@@ -303,7 +330,7 @@ public class ConsumetContentService {
                     FAMILY_MOVIES,
                     movieProvider,
                     query
-            )), FAMILY_MOVIES, movieProvider, null, type, categoryId);
+            )), FAMILY_MOVIES, movieProvider, null, type, categoryId, language);
         }
         if (TYPE_SERIES.equals(type) && matchesCategory(categoryId, FAMILY_ANIME, TYPE_SERIES)) {
             addItems(result, fetchItems(endpoint(
@@ -311,43 +338,56 @@ public class ConsumetContentService {
                     FAMILY_ANIME,
                     animeProvider,
                     query
-            )), FAMILY_ANIME, animeProvider, TYPE_SERIES, type, categoryId);
+            )), FAMILY_ANIME, animeProvider, TYPE_SERIES, type, categoryId, language);
         }
         if (result.isEmpty()) {
-            searchAnilist(result, type, query, categoryId, requestedLimit);
+            searchAnilist(result, type, query, categoryId, requestedLimit, language);
         }
     }
 
-    private void browse(List<Map<String, Object>> result, String type, String categoryId, int requestedLimit) {
+    private void browse(
+            List<Map<String, Object>> result,
+            String type,
+            String categoryId,
+            int requestedLimit,
+            String language
+    ) {
         if (preferAnilistMode()) {
-            browseAnilist(result, type, categoryId, requestedLimit);
+            browseAnilist(result, type, categoryId, requestedLimit, language);
             return;
         }
         if (TYPE_MOVIE.equals(type)) {
             if (matchesCategory(categoryId, FAMILY_MOVIES, TYPE_MOVIE)) {
                 addItems(result, fetchItems(endpoint(FAMILY_MOVIES, movieProvider, "recent-movies")),
-                        FAMILY_MOVIES, movieProvider, TYPE_MOVIE, type, categoryId);
+                        FAMILY_MOVIES, movieProvider, TYPE_MOVIE, type, categoryId, language);
             }
             if (matchesCategory(categoryId, FAMILY_ANIME, TYPE_MOVIE)) {
                 addItems(result, fetchItems(endpoint(Map.of("page", "1"), FAMILY_ANIME, animeProvider, "movie")),
-                        FAMILY_ANIME, animeProvider, TYPE_MOVIE, type, categoryId);
+                        FAMILY_ANIME, animeProvider, TYPE_MOVIE, type, categoryId, language);
             }
             return;
         }
         if (matchesCategory(categoryId, FAMILY_MOVIES, TYPE_SERIES)) {
             addItems(result, fetchItems(endpoint(FAMILY_MOVIES, movieProvider, "recent-shows")),
-                    FAMILY_MOVIES, movieProvider, TYPE_SERIES, type, categoryId);
+                    FAMILY_MOVIES, movieProvider, TYPE_SERIES, type, categoryId, language);
         }
         if (matchesCategory(categoryId, FAMILY_ANIME, TYPE_SERIES)) {
             addItems(result, fetchItems(endpoint(Map.of("page", "1"), FAMILY_ANIME, animeProvider, "top-airing")),
-                    FAMILY_ANIME, animeProvider, TYPE_SERIES, type, categoryId);
+                    FAMILY_ANIME, animeProvider, TYPE_SERIES, type, categoryId, language);
         }
         if (result.isEmpty()) {
-            browseAnilist(result, type, categoryId, requestedLimit);
+            browseAnilist(result, type, categoryId, requestedLimit, language);
         }
     }
 
-    private void searchAnilist(List<Map<String, Object>> result, String type, String query, String categoryId, int requestedLimit) {
+    private void searchAnilist(
+            List<Map<String, Object>> result,
+            String type,
+            String query,
+            String categoryId,
+            int requestedLimit,
+            String language
+    ) {
         if (!matchesCategory(categoryId, FAMILY_ANIME, type)) {
             return;
         }
@@ -355,14 +395,20 @@ public class ConsumetContentService {
                 "advanced-search",
                 Map.of("query", query.strip()),
                 requestedLimit
-        ), FAMILY_ANIME, PROVIDER_ANILIST, null, type, categoryId);
+        ), FAMILY_ANIME, PROVIDER_ANILIST, null, type, categoryId, language);
         if (result.isEmpty()) {
             addItems(result, fetchPagedAnilist(query, Map.of(), requestedLimit),
-                    FAMILY_ANIME, PROVIDER_ANILIST, null, type, categoryId);
+                    FAMILY_ANIME, PROVIDER_ANILIST, null, type, categoryId, language);
         }
     }
 
-    private void browseAnilist(List<Map<String, Object>> result, String type, String categoryId, int requestedLimit) {
+    private void browseAnilist(
+            List<Map<String, Object>> result,
+            String type,
+            String categoryId,
+            int requestedLimit,
+            String language
+    ) {
         if (!matchesCategory(categoryId, FAMILY_ANIME, type)) {
             return;
         }
@@ -371,14 +417,14 @@ public class ConsumetContentService {
                     "advanced-search",
                     Map.of("format", "MOVIE"),
                     requestedLimit
-            ), FAMILY_ANIME, PROVIDER_ANILIST, null, type, categoryId);
+            ), FAMILY_ANIME, PROVIDER_ANILIST, null, type, categoryId, language);
             return;
         }
         addItems(result, fetchPagedAnilist(
                 "advanced-search",
                 Map.of("format", "TV"),
                 requestedLimit
-        ), FAMILY_ANIME, PROVIDER_ANILIST, null, type, categoryId);
+        ), FAMILY_ANIME, PROVIDER_ANILIST, null, type, categoryId, language);
     }
 
     private void addItems(
@@ -388,7 +434,8 @@ public class ConsumetContentService {
             String provider,
             String forcedType,
             String requestedType,
-            String categoryId
+            String categoryId,
+            String language
     ) {
         for (JsonNode item : items) {
             String type = forcedType == null ? inferType(item) : forcedType;
@@ -414,6 +461,11 @@ public class ConsumetContentService {
             payload.put("duration", text(item, "duration"));
             payload.put("source", "Consumet");
             payload.put("provider", provider);
+            if ("fr".equals(language)) {
+                payload.put("language", "fr");
+                payload.put("languageName", "Francais / VF");
+                payload.put("audioLanguage", "fr");
+            }
             payload.put("metadataAvailable", true);
             payload.put("streamAvailable", true);
             if (TYPE_SERIES.equals(type)) {
@@ -849,6 +901,24 @@ public class ConsumetContentService {
     private String catalogType(String type) {
         String normalized = type == null || type.isBlank() ? TYPE_MOVIE : type.strip().toLowerCase(Locale.ROOT);
         return TYPE_MOVIE.equals(normalized) || TYPE_SERIES.equals(normalized) ? normalized : null;
+    }
+
+    private String normalizeLanguageFilter(String language) {
+        if (language == null || language.isBlank()) {
+            return null;
+        }
+        String normalized = language.strip().toLowerCase(Locale.ROOT).replace('_', '-');
+        if (normalized.equals("fr")
+                || normalized.equals("fr-fr")
+                || normalized.equals("fra")
+                || normalized.equals("fre")
+                || normalized.equals("vf")
+                || normalized.equals("french")
+                || normalized.equals("francais")
+                || normalized.equals("français")) {
+            return "fr";
+        }
+        return normalized;
     }
 
     private String text(JsonNode node, String... fieldsOrFallbacks) {

@@ -137,7 +137,7 @@ app:
     anime-provider: ${CONSUMET_ANIME_PROVIDER:hianime}
     movie-server: ${CONSUMET_MOVIE_SERVER:vidcloud}
     anime-server: ${CONSUMET_ANIME_SERVER:vidstreaming}
-    anime-category: ${CONSUMET_ANIME_CATEGORY:sub}
+    anime-category: ${CONSUMET_ANIME_CATEGORY:dub}
     source-mode: ${CONSUMET_SOURCE_MODE:auto}
     meta-provider: ${CONSUMET_META_PROVIDER:zoro}
     embed-source: ${CONSUMET_EMBED_SOURCE:hd-2}

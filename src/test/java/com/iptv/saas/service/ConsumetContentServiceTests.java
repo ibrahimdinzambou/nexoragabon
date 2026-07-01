@@ -61,6 +61,13 @@ class ConsumetContentServiceTests {
         assertEquals("consumet-movie-flixhq", items.get(0).get("categoryId"));
         assertTrue(service.items("live", null, null, null, "title-asc", 10).isEmpty());
 
+        List<Map<String, Object>> frenchItems = service.items("movie", null, null, "vf", "title-asc", 10);
+        assertEquals(1, frenchItems.size());
+        assertEquals("fr", frenchItems.get(0).get("language"));
+        assertEquals("Francais / VF", frenchItems.get(0).get("languageName"));
+        assertTrue(service.items("movie", null, null, "en", "title-asc", 10).isEmpty());
+        assertEquals("fr", service.languages("movie").get(0).get("id"));
+
         Map<String, Object> info = service.itemInfo(itemId);
         assertEquals("Demo Movie", info.get("name"));
         assertEquals(true, info.get("streamAvailable"));

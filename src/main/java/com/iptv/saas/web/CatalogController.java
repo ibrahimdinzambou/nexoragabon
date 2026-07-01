@@ -85,7 +85,11 @@ public class CatalogController {
     @GetMapping("/api/catalog/languages")
     public Object languages(@RequestParam(required = false) String type) {
         type = normalizeCatalogType(type);
-        return Responses.ok(nativeLanguages(currentUser(), type));
+        List<Map<String, Object>> values = new ArrayList<>(nativeLanguages(currentUser(), type));
+        if (hasConsumet()) {
+            values.addAll(consumet.languages(type));
+        }
+        return Responses.ok(unique(values, "id"));
     }
 
     @GetMapping("/api/catalog/items")
@@ -122,6 +126,7 @@ public class CatalogController {
                 resultSets,
                 shouldInterleaveProviders(q, categoryId)
         );
+        values = filterByLanguage(values, language);
         values = filterForUser(user, values);
         if (limit > 0 && values.size() > limit) {
             values = new ArrayList<>(values.subList(0, limit));
@@ -248,6 +253,34 @@ public class CatalogController {
 
     private boolean shouldInterleaveProviders(String q, String categoryId) {
         return (q != null && !q.isBlank()) || categoryId == null || categoryId.isBlank();
+    }
+
+    private List<Map<String, Object>> filterByLanguage(List<Map<String, Object>> values, String language) {
+        String normalized = normalizeLanguage(language);
+        if (normalized == null) {
+            return values;
+        }
+        return values.stream()
+                .filter(value -> normalized.equals(normalizeLanguage(String.valueOf(value.get("language")))))
+                .toList();
+    }
+
+    private String normalizeLanguage(String language) {
+        if (language == null || language.isBlank() || "null".equalsIgnoreCase(language)) {
+            return null;
+        }
+        String normalized = language.strip().toLowerCase(java.util.Locale.ROOT).replace('_', '-');
+        if ("fr".equals(normalized)
+                || "fr-fr".equals(normalized)
+                || "fra".equals(normalized)
+                || "fre".equals(normalized)
+                || "vf".equals(normalized)
+                || "french".equals(normalized)
+                || "francais".equals(normalized)
+                || "français".equals(normalized)) {
+            return "fr";
+        }
+        return normalized;
     }
 
     private boolean shouldIncludeNativeCatalog(UserEntity user) {
