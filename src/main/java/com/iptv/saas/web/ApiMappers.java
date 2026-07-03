@@ -4,7 +4,6 @@ import com.iptv.saas.domain.*;
 import com.iptv.saas.security.CatalogCategoryAccess;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -118,48 +117,12 @@ public final class ApiMappers {
         m.put("organizationName", subscription.organization == null ? null : subscription.organization.name);
         m.put("organizationSlug", subscription.organization == null ? null : subscription.organization.slug);
         m.put("plan", plan(subscription.plan));
-        m.put("status", effectiveSubscriptionStatus(subscription));
+        m.put("status", SubscriptionPeriods.effectiveStatus(subscription, Instant.now()));
         m.put("startedAt", subscription.startedAt);
-        m.put("trialEndsAt", subscription.trialEndsAt);
-        m.put("currentPeriodEnd", subscriptionPeriodEnd(subscription));
+        m.put("trialEndsAt", SubscriptionPeriods.trialEndsAt(subscription));
+        m.put("currentPeriodEnd", SubscriptionPeriods.currentPeriodEnd(subscription));
         m.put("cancelAtPeriodEnd", subscription.cancelAtPeriodEnd);
         return m;
-    }
-
-    private static Instant subscriptionPeriodEnd(Subscription subscription) {
-        Instant anchor = subscription.startedAt == null ? subscription.createdAt : subscription.startedAt;
-        if (subscription.status == Enums.SubscriptionStatus.TRIALING) {
-            if (subscription.trialEndsAt != null) {
-                return subscription.trialEndsAt;
-            }
-            return anchor == null ? null : anchor.plus(trialDays(subscription), ChronoUnit.DAYS);
-        }
-        if (subscription.currentPeriodEnd != null) {
-            return subscription.currentPeriodEnd;
-        }
-        return anchor == null ? null : anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
-    }
-
-    private static Enums.SubscriptionStatus effectiveSubscriptionStatus(Subscription subscription) {
-        if (subscription.status != Enums.SubscriptionStatus.ACTIVE
-                && subscription.status != Enums.SubscriptionStatus.TRIALING) {
-            return subscription.status;
-        }
-        Instant end = subscriptionPeriodEnd(subscription);
-        if (end != null && !end.isAfter(Instant.now())) {
-            return Enums.SubscriptionStatus.PAST_DUE;
-        }
-        return subscription.status;
-    }
-
-    private static int billingPeriodDays(Subscription subscription) {
-        return subscription.plan == null || subscription.plan.billingPeriodDays == null || subscription.plan.billingPeriodDays <= 0
-                ? 30
-                : subscription.plan.billingPeriodDays;
-    }
-
-    private static int trialDays(Subscription subscription) {
-        return subscription.plan == null || subscription.plan.trialDays <= 0 ? 0 : subscription.plan.trialDays;
     }
 
     public static Map<String, Object> paymentMethod(PaymentMethod method) {

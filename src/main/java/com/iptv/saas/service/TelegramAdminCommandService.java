@@ -7,6 +7,7 @@ import com.iptv.saas.domain.Invoice;
 import com.iptv.saas.domain.IptvAccount;
 import com.iptv.saas.domain.PaymentTransaction;
 import com.iptv.saas.domain.Subscription;
+import com.iptv.saas.domain.SubscriptionPeriods;
 import com.iptv.saas.domain.SupportTicket;
 import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.domain.UserSession;
@@ -894,7 +895,7 @@ public class TelegramAdminCommandService {
                 user.currentOrganization == null ? "-" : user.currentOrganization.name,
                 subscription == null ? "-" : subscription.status,
                 subscription == null || subscription.plan == null ? "-" : subscription.plan.name,
-                subscription == null ? "-" : date(subscription.currentPeriodEnd),
+                subscription == null ? "-" : date(SubscriptionPeriods.currentPeriodEnd(subscription)),
                 user.allowedCategories
         ), List.of(
                 List.of(button("Suspendre", confirmCallback("suspend_user:" + user.id)), button("Reactiver", "reactivate_user:" + user.id))
@@ -1012,9 +1013,11 @@ public class TelegramAdminCommandService {
                         Enums.SubscriptionStatus.TRIALING,
                         Enums.SubscriptionStatus.PAST_DUE
                 )).stream()
-                .filter(subscription -> subscription.currentPeriodEnd != null
-                        && !subscription.currentPeriodEnd.isAfter(limit))
-                .sorted(Comparator.comparing(subscription -> subscription.currentPeriodEnd))
+                .filter(subscription -> {
+                    Instant end = SubscriptionPeriods.currentPeriodEnd(subscription);
+                    return end != null && !end.isAfter(limit);
+                })
+                .sorted(Comparator.comparing(SubscriptionPeriods::currentPeriodEnd))
                 .limit(LIST_LIMIT)
                 .toList();
         if (values.isEmpty()) {
@@ -1026,7 +1029,7 @@ public class TelegramAdminCommandService {
                                 subscription.id,
                                 subscription.organization == null ? "-" : subscription.organization.name,
                                 subscription.status,
-                                date(subscription.currentPeriodEnd)
+                                date(SubscriptionPeriods.currentPeriodEnd(subscription))
                         ))
                 .collect(Collectors.joining("\n\n")));
     }

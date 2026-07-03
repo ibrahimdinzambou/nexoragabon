@@ -1,8 +1,10 @@
 package com.iptv.saas.web;
 
 import com.iptv.saas.domain.Enums;
+import com.iptv.saas.domain.Organization;
 import com.iptv.saas.domain.Plan;
 import com.iptv.saas.domain.Subscription;
+import com.iptv.saas.domain.UserEntity;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -46,6 +48,35 @@ class ApiMappersTests {
         var mapped = ApiMappers.subscription(subscription);
 
         assertEquals(Instant.parse("2026-07-07T08:00:00Z"), mapped.get("currentPeriodEnd"));
+    }
+
+    @Test
+    void trialSubscriptionEndUsesAccountCreationDateAndCurrentAdminTrialDays() {
+        UserEntity owner = new UserEntity();
+        owner.createdAt = Instant.parse("2099-07-01T08:00:00Z");
+
+        Organization organization = new Organization();
+        organization.owner = owner;
+
+        Plan plan = new Plan();
+        plan.code = "pro";
+        plan.name = "Pro";
+        plan.priceMonthly = BigDecimal.valueOf(15000);
+        plan.trialDays = 24;
+
+        Subscription subscription = new Subscription();
+        subscription.organization = organization;
+        subscription.plan = plan;
+        subscription.status = Enums.SubscriptionStatus.TRIALING;
+        subscription.startedAt = Instant.parse("2099-07-03T10:00:00Z");
+        subscription.trialEndsAt = Instant.parse("2099-07-10T10:00:00Z");
+        subscription.currentPeriodEnd = subscription.trialEndsAt;
+
+        var mapped = ApiMappers.subscription(subscription);
+
+        assertEquals(Enums.SubscriptionStatus.TRIALING, mapped.get("status"));
+        assertEquals(Instant.parse("2099-07-25T08:00:00Z"), mapped.get("trialEndsAt"));
+        assertEquals(Instant.parse("2099-07-25T08:00:00Z"), mapped.get("currentPeriodEnd"));
     }
 
     @Test

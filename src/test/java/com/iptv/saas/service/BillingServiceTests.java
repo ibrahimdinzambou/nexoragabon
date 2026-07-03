@@ -76,7 +76,54 @@ class BillingServiceTests {
     }
 
     @Test
-    void freePlanGetsCurrentPeriodEndFromBillingDuration() {
+    void paidTrialEndUsesOwnerCreationDateAndCurrentPlanTrialDays() {
+        PlanRepository plans = mock(PlanRepository.class);
+        PaymentMethodRepository paymentMethods = mock(PaymentMethodRepository.class);
+        PaymentTransactionRepository payments = mock(PaymentTransactionRepository.class);
+        SubscriptionRepository subscriptions = mock(SubscriptionRepository.class);
+        OrganizationRepository organizationRepository = mock(OrganizationRepository.class);
+        OrganizationService organizations = mock(OrganizationService.class);
+        InvoiceService invoices = mock(InvoiceService.class);
+        TelegramAlertService telegram = mock(TelegramAlertService.class);
+        AuditService audit = mock(AuditService.class);
+        BillingService service = new BillingService(
+                plans,
+                paymentMethods,
+                payments,
+                subscriptions,
+                organizationRepository,
+                organizations,
+                invoices,
+                telegram,
+                mock(TelegramActivityService.class),
+                audit,
+                "free",
+                7,
+                24
+        );
+
+        UserEntity owner = new UserEntity();
+        owner.createdAt = Instant.parse("2026-07-01T08:00:00Z");
+        Organization organization = new Organization();
+        organization.owner = owner;
+        Plan pro = new Plan();
+        pro.code = "pro";
+        pro.priceMonthly = BigDecimal.valueOf(15000);
+        pro.trialDays = 24;
+
+        when(organizations.currentOrganization(owner)).thenReturn(organization);
+        when(plans.findByCodeAndActiveTrue("pro")).thenReturn(Optional.of(pro));
+        when(subscriptions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var subscription = service.startTrial(owner, "pro");
+
+        assertEquals(Enums.SubscriptionStatus.TRIALING, subscription.status);
+        assertEquals(Instant.parse("2026-07-25T08:00:00Z"), subscription.trialEndsAt);
+        assertEquals(subscription.trialEndsAt, subscription.currentPeriodEnd);
+    }
+
+    @Test
+    void freePlanGetsCurrentPeriodEndFromTrialDuration() {
         PlanRepository plans = mock(PlanRepository.class);
         PaymentMethodRepository paymentMethods = mock(PaymentMethodRepository.class);
         PaymentTransactionRepository payments = mock(PaymentTransactionRepository.class);
@@ -107,7 +154,8 @@ class BillingServiceTests {
         Plan free = new Plan();
         free.code = "free";
         free.priceMonthly = BigDecimal.ZERO;
-        free.billingPeriodDays = 45;
+        free.trialDays = 24;
+        free.billingPeriodDays = 30;
 
         when(organizations.currentOrganization(owner)).thenReturn(organization);
         when(plans.findByCodeAndActiveTrue("free")).thenReturn(Optional.of(free));
@@ -119,9 +167,9 @@ class BillingServiceTests {
         assertEquals(free, subscription.plan);
         assertNotNull(subscription.currentPeriodEnd);
         assertNotNull(subscription.startedAt);
-        assertEquals(subscription.startedAt.plusSeconds(45L * 86_400L), subscription.currentPeriodEnd);
+        assertEquals(subscription.startedAt.plusSeconds(24L * 86_400L), subscription.currentPeriodEnd);
         verify(subscriptions).save(argThat(saved -> saved.currentPeriodEnd != null
-                && !saved.currentPeriodEnd.isBefore(before.plusSeconds(45L * 86_400L - 2))));
+                && !saved.currentPeriodEnd.isBefore(before.plusSeconds(24L * 86_400L - 2))));
     }
 
     @Test

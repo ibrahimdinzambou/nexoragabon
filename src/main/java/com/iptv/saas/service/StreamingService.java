@@ -439,37 +439,14 @@ public class StreamingService {
         }
         Subscription subscription = subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(organization)
                 .orElseThrow(() -> ApiException.paymentRequired("Abonnement requis"));
-        boolean validStatus = subscription.status == Enums.SubscriptionStatus.ACTIVE
-                || subscription.status == Enums.SubscriptionStatus.TRIALING;
-        Instant end = subscriptionPeriodEnd(subscription);
+        Enums.SubscriptionStatus status = SubscriptionPeriods.effectiveStatus(subscription, Instant.now());
+        boolean validStatus = status == Enums.SubscriptionStatus.ACTIVE
+                || status == Enums.SubscriptionStatus.TRIALING;
+        Instant end = SubscriptionPeriods.currentPeriodEnd(subscription);
         if (!validStatus || (end != null && !end.isAfter(Instant.now()))) {
             throw ApiException.paymentRequired("Abonnement inactif ou expire");
         }
         return subscription;
-    }
-
-    private Instant subscriptionPeriodEnd(Subscription subscription) {
-        Instant anchor = subscription.startedAt == null ? subscription.createdAt : subscription.startedAt;
-        if (subscription.status == Enums.SubscriptionStatus.TRIALING) {
-            if (subscription.trialEndsAt != null) {
-                return subscription.trialEndsAt;
-            }
-            return anchor == null ? null : anchor.plus(trialDays(subscription), ChronoUnit.DAYS);
-        }
-        if (subscription.currentPeriodEnd != null) {
-            return subscription.currentPeriodEnd;
-        }
-        return anchor == null ? null : anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
-    }
-
-    private int billingPeriodDays(Subscription subscription) {
-        return subscription.plan == null || subscription.plan.billingPeriodDays == null || subscription.plan.billingPeriodDays <= 0
-                ? 30
-                : subscription.plan.billingPeriodDays;
-    }
-
-    private int trialDays(Subscription subscription) {
-        return subscription.plan == null || subscription.plan.trialDays <= 0 ? 0 : subscription.plan.trialDays;
     }
 
     private void closeSession(UserSession session, Enums.SessionStatus status) {

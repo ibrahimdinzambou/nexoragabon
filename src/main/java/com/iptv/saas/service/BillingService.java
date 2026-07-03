@@ -95,8 +95,7 @@ public class BillingService {
             if (trialAlreadyUsed(user, organization, plan)) {
                 throw ApiException.paymentRequired("Periode gratuite deja utilisee pour cette formule. Veuillez choisir un abonnement payant.");
             }
-            subscription.status = Enums.SubscriptionStatus.ACTIVE;
-            subscription.currentPeriodEnd = now.plus(billingPeriodDays(plan), ChronoUnit.DAYS);
+            startFreeTrial(subscription);
         } else {
             int days = trialDays(plan);
             if (days <= 0) {
@@ -106,7 +105,7 @@ public class BillingService {
                 throw ApiException.paymentRequired("Essai deja utilise pour cette formule. Veuillez valider un paiement.");
             }
             subscription.status = Enums.SubscriptionStatus.TRIALING;
-            subscription.trialEndsAt = now.plus(days, ChronoUnit.DAYS);
+            subscription.trialEndsAt = SubscriptionPeriods.trialEndsAt(subscription);
             subscription.currentPeriodEnd = subscription.trialEndsAt;
         }
         audit.log(
@@ -197,16 +196,14 @@ public class BillingService {
             if (trialAlreadyUsed(user, organization, plan)) {
                 throw ApiException.paymentRequired("Periode gratuite deja utilisee pour cette formule. Veuillez choisir un abonnement payant.");
             }
-            subscription.status = Enums.SubscriptionStatus.ACTIVE;
-            subscription.trialEndsAt = null;
-            subscription.currentPeriodEnd = now.plus(billingPeriodDays(plan), ChronoUnit.DAYS);
+            startFreeTrial(subscription);
         } else {
             int days = trialDays(plan);
             if (days <= 0 || trialAlreadyUsed(user, organization, plan)) {
                 throw ApiException.paymentRequired("Paiement requis pour activer cette formule");
             }
             subscription.status = Enums.SubscriptionStatus.TRIALING;
-            subscription.trialEndsAt = now.plus(days, ChronoUnit.DAYS);
+            subscription.trialEndsAt = SubscriptionPeriods.trialEndsAt(subscription);
             subscription.currentPeriodEnd = subscription.trialEndsAt;
         }
         audit.log(user, "billing.plan.changed", "Subscription", subscription.id, plan.code);
@@ -352,7 +349,7 @@ public class BillingService {
         ));
         int expired = 0;
         for (Subscription subscription : activeSubscriptions) {
-            Instant end = subscriptionPeriodEnd(subscription);
+            Instant end = SubscriptionPeriods.currentPeriodEnd(subscription);
             if (end == null || end.isAfter(now)) {
                 continue;
             }
@@ -453,31 +450,20 @@ public class BillingService {
         return plan == null || plan.billingPeriodDays == null || plan.billingPeriodDays <= 0 ? 30 : plan.billingPeriodDays;
     }
 
-    private boolean subscriptionUsable(Subscription subscription) {
-        if (subscription == null) {
-            return false;
+    private void startFreeTrial(Subscription subscription) {
+        if (trialDays(subscription.plan) > 0) {
+            subscription.status = Enums.SubscriptionStatus.TRIALING;
+            subscription.trialEndsAt = SubscriptionPeriods.trialEndsAt(subscription);
+            subscription.currentPeriodEnd = subscription.trialEndsAt;
+            return;
         }
-        boolean validStatus = subscription.status == Enums.SubscriptionStatus.ACTIVE
-                || subscription.status == Enums.SubscriptionStatus.TRIALING;
-        Instant end = subscriptionPeriodEnd(subscription);
-        return validStatus && (end == null || end.isAfter(Instant.now()));
+        subscription.status = Enums.SubscriptionStatus.ACTIVE;
+        subscription.trialEndsAt = null;
+        subscription.currentPeriodEnd = subscription.startedAt.plus(billingPeriodDays(subscription.plan), ChronoUnit.DAYS);
     }
 
-    private Instant subscriptionPeriodEnd(Subscription subscription) {
-        if (subscription == null) {
-            return null;
-        }
-        Instant anchor = subscription.startedAt == null ? subscription.createdAt : subscription.startedAt;
-        if (subscription.status == Enums.SubscriptionStatus.TRIALING) {
-            if (subscription.trialEndsAt != null) {
-                return subscription.trialEndsAt;
-            }
-            return anchor == null ? null : anchor.plus(trialDays(subscription.plan), ChronoUnit.DAYS);
-        }
-        if (subscription.currentPeriodEnd != null) {
-            return subscription.currentPeriodEnd;
-        }
-        return anchor == null ? null : anchor.plus(billingPeriodDays(subscription.plan), ChronoUnit.DAYS);
+    private boolean subscriptionUsable(Subscription subscription) {
+        return SubscriptionPeriods.isUsable(subscription, Instant.now());
     }
 
     private boolean isFreePlan(Plan plan) {
@@ -497,6 +483,7 @@ public class BillingService {
         subscription.status = Enums.SubscriptionStatus.ACTIVE;
         subscription.cancelAtPeriodEnd = false;
         subscription.startedAt = now;
+        subscription.trialEndsAt = null;
         subscription.currentPeriodEnd = now.plus(billingPeriodDays(payment.plan), ChronoUnit.DAYS);
         if (payment.organization != null && payment.organization.status != Enums.OrganizationStatus.ACTIVE) {
             payment.organization.status = Enums.OrganizationStatus.ACTIVE;

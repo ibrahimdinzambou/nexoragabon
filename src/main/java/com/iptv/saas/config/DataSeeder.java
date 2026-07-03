@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -30,6 +31,8 @@ public class DataSeeder {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataSeeder.class);
     private static final String LEGACY_SUPER_ADMIN_EMAIL = "admin@example.com";
     private static final String USER_SUPPLIED_LICENSE = "Manifeste fourni par l'utilisateur";
+    private static final int FREE_TRIAL_REPAIR_DAYS = 24;
+    private static final int FREE_BILLING_REPAIR_DAYS = 30;
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
 
@@ -59,6 +62,7 @@ public class DataSeeder {
             Plan pro = plans.findByCode("pro").orElseGet(() -> plans.save(plan("pro", "Pro", "15000.00", 5, 3, 3, 20)));
             Plan enterprise = plans.findByCode("enterprise").orElseGet(() -> plans.save(plan("enterprise", "Enterprise", "50000.00", 25, 10, 10, 100)));
             tunePlans(plans, free, basic, sports, pro, enterprise);
+            repairFreePlanOneDayMisconfiguration(plans, subscriptions, organizations, free);
 
             paymentMethods.findByCode("mobile_money").orElseGet(() -> paymentMethods.save(method(
                     "mobile_money",
@@ -339,6 +343,67 @@ public class DataSeeder {
         plans.save(enterprise);
     }
 
+    private void repairFreePlanOneDayMisconfiguration(
+            PlanRepository plans,
+            SubscriptionRepository subscriptions,
+            OrganizationRepository organizations,
+            Plan free
+    ) {
+        if (free == null || free.priceMonthly == null || free.priceMonthly.signum() != 0) {
+            return;
+        }
+        boolean badFreeDuration = free.billingPeriodDays != null && free.billingPeriodDays == 1;
+        if (!badFreeDuration) {
+            return;
+        }
+        free.trialDays = FREE_TRIAL_REPAIR_DAYS;
+        free.billingPeriodDays = FREE_BILLING_REPAIR_DAYS;
+        plans.save(free);
+
+        Instant now = Instant.now();
+        int repaired = 0;
+        for (Subscription subscription : subscriptions.findAll()) {
+            if (subscription.plan == null
+                    || subscription.plan.id == null
+                    || !subscription.plan.id.equals(free.id)
+                    || !hasOneDayStoredPeriod(subscription)) {
+                continue;
+            }
+            subscription.plan = free;
+            subscription.status = Enums.SubscriptionStatus.TRIALING;
+            subscription.trialEndsAt = SubscriptionPeriods.trialEndsAt(subscription);
+            subscription.currentPeriodEnd = subscription.trialEndsAt;
+            if (subscription.currentPeriodEnd != null && !subscription.currentPeriodEnd.isAfter(now)) {
+                subscription.status = Enums.SubscriptionStatus.PAST_DUE;
+            } else if (subscription.organization != null
+                    && subscription.organization.status == Enums.OrganizationStatus.SUSPENDED) {
+                subscription.organization.status = Enums.OrganizationStatus.ACTIVE;
+                organizations.save(subscription.organization);
+            }
+            subscriptions.save(subscription);
+            repaired += 1;
+        }
+        LOGGER.info(
+                "Correction configuration Free appliquee: essai {} jours, abonnement {} jours, {} abonnement(s) corrige(s)",
+                FREE_TRIAL_REPAIR_DAYS,
+                FREE_BILLING_REPAIR_DAYS,
+                repaired
+        );
+    }
+
+    private boolean hasOneDayStoredPeriod(Subscription subscription) {
+        if (subscription == null || subscription.currentPeriodEnd == null) {
+            return false;
+        }
+        Instant anchor = subscription.startedAt == null ? subscription.createdAt : subscription.startedAt;
+        if (anchor == null) {
+            return false;
+        }
+        Instant oneDayEnd = anchor.plus(1, ChronoUnit.DAYS);
+        long seconds = Math.abs(Duration.between(subscription.currentPeriodEnd, oneDayEnd).toSeconds());
+        return seconds <= 60;
+    }
+
     private void ensureDemoExternalCatalogAccess(
             UserRepository users,
             ObjectMapper mapper,
@@ -396,15 +461,7 @@ public class DataSeeder {
     }
 
     private boolean subscriptionUsable(Subscription subscription) {
-        if (subscription == null) {
-            return false;
-        }
-        boolean validStatus = subscription.status == Enums.SubscriptionStatus.ACTIVE
-                || subscription.status == Enums.SubscriptionStatus.TRIALING;
-        Instant end = subscription.status == Enums.SubscriptionStatus.TRIALING
-                ? subscription.trialEndsAt
-                : subscription.currentPeriodEnd;
-        return validStatus && (end == null || end.isAfter(Instant.now()));
+        return SubscriptionPeriods.isUsable(subscription, Instant.now());
     }
 
     private PlanEntitlement entitlement(

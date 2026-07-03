@@ -3,6 +3,7 @@ package com.iptv.saas.service;
 import com.iptv.saas.domain.Enums;
 import com.iptv.saas.domain.Organization;
 import com.iptv.saas.domain.Subscription;
+import com.iptv.saas.domain.SubscriptionPeriods;
 import com.iptv.saas.domain.SupportTicket;
 import com.iptv.saas.domain.UserEntity;
 import org.springframework.beans.factory.annotation.Value;
@@ -182,7 +183,7 @@ public class TelegramActivityService {
                         safeEmail(user),
                         subscription == null || subscription.plan == null ? "-" : subscription.plan.name,
                         subscription == null ? "-" : subscription.status,
-                        subscription == null ? "-" : subscription.currentPeriodEnd,
+                        subscription == null ? "-" : SubscriptionPeriods.currentPeriodEnd(subscription),
                         Instant.now()
                 ),
                 userAction(user)

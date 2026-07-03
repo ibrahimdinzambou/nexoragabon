@@ -4,6 +4,7 @@ import com.iptv.saas.domain.Enums;
 import com.iptv.saas.domain.Organization;
 import com.iptv.saas.domain.PlanEntitlement;
 import com.iptv.saas.domain.Subscription;
+import com.iptv.saas.domain.SubscriptionPeriods;
 import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.repository.SubscriptionRepository;
 import com.iptv.saas.security.CatalogCategoryAccess;
@@ -13,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -89,37 +89,7 @@ public class SubscriptionAccessService {
     }
 
     public boolean isUsable(Subscription subscription) {
-        if (subscription == null) {
-            return false;
-        }
-        boolean validStatus = subscription.status == Enums.SubscriptionStatus.ACTIVE
-                || subscription.status == Enums.SubscriptionStatus.TRIALING;
-        Instant end = subscriptionPeriodEnd(subscription);
-        return validStatus && (end == null || end.isAfter(Instant.now()));
-    }
-
-    private Instant subscriptionPeriodEnd(Subscription subscription) {
-        Instant anchor = subscription.startedAt == null ? subscription.createdAt : subscription.startedAt;
-        if (subscription.status == Enums.SubscriptionStatus.TRIALING) {
-            if (subscription.trialEndsAt != null) {
-                return subscription.trialEndsAt;
-            }
-            return anchor == null ? null : anchor.plus(trialDays(subscription), ChronoUnit.DAYS);
-        }
-        if (subscription.currentPeriodEnd != null) {
-            return subscription.currentPeriodEnd;
-        }
-        return anchor == null ? null : anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
-    }
-
-    private int billingPeriodDays(Subscription subscription) {
-        return subscription.plan == null || subscription.plan.billingPeriodDays == null || subscription.plan.billingPeriodDays <= 0
-                ? 30
-                : subscription.plan.billingPeriodDays;
-    }
-
-    private int trialDays(Subscription subscription) {
-        return subscription.plan == null || subscription.plan.trialDays <= 0 ? 0 : subscription.plan.trialDays;
+        return SubscriptionPeriods.isUsable(subscription, Instant.now());
     }
 
     private Subscription currentUsableSubscription(UserEntity user) {
