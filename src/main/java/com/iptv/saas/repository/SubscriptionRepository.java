@@ -18,7 +18,17 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
 
     List<Subscription> findByOrganization(Organization organization);
 
+    boolean existsByOrganizationAndPlan(Organization organization, Plan plan);
+
     boolean existsByOrganizationAndPlanAndTrialEndsAtIsNotNull(Organization organization, Plan plan);
+
+    @Query("""
+            select count(subscription)
+            from Subscription subscription
+            where subscription.organization.owner = :owner
+              and subscription.plan = :plan
+            """)
+    long countSubscriptionsForOwnerAndPlan(@Param("owner") UserEntity owner, @Param("plan") Plan plan);
 
     @Query("""
             select count(subscription)

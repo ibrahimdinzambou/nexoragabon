@@ -118,7 +118,7 @@ public final class ApiMappers {
         m.put("organizationName", subscription.organization == null ? null : subscription.organization.name);
         m.put("organizationSlug", subscription.organization == null ? null : subscription.organization.slug);
         m.put("plan", plan(subscription.plan));
-        m.put("status", subscription.status);
+        m.put("status", effectiveSubscriptionStatus(subscription));
         m.put("startedAt", subscription.startedAt);
         m.put("trialEndsAt", subscription.trialEndsAt);
         m.put("currentPeriodEnd", subscriptionPeriodEnd(subscription));
@@ -141,6 +141,18 @@ public final class ApiMappers {
             return subscription.currentPeriodEnd;
         }
         return anchor == null ? null : anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
+    }
+
+    private static Enums.SubscriptionStatus effectiveSubscriptionStatus(Subscription subscription) {
+        if (subscription.status != Enums.SubscriptionStatus.ACTIVE
+                && subscription.status != Enums.SubscriptionStatus.TRIALING) {
+            return subscription.status;
+        }
+        Instant end = subscriptionPeriodEnd(subscription);
+        if (end != null && !end.isAfter(Instant.now())) {
+            return Enums.SubscriptionStatus.PAST_DUE;
+        }
+        return subscription.status;
     }
 
     private static boolean isFreePlan(Subscription subscription) {

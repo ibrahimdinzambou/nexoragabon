@@ -20,6 +20,7 @@ public class BillingService {
     private final PaymentMethodRepository paymentMethods;
     private final PaymentTransactionRepository payments;
     private final SubscriptionRepository subscriptions;
+    private final OrganizationRepository organizations;
     private final OrganizationService organizationService;
     private final InvoiceService invoiceService;
     private final TelegramAlertService telegram;
@@ -34,6 +35,7 @@ public class BillingService {
             PaymentMethodRepository paymentMethods,
             PaymentTransactionRepository payments,
             SubscriptionRepository subscriptions,
+            OrganizationRepository organizations,
             OrganizationService organizationService,
             InvoiceService invoiceService,
             TelegramAlertService telegram,
@@ -47,6 +49,7 @@ public class BillingService {
         this.paymentMethods = paymentMethods;
         this.payments = payments;
         this.subscriptions = subscriptions;
+        this.organizations = organizations;
         this.organizationService = organizationService;
         this.invoiceService = invoiceService;
         this.telegram = telegram;
@@ -89,6 +92,9 @@ public class BillingService {
         Instant now = Instant.now();
         subscription.startedAt = now;
         if (plan.priceMonthly == null || plan.priceMonthly.signum() == 0) {
+            if (trialAlreadyUsed(user, organization, plan)) {
+                throw ApiException.paymentRequired("Periode gratuite deja utilisee pour cette formule. Veuillez choisir un abonnement payant.");
+            }
             subscription.status = Enums.SubscriptionStatus.ACTIVE;
             subscription.currentPeriodEnd = now.plus(billingPeriodDays(plan), ChronoUnit.DAYS);
         } else {
@@ -187,6 +193,9 @@ public class BillingService {
         subscription.plan = plan;
         Instant now = Instant.now();
         if (plan.priceMonthly == null || plan.priceMonthly.signum() == 0) {
+            if (trialAlreadyUsed(user, organization, plan)) {
+                throw ApiException.paymentRequired("Periode gratuite deja utilisee pour cette formule. Veuillez choisir un abonnement payant.");
+            }
             subscription.status = Enums.SubscriptionStatus.ACTIVE;
             subscription.trialEndsAt = null;
             subscription.currentPeriodEnd = now.plus(billingPeriodDays(plan), ChronoUnit.DAYS);
@@ -333,6 +342,32 @@ public class BillingService {
         return payments.findTop10ByOrderByCreatedAtDesc();
     }
 
+    @Transactional
+    public int reconcileExpiredSubscriptions() {
+        Instant now = Instant.now();
+        List<Subscription> activeSubscriptions = subscriptions.findByStatusIn(List.of(
+                Enums.SubscriptionStatus.ACTIVE,
+                Enums.SubscriptionStatus.TRIALING
+        ));
+        int expired = 0;
+        for (Subscription subscription : activeSubscriptions) {
+            Instant end = subscriptionPeriodEnd(subscription);
+            if (end == null || end.isAfter(now)) {
+                continue;
+            }
+            subscription.currentPeriodEnd = end;
+            subscription.status = Enums.SubscriptionStatus.PAST_DUE;
+            subscriptions.save(subscription);
+            if (subscription.organization != null
+                    && subscription.organization.status == Enums.OrganizationStatus.ACTIVE) {
+                subscription.organization.status = Enums.OrganizationStatus.SUSPENDED;
+                organizations.save(subscription.organization);
+            }
+            expired += 1;
+        }
+        return expired;
+    }
+
     private PlanEntitlement entitlement(PlanEntitlementSpec spec, int fallbackPriority) {
         PlanEntitlement entitlement = new PlanEntitlement();
         Enums.PlanEntitlementMode mode = spec == null || spec.mode() == null
@@ -405,6 +440,10 @@ public class BillingService {
     }
 
     private boolean trialAlreadyUsed(UserEntity user, Organization organization, Plan plan) {
+        if (isFreePlan(plan)) {
+            return subscriptions.existsByOrganizationAndPlan(organization, plan)
+                    || (user != null && subscriptions.countSubscriptionsForOwnerAndPlan(user, plan) > 0);
+        }
         return subscriptions.existsByOrganizationAndPlanAndTrialEndsAtIsNotNull(organization, plan)
                 || (user != null && subscriptions.countTrialsForOwnerAndPlan(user, plan) > 0);
     }
@@ -448,19 +487,24 @@ public class BillingService {
     }
 
     private void activateSubscription(PaymentTransaction payment) {
+        Instant now = Instant.now();
         Subscription subscription = subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(payment.organization)
                 .orElseGet(() -> {
                     Subscription created = new Subscription();
                     created.organization = payment.organization;
-                    created.startedAt = Instant.now();
+                    created.startedAt = now;
                     return created;
                 });
         subscription.plan = payment.plan;
         subscription.status = Enums.SubscriptionStatus.ACTIVE;
         subscription.cancelAtPeriodEnd = false;
-        subscription.currentPeriodEnd = Instant.now().plus(billingPeriodDays(payment.plan), ChronoUnit.DAYS);
+        subscription.currentPeriodEnd = now.plus(billingPeriodDays(payment.plan), ChronoUnit.DAYS);
         if (subscription.startedAt == null) {
-            subscription.startedAt = Instant.now();
+            subscription.startedAt = now;
+        }
+        if (payment.organization != null && payment.organization.status != Enums.OrganizationStatus.ACTIVE) {
+            payment.organization.status = Enums.OrganizationStatus.ACTIVE;
+            organizations.save(payment.organization);
         }
         subscriptions.save(subscription);
     }

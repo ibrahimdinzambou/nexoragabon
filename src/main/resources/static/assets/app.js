@@ -6698,6 +6698,7 @@ function statusLabel(status) {
         ACTIVE: "Actif",
         TRIALING: "Période d’essai",
         TRIAL: "Période d’essai",
+        PAST_DUE: "Paiement requis",
         CANCELED: "Résilié",
         EXPIRED: "Expiré",
         PENDING: "En attente"

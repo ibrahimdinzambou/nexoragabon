@@ -442,7 +442,7 @@ public class StreamingService {
         boolean validStatus = subscription.status == Enums.SubscriptionStatus.ACTIVE
                 || subscription.status == Enums.SubscriptionStatus.TRIALING;
         Instant end = subscriptionPeriodEnd(subscription);
-        if (!validStatus || (end != null && end.isBefore(Instant.now()))) {
+        if (!validStatus || (end != null && !end.isAfter(Instant.now()))) {
             throw ApiException.paymentRequired("Abonnement inactif ou expire");
         }
         return subscription;
