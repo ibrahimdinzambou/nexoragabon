@@ -40,7 +40,9 @@ const elements = {
     successName: document.querySelector("#successName"),
     successOrganization: document.querySelector("#successOrganization"),
     successPlan: document.querySelector("#successPlan"),
-    successStatus: document.querySelector("#successStatus")
+    successStatus: document.querySelector("#successStatus"),
+    successPeriodLabel: document.querySelector("#successPeriodLabel"),
+    successPeriodValue: document.querySelector("#successPeriodValue")
 };
 
 function escapeHtml(value) {
@@ -64,6 +66,21 @@ function formatPrice(plan) {
     return `${amount} ${currency === "XOF" || currency === "XAF" ? "FCFA" : currency}`;
 }
 
+function formatDate(value) {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(date);
+}
+
+function expectedTrialEnd(plan) {
+    const trialDays = Number(plan?.trialDays || 0);
+    if (Number(plan?.priceMonthly || 0) <= 0 || trialDays <= 0) return null;
+    const date = new Date();
+    date.setDate(date.getDate() + trialDays);
+    return date;
+}
+
 function planFeatures(plan) {
     const features = [
         `${plan.maxUsers} utilisateur${plan.maxUsers > 1 ? "s" : ""}`,
@@ -81,6 +98,7 @@ function renderSelectedPlan() {
 
     const free = Number(plan.priceMonthly || 0) === 0;
     const trialDays = Number(plan.trialDays || 7);
+    const trialEnd = formatDate(expectedTrialEnd(plan));
     elements.stepPlanName.textContent = plan.name;
     elements.planName.textContent = plan.name;
     elements.planMonogram.textContent = plan.name.charAt(0).toUpperCase();
@@ -96,6 +114,9 @@ function renderSelectedPlan() {
     elements.billingNote.textContent = free
         ? "Vous pourrez changer de formule depuis votre espace."
         : "La facturation sera confirmée avant la fin de votre essai.";
+    if (!free && trialEnd) {
+        elements.billingNote.textContent = `Fin de l'essai prévue le ${trialEnd}.`;
+    }
     elements.submitLabel.textContent = free
         ? "Créer mon compte gratuit"
         : `Créer mon compte et essayer ${plan.name}`;
@@ -323,6 +344,9 @@ async function resendOtp() {
 }
 
 function showSuccess(data) {
+    const subscription = data.subscription || {};
+    const trialEnd = formatDate(subscription.trialEndsAt);
+    const periodEnd = formatDate(subscription.currentPeriodEnd);
     elements.form.hidden = true;
     elements.intro.hidden = true;
     elements.successName.textContent = data.user?.name?.split(" ")[0] || "vous";
@@ -331,6 +355,16 @@ function showSuccess(data) {
     elements.successStatus.textContent = data.subscription?.status === "TRIALING"
         ? "Essai activé"
         : "Actif";
+    if (subscription.status === "TRIALING" && trialEnd) {
+        elements.successPeriodLabel.textContent = "FIN D'ESSAI";
+        elements.successPeriodValue.textContent = trialEnd;
+    } else if (periodEnd) {
+        elements.successPeriodLabel.textContent = "FIN DE PÉRIODE";
+        elements.successPeriodValue.textContent = periodEnd;
+    } else {
+        elements.successPeriodLabel.textContent = "PROCHAINE ÉTAPE";
+        elements.successPeriodValue.textContent = "Ajouter vos sources";
+    }
     elements.success.hidden = false;
     document.querySelectorAll(".signup-steps .step").forEach((step) => step.classList.add("complete"));
     elements.success.scrollIntoView({ behavior: "smooth", block: "center" });

@@ -267,6 +267,24 @@ function dateLabel(value, withTime = false) {
     }).format(date);
 }
 
+function organizationName(value) {
+    if (!value) return "Organisation non renseignée";
+    if (value.organizationName) return value.organizationName;
+    if (value.currentOrganizationName) return value.currentOrganizationName;
+    const id = value.organizationId ?? value.currentOrganizationId ?? value;
+    const organization = state.organizations.find(item => String(item.id) === String(id));
+    return organization?.name || "Organisation non renseignée";
+}
+
+function organizationMeta(value) {
+    if (!value) return "";
+    if (value.organizationSlug) return value.organizationSlug;
+    if (value.currentOrganizationSlug) return value.currentOrganizationSlug;
+    const id = value.organizationId ?? value.currentOrganizationId ?? value;
+    const organization = state.organizations.find(item => String(item.id) === String(id));
+    return organization?.slug || "";
+}
+
 function money(value, currency = "FCFA") {
     const label = String(currency || "FCFA").toUpperCase();
     const amount = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 })
@@ -457,11 +475,11 @@ async function loadDashboard() {
     el.recentPayments.innerHTML = data.recentPayments.length ? data.recentPayments.slice(0, 5).map(payment => `
         <div class="compact-item">
             <span class="compact-mark">${escapeHtml(payment.paymentMethod?.name?.charAt(0) || "€")}</span>
-            <div><strong>${escapeHtml(payment.reference)}</strong><small>Organisation #${escapeHtml(payment.organizationId)} · ${dateLabel(payment.createdAt, true)}</small></div>
+            <div><strong>${escapeHtml(payment.reference)}</strong><small>${escapeHtml(organizationName(payment))} · ${dateLabel(payment.createdAt, true)}</small></div>
             <div class="compact-amount"><strong>${money(payment.amount, payment.currency)}</strong><small>${badge(payment.status)}</small></div>
         </div>`).join("") : '<p class="empty-row">Aucun paiement récent</p>';
     el.recentTickets.innerHTML = data.support.recent.length ? data.support.recent.slice(0, 6).map(ticket => `
-        <tr data-ticket-open="${ticket.id}"><td><span class="cell-main">${escapeHtml(ticket.subject)}</span><span class="cell-sub">Organisation #${escapeHtml(ticket.organizationId)}</span></td><td>${badge(ticket.priority)}</td><td>${badge(ticket.status)}</td><td>${dateLabel(ticket.updatedAt, true)}</td></tr>
+        <tr data-ticket-open="${ticket.id}"><td><span class="cell-main">${escapeHtml(ticket.subject)}</span><span class="cell-sub">${escapeHtml(organizationName(ticket))}</span></td><td>${badge(ticket.priority)}</td><td>${badge(ticket.status)}</td><td>${dateLabel(ticket.updatedAt, true)}</td></tr>
     `).join("") : emptyRow(4, "Aucun ticket récent");
     updateNavCounters();
 }
@@ -627,15 +645,15 @@ function renderCustomers() {
         const canDeleteUsers = ["SUPER_ADMIN", "ADMIN"].includes(state.user?.role);
         el.customersHead.innerHTML = "<tr><th>Utilisateur</th><th>Rôle</th><th>Organisation</th><th>IPTV</th><th>Statut</th><th>Création</th><th></th></tr>";
         el.customersTable.innerHTML = state.users.length ? state.users.map(user => `
-            <tr data-searchable="${escapeHtml(`${user.name} ${user.email} ${user.role}`)}"><td><span class="cell-main">${escapeHtml(user.name)}</span><span class="cell-sub">${escapeHtml(user.email)}</span></td>
+            <tr data-searchable="${escapeHtml(`${user.name} ${user.email} ${user.role} ${organizationName(user)}`)}"><td><span class="cell-main">${escapeHtml(user.name)}</span><span class="cell-sub">${escapeHtml(user.email)}</span></td>
             <td><select class="table-select" data-user-role="${user.id}">${["SUPER_ADMIN","ADMIN","BILLING","SUPPORT","OPS","USER"].map(role => `<option value="${role}" ${role === user.role ? "selected" : ""}>${role.replaceAll("_"," ")}</option>`).join("")}</select></td>
-            <td>#${escapeHtml(user.currentOrganizationId)}</td><td>${user.iptvActive ? `<span class="cell-main">IPTV actif</span><span class="cell-sub">${escapeHtml(user.iptvAccountName || `${user.iptvAssignedCount || 1} compte`)}</span>` : `<span class="cell-sub">Aucun compte</span>`}</td><td><button class="row-action ${user.active ? "positive" : "negative"}" data-user-toggle="${user.id}" data-active="${user.active}">${user.active ? "Actif" : "Inactif"}</button></td><td>${dateLabel(user.createdAt)}</td>
+            <td><span class="cell-main">${escapeHtml(organizationName(user))}</span><span class="cell-sub">${escapeHtml(organizationMeta(user))}</span></td><td>${user.iptvActive ? `<span class="cell-main">IPTV actif</span><span class="cell-sub">${escapeHtml(user.iptvAccountName || `${user.iptvAssignedCount || 1} compte`)}</span>` : `<span class="cell-sub">Aucun compte</span>`}</td><td><button class="row-action ${user.active ? "positive" : "negative"}" data-user-toggle="${user.id}" data-active="${user.active}">${user.active ? "Actif" : "Inactif"}</button></td><td>${dateLabel(user.createdAt)}</td>
             <td><div class="row-actions"><button class="row-action adult-access ${hasAdultProviderAccess(user) ? "enabled" : ""}" data-user-adults="${user.id}">${hasAdultProviderAccess(user) ? "Reserve ON" : "Reserve OFF"}</button><button class="row-action" data-user-categories="${user.id}">Catégories (${user.allowedCategories?.length || 0})</button>${canDeleteUsers && state.user?.id !== user.id ? `<button class="row-action danger" data-user-delete="${user.id}" data-user-email="${escapeHtml(user.email)}">Supprimer</button>` : ""}</div></td></tr>
         `).join("") : emptyRow(7);
     } else {
         el.customersHead.innerHTML = "<tr><th>ID</th><th>Organisation</th><th>Formule</th><th>Droits</th><th>Statut</th><th>Fin de période</th></tr>";
         el.customersTable.innerHTML = state.subscriptions.length ? state.subscriptions.map(item => `
-            <tr data-searchable="${escapeHtml(`${item.id} ${item.organizationId} ${item.plan?.name} ${item.plan?.accessSummary || ""} ${item.status}`)}"><td>#${item.id}</td><td>Organisation #${escapeHtml(item.organizationId)}</td><td><span class="cell-main">${escapeHtml(item.plan?.name || "—")}</span><span class="cell-sub">${money(item.plan?.priceMonthly, item.plan?.currency)}</span></td><td><span class="cell-main">${escapeHtml(item.plan?.accessSummary || "Catalogue complet")}</span><span class="cell-sub">${(item.plan?.entitlements || []).length || "auto"} règle(s)</span></td><td>${badge(item.status)}</td><td>${dateLabel(item.currentPeriodEnd || item.trialEndsAt)}</td></tr>
+            <tr data-searchable="${escapeHtml(`${item.id} ${organizationName(item)} ${item.plan?.name} ${item.plan?.accessSummary || ""} ${item.status}`)}"><td>#${item.id}</td><td><span class="cell-main">${escapeHtml(organizationName(item))}</span><span class="cell-sub">${escapeHtml(organizationMeta(item))}</span></td><td><span class="cell-main">${escapeHtml(item.plan?.name || "—")}</span><span class="cell-sub">${money(item.plan?.priceMonthly, item.plan?.currency)}</span></td><td><span class="cell-main">${escapeHtml(item.plan?.accessSummary || "Catalogue complet")}</span><span class="cell-sub">${(item.plan?.entitlements || []).length || "auto"} règle(s)</span></td><td>${badge(item.status)}</td><td>${dateLabel(item.currentPeriodEnd || item.trialEndsAt)}</td></tr>
         `).join("") : emptyRow(6);
     }
 }
@@ -731,7 +749,7 @@ function renderBilling() {
         el.billingTableTitle.textContent = "Paiements à traiter";
         el.billingHead.innerHTML = "<tr><th>Référence</th><th>Organisation</th><th>Montant</th><th>Méthode</th><th>Statut</th><th>Date</th><th></th></tr>";
         el.billingTable.innerHTML = state.payments.length ? state.payments.map(payment => `
-            <tr data-searchable="${escapeHtml(`${payment.reference} ${payment.organizationId} ${payment.status}`)}"><td><span class="cell-main">${escapeHtml(payment.reference)}</span><span class="cell-sub">#${payment.id}</span></td><td>#${escapeHtml(payment.organizationId)}</td><td>${money(payment.amount, payment.currency)}</td><td>${escapeHtml(payment.paymentMethod?.name || "—")}</td><td>${badge(payment.status)}</td><td>${dateLabel(payment.createdAt)}</td><td><div class="row-actions">${payment.status === "PENDING" ? `<button class="row-action positive" data-payment-action="verify" data-id="${payment.id}">Valider</button><button class="row-action negative" data-payment-action="reject" data-id="${payment.id}">Rejeter</button>` : ""}</div></td></tr>
+            <tr data-searchable="${escapeHtml(`${payment.reference} ${organizationName(payment)} ${payment.status}`)}"><td><span class="cell-main">${escapeHtml(payment.reference)}</span><span class="cell-sub">#${payment.id}</span></td><td><span class="cell-main">${escapeHtml(organizationName(payment))}</span><span class="cell-sub">${escapeHtml(organizationMeta(payment))}</span></td><td>${money(payment.amount, payment.currency)}</td><td>${escapeHtml(payment.paymentMethod?.name || "—")}</td><td>${badge(payment.status)}</td><td>${dateLabel(payment.createdAt)}</td><td><div class="row-actions">${payment.status === "PENDING" ? `<button class="row-action positive" data-payment-action="verify" data-id="${payment.id}">Valider</button><button class="row-action negative" data-payment-action="reject" data-id="${payment.id}">Rejeter</button>` : ""}</div></td></tr>
         `).join("") : emptyRow(7);
     } else if (state.billingTab === "plans") {
         el.billingTableKicker.textContent = "CATALOGUE TARIFAIRE"; el.billingTableTitle.textContent = "Formules commerciales";
@@ -741,7 +759,7 @@ function renderBilling() {
     } else if (state.billingTab === "invoices") {
         el.billingTableKicker.textContent = "DOCUMENTS"; el.billingTableTitle.textContent = "Factures émises";
         el.billingHead.innerHTML = "<tr><th>Numéro</th><th>Organisation</th><th>Montant</th><th>Statut</th><th>Émission</th><th>Téléchargement</th></tr>";
-        el.billingTable.innerHTML = state.invoices.length ? state.invoices.map(invoice => `<tr data-searchable="${escapeHtml(`${invoice.invoiceNumber} ${invoice.organizationId} ${invoice.status}`)}"><td><span class="cell-main">${escapeHtml(invoice.invoiceNumber)}</span><span class="cell-sub">Paiement #${escapeHtml(invoice.paymentId)}</span></td><td>#${escapeHtml(invoice.organizationId)}</td><td>${money(invoice.amount, invoice.currency)}</td><td>${badge(invoice.status)}</td><td>${dateLabel(invoice.issuedAt)}</td><td>${dateLabel(invoice.downloadedAt)}</td></tr>`).join("") : emptyRow(6);
+        el.billingTable.innerHTML = state.invoices.length ? state.invoices.map(invoice => `<tr data-searchable="${escapeHtml(`${invoice.invoiceNumber} ${organizationName(invoice)} ${invoice.status}`)}"><td><span class="cell-main">${escapeHtml(invoice.invoiceNumber)}</span><span class="cell-sub">Paiement #${escapeHtml(invoice.paymentId)}</span></td><td><span class="cell-main">${escapeHtml(organizationName(invoice))}</span><span class="cell-sub">${escapeHtml(organizationMeta(invoice))}</span></td><td>${money(invoice.amount, invoice.currency)}</td><td>${badge(invoice.status)}</td><td>${dateLabel(invoice.issuedAt)}</td><td>${dateLabel(invoice.downloadedAt)}</td></tr>`).join("") : emptyRow(6);
     } else {
         el.billingTableKicker.textContent = "ENCAISSEMENT"; el.billingTableTitle.textContent = "Moyens de paiement";
         el.billingAddButton.hidden = false; el.billingAddButton.textContent = "+ Nouvelle méthode"; el.billingAddButton.dataset.modalType = "method";
@@ -764,9 +782,9 @@ function renderTickets() {
     const status = el.ticketStatusFilter.value;
     const tickets = state.tickets.filter(ticket => status === "all" || ticket.status === status);
     el.ticketList.innerHTML = tickets.length ? tickets.map(ticket => `
-        <button class="ticket-item ${ticket.id === state.selectedTicketId ? "active" : ""}" type="button" data-ticket-id="${ticket.id}" data-searchable="${escapeHtml(`${ticket.subject} ${ticket.status} ${ticket.priority}`)}">
+        <button class="ticket-item ${ticket.id === state.selectedTicketId ? "active" : ""}" type="button" data-ticket-id="${ticket.id}" data-searchable="${escapeHtml(`${ticket.subject} ${organizationName(ticket)} ${ticket.status} ${ticket.priority}`)}">
             <div class="ticket-item-top"><span class="priority-mark ${ticket.priority === "URGENT" ? "urgent" : ""}"></span>${badge(ticket.status)}</div>
-            <strong>${escapeHtml(ticket.subject)}</strong><p>Organisation #${escapeHtml(ticket.organizationId)} · ${dateLabel(ticket.updatedAt, true)}</p>
+            <strong>${escapeHtml(ticket.subject)}</strong><p>${escapeHtml(organizationName(ticket))} · ${dateLabel(ticket.updatedAt, true)}</p>
         </button>`).join("") : '<p class="empty-row">Aucun ticket dans ce filtre.</p>';
 }
 
@@ -779,7 +797,7 @@ async function openTicket(id) {
     const assigned = state.users.find(user => user.id === ticket.assignedToId);
     el.conversation.innerHTML = `
         <div class="conversation-head">
-            <div><p class="admin-kicker">TICKET #${ticket.id}</p><h2>${escapeHtml(ticket.subject)}</h2><p>Organisation #${escapeHtml(ticket.organizationId)} · Utilisateur #${escapeHtml(ticket.userId)} · Assigné à ${escapeHtml(assigned?.name || "personne")}</p></div>
+            <div><p class="admin-kicker">TICKET #${ticket.id}</p><h2>${escapeHtml(ticket.subject)}</h2><p>${escapeHtml(organizationName(ticket))} · Utilisateur #${escapeHtml(ticket.userId)} · Assigné à ${escapeHtml(assigned?.name || "personne")}</p></div>
             <div class="conversation-tools">
                 <select class="assignee-select" data-ticket-assignee="${ticket.id}"><option value="">Non assigné</option>${assignees.map(user => `<option value="${user.id}" ${user.id === ticket.assignedToId ? "selected" : ""}>${escapeHtml(user.name)}</option>`).join("")}</select>
                 <select data-ticket-status="${ticket.id}">${["OPEN","PENDING","ANSWERED","CLOSED"].map(status => `<option ${status === ticket.status ? "selected" : ""}>${status}</option>`).join("")}</select>

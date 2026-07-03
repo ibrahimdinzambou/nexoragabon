@@ -209,6 +209,13 @@ const elements = {
     homeFeaturedCard: document.querySelector("#homeFeaturedCard"),
     homeForYouList: document.querySelector("#homeForYouList"),
     discoverButton: document.querySelector("#discoverButton"),
+    subscriptionGate: document.querySelector("#subscriptionGate"),
+    subscriptionGateTitle: document.querySelector("#subscriptionGateTitle"),
+    subscriptionGateCopy: document.querySelector("#subscriptionGateCopy"),
+    subscriptionGatePlan: document.querySelector("#subscriptionGatePlan"),
+    subscriptionGateDateLabel: document.querySelector("#subscriptionGateDateLabel"),
+    subscriptionGateDate: document.querySelector("#subscriptionGateDate"),
+    subscriptionGateAccount: document.querySelector("#subscriptionGateAccount"),
     catalogRows: document.querySelector("#catalogRows"),
     dramaSection: document.querySelector("#dramaSection"),
     dramaStatus: document.querySelector("#dramaStatus"),
@@ -274,6 +281,7 @@ const elements = {
     settingsTwoFactor: document.querySelector("#settingsTwoFactor"),
     settingsPlan: document.querySelector("#settingsPlan"),
     settingsStatus: document.querySelector("#settingsStatus"),
+    settingsPeriodEndLabel: document.querySelector("#settingsPeriodEndLabel"),
     settingsPeriodEnd: document.querySelector("#settingsPeriodEnd"),
     settingsStreams: document.querySelector("#settingsStreams"),
     adminConsoleLink: document.querySelector("#adminConsoleLink"),
@@ -1053,12 +1061,103 @@ function formatAccountDate(value) {
     return new Intl.DateTimeFormat("fr", { dateStyle: "medium" }).format(new Date(value));
 }
 
+function subscriptionPeriodEnd(subscription = state.subscription) {
+    const status = String(subscription?.status || "").toUpperCase();
+    return status === "TRIALING"
+        ? subscription?.trialEndsAt || subscription?.currentPeriodEnd
+        : subscription?.currentPeriodEnd;
+}
+
+function subscriptionIsUsable(subscription = state.subscription) {
+    if (subscription === state.subscription
+        && state.organization?.status
+        && String(state.organization.status).toUpperCase() !== "ACTIVE") {
+        return false;
+    }
+    if (!subscription) return false;
+    const status = String(subscription.status || "").toUpperCase();
+    if (!["ACTIVE", "TRIALING"].includes(status)) return false;
+    const end = subscriptionPeriodEnd(subscription);
+    if (!end) return true;
+    const endDate = new Date(end);
+    return !Number.isNaN(endDate.getTime()) && endDate.getTime() > Date.now();
+}
+
+function subscriptionGateMessage() {
+    const subscription = state.subscription || {};
+    const status = String(subscription.status || "").toUpperCase();
+    const end = subscriptionPeriodEnd(subscription);
+    const endLabel = formatAccountDate(end);
+    if (state.organization?.status && String(state.organization.status).toUpperCase() !== "ACTIVE") {
+        return {
+            title: "Votre espace est suspendu.",
+            copy: "Contactez le support ou régularisez votre abonnement pour réactiver l'accès à la plateforme.",
+            dateLabel: "Statut espace",
+            date: state.organization.status
+        };
+    }
+    if (!subscription.status) {
+        return {
+            title: "Aucune formule active.",
+            copy: "Choisissez une formule pour accéder au catalogue, au direct et à la lecture vidéo.",
+            dateLabel: "Fin d'accès",
+            date: "—"
+        };
+    }
+    if (status === "TRIALING") {
+        return {
+            title: "Votre période d'essai est terminée.",
+            copy: "Validez un paiement ou choisissez une formule pour réactiver l'accès à la plateforme.",
+            dateLabel: "Fin d'essai",
+            date: endLabel
+        };
+    }
+    return {
+        title: status === "ACTIVE" ? "Votre période d'abonnement est terminée." : "Votre abonnement n'est pas actif.",
+        copy: "Renouvelez votre formule pour retrouver le catalogue, le direct et la lecture vidéo.",
+        dateLabel: "Fin de période",
+        date: endLabel
+    };
+}
+
+function syncSubscriptionAccess({ scroll = false } = {}) {
+    const blocked = Boolean(state.user) && state.authRequired && !subscriptionIsUsable();
+    document.body.classList.toggle("subscription-blocked", blocked);
+    if (!elements.subscriptionGate) return !blocked;
+
+    elements.subscriptionGate.hidden = !blocked;
+    if (blocked) {
+        const message = subscriptionGateMessage();
+        elements.subscriptionGateTitle.textContent = message.title;
+        elements.subscriptionGateCopy.textContent = message.copy;
+        elements.subscriptionGatePlan.textContent = state.subscription?.plan?.name || "Aucune formule";
+        elements.subscriptionGateDateLabel.textContent = message.dateLabel;
+        elements.subscriptionGateDate.textContent = message.date;
+        elements.catalogRows.hidden = true;
+        elements.dramaSection.hidden = true;
+        elements.emptyState.hidden = true;
+        if (elements.catalogStatus?.lastChild) {
+            elements.catalogStatus.classList.remove("connected", "loading");
+            elements.catalogStatus.lastChild.textContent = " Abonnement requis";
+        }
+        if (scroll) {
+            elements.subscriptionGate.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    }
+    return !blocked;
+}
+
 function renderBillingSettings() {
     const plan = state.subscription?.plan;
     const iptv = state.iptv || {};
+    const status = String(state.subscription?.status || "").toUpperCase();
+    const periodEnd = subscriptionPeriodEnd();
     elements.settingsPlan.textContent = plan?.name || "Aucune formule";
     elements.settingsStatus.textContent = statusLabel(state.subscription?.status);
-    elements.settingsPeriodEnd.textContent = formatAccountDate(state.subscription?.currentPeriodEnd);
+    if (elements.settingsPeriodEndLabel) {
+        elements.settingsPeriodEndLabel.textContent = status === "TRIALING" ? "Fin d'essai" : "Fin de période";
+    }
+    elements.settingsPeriodEnd.textContent = formatAccountDate(periodEnd);
     elements.settingsStreams.textContent = iptv.active
         ? `IPTV actif - ${iptv.accountName || `${iptv.assignedCount || 1} compte`}`
         : plan?.maxConcurrentStreams
@@ -1131,6 +1230,16 @@ function searchCatalogLimit(type) {
 }
 
 async function loadCatalog() {
+    if (state.token && !syncSubscriptionAccess()) {
+        state.catalogLoading = false;
+        state.catalogIsFallback = true;
+        state.catalog = [];
+        state.browseCatalog = [];
+        state.searchResults = [];
+        updateCatalogStatus();
+        return;
+    }
+
     if (state.activeType === "drama") {
         state.catalogLoading = false;
         updateCatalogStatus();
@@ -1898,6 +2007,10 @@ async function playDramaEpisode(episodeNumber, chapterId) {
 async function playDramaStream(item, videoUrl) {
     if (!state.token) {
         requestLogin("Connectez-vous pour lancer un drama.", () => playDramaStream(item, videoUrl));
+        return;
+    }
+    if (!syncSubscriptionAccess({ scroll: true })) {
+        showToast("Votre abonnement doit etre actif pour lancer un drama.", true);
         return;
     }
     if (state.playerOpening) return;
@@ -3506,6 +3619,10 @@ async function setFilter(type) {
         requestLogin("Connectez-vous pour acceder au catalogue.");
         return;
     }
+    if (state.token && !syncSubscriptionAccess({ scroll: true })) {
+        showToast("Votre abonnement doit etre actif pour acceder au catalogue.", true);
+        return;
+    }
     resetSearchQuery(false);
     clearHiddenCatalogCards();
     state.activeType = type;
@@ -3835,6 +3952,10 @@ async function applySession(data) {
     state.recentlyWatched = loadRecentlyWatched(state.user);
     state.notificationReadIds = loadNotificationReadIds(state.user);
     updateAccountUi();
+    if (!syncSubscriptionAccess({ scroll: true })) {
+        await refreshNotifications();
+        return;
+    }
     await loadCatalog();
     await refreshNotifications();
 }
@@ -3855,6 +3976,10 @@ async function restoreSession() {
         state.recentlyWatched = loadRecentlyWatched(state.user);
         state.notificationReadIds = loadNotificationReadIds(state.user);
         updateAccountUi();
+        if (!syncSubscriptionAccess({ scroll: true })) {
+            await refreshNotifications();
+            return;
+        }
         await loadCatalog();
         await refreshNotifications();
         restoreActivePlayback();
@@ -3914,7 +4039,10 @@ function updateAccountUi() {
     applyProfileSettings();
     updateCatalogStatus();
 
-    if (!connected) return;
+    if (!connected) {
+        syncSubscriptionAccess();
+        return;
+    }
 
     elements.profileAvatar.textContent = initial;
     elements.profileName.textContent = state.user.name;
@@ -3924,12 +4052,18 @@ function updateAccountUi() {
     elements.profileStatus.textContent = statusLabel(state.subscription?.status);
     fillSettingsForms();
     renderBillingSettings();
+    syncSubscriptionAccess();
 }
 
 function updateCatalogStatus() {
     const connected = Boolean(state.user);
     elements.catalogStatus.classList.toggle("connected", connected);
     elements.catalogStatus.classList.toggle("loading", state.catalogLoading);
+    if (connected && state.authRequired && !subscriptionIsUsable()) {
+        elements.catalogStatus.classList.remove("connected", "loading");
+        elements.catalogStatus.lastChild.textContent = " Abonnement requis";
+        return;
+    }
     elements.catalogStatus.lastChild.textContent = state.catalogLoading
         ? " Synchronisation du catalogue..."
         : connected
@@ -4152,6 +4286,8 @@ function clearSession() {
     state.notificationReadIds = loadNotificationReadIds();
     state.notifications = buildNotifications();
     localStorage.removeItem(TOKEN_KEY);
+    document.body.classList.remove("subscription-blocked");
+    if (elements.subscriptionGate) elements.subscriptionGate.hidden = true;
     updateAccountUi();
     renderNotifications();
     renderLanguageFilter();
@@ -4565,6 +4701,10 @@ async function playItem(item, options = {}) {
         requestLogin("Connectez-vous pour lancer un programme.", () => playItem(item, options));
         return;
     }
+    if (!syncSubscriptionAccess({ scroll: true })) {
+        showToast("Votre abonnement doit etre actif pour lancer un programme.", true);
+        return;
+    }
 
     if (state.catalogLoading && state.catalogIsFallback) {
         showToast("Le catalogue est encore en cours de synchronisation.", true);
@@ -4857,6 +4997,10 @@ async function playNodeFrenchItem(item) {
 async function playTmdbItem(item) {
     if (!state.token) {
         requestLogin("Connectez-vous pour lancer un programme TMDB.", () => playTmdbItem(item));
+        return;
+    }
+    if (!syncSubscriptionAccess({ scroll: true })) {
+        showToast("Votre abonnement doit etre actif pour lancer un programme.", true);
         return;
     }
 
@@ -7227,6 +7371,10 @@ elements.profileSettingsForm.addEventListener("submit", submitProfileSettings);
 elements.playbackSettingsForm.addEventListener("submit", submitPlaybackSettings);
 elements.passwordSettingsForm.addEventListener("submit", submitPasswordSettings);
 elements.settingsTwoFactor.addEventListener("change", toggleTwoFactor);
+elements.subscriptionGateAccount?.addEventListener("click", () => {
+    openModal("profileModal");
+    switchSettingsTab("billing");
+});
 elements.logoutAllButton.addEventListener("click", logoutAllDevices);
 elements.logoutButton.addEventListener("click", logout);
 elements.playerFullscreenButton.addEventListener("click", requestPlayerFullscreen);

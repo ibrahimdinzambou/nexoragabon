@@ -23,6 +23,8 @@ public final class ApiMappers {
         m.put("emailVerified", user.emailVerified);
         m.put("twoFactorEnabled", user.twoFactorEnabled);
         m.put("currentOrganizationId", user.currentOrganization == null ? null : user.currentOrganization.id);
+        m.put("currentOrganizationName", user.currentOrganization == null ? null : user.currentOrganization.name);
+        m.put("currentOrganizationSlug", user.currentOrganization == null ? null : user.currentOrganization.slug);
         m.put("allowedCategories", CatalogCategoryAccess.allowedCategoryIds(user));
         m.put("createdAt", user.createdAt);
         return m;
@@ -47,6 +49,8 @@ public final class ApiMappers {
         Map<String, Object> m = map();
         m.put("id", membership.id);
         m.put("organizationId", membership.organization == null ? null : membership.organization.id);
+        m.put("organizationName", membership.organization == null ? null : membership.organization.name);
+        m.put("organizationSlug", membership.organization == null ? null : membership.organization.slug);
         m.put("user", user(membership.user));
         m.put("role", membership.role);
         m.put("status", membership.status);
@@ -109,6 +113,8 @@ public final class ApiMappers {
         Map<String, Object> m = map();
         m.put("id", subscription.id);
         m.put("organizationId", subscription.organization == null ? null : subscription.organization.id);
+        m.put("organizationName", subscription.organization == null ? null : subscription.organization.name);
+        m.put("organizationSlug", subscription.organization == null ? null : subscription.organization.slug);
         m.put("plan", plan(subscription.plan));
         m.put("status", subscription.status);
         m.put("startedAt", subscription.startedAt);
@@ -133,6 +139,8 @@ public final class ApiMappers {
         m.put("id", payment.id);
         m.put("reference", payment.paymentReference);
         m.put("organizationId", payment.organization == null ? null : payment.organization.id);
+        m.put("organizationName", payment.organization == null ? null : payment.organization.name);
+        m.put("organizationSlug", payment.organization == null ? null : payment.organization.slug);
         m.put("plan", payment.plan == null ? null : plan(payment.plan));
         m.put("paymentMethod", payment.paymentMethod == null ? null : paymentMethod(payment.paymentMethod));
         m.put("amount", payment.amount);
@@ -151,6 +159,8 @@ public final class ApiMappers {
         m.put("id", invoice.id);
         m.put("invoiceNumber", invoice.invoiceNumber);
         m.put("organizationId", invoice.organization == null ? null : invoice.organization.id);
+        m.put("organizationName", invoice.organization == null ? null : invoice.organization.name);
+        m.put("organizationSlug", invoice.organization == null ? null : invoice.organization.slug);
         m.put("paymentId", invoice.paymentTransaction == null ? null : invoice.paymentTransaction.id);
         m.put("amount", invoice.amount);
         m.put("currency", invoice.currency);
@@ -188,6 +198,8 @@ public final class ApiMappers {
         m.put("token", session.sessionToken);
         m.put("userId", session.user == null ? null : session.user.id);
         m.put("organizationId", session.organization == null ? null : session.organization.id);
+        m.put("organizationName", session.organization == null ? null : session.organization.name);
+        m.put("organizationSlug", session.organization == null ? null : session.organization.slug);
         m.put("iptvAccountId", session.iptvAccount == null ? null : session.iptvAccount.id);
         m.put("contentType", session.contentType);
         m.put("itemId", session.itemId);
@@ -203,6 +215,8 @@ public final class ApiMappers {
         Map<String, Object> m = map();
         m.put("id", ticket.id);
         m.put("organizationId", ticket.organization == null ? null : ticket.organization.id);
+        m.put("organizationName", ticket.organization == null ? null : ticket.organization.name);
+        m.put("organizationSlug", ticket.organization == null ? null : ticket.organization.slug);
         m.put("userId", ticket.user == null ? null : ticket.user.id);
         m.put("assignedToId", ticket.assignedTo == null ? null : ticket.assignedTo.id);
         m.put("subject", ticket.subject);
