@@ -192,6 +192,7 @@ public class BillingService {
         }
         subscription.plan = plan;
         Instant now = Instant.now();
+        subscription.startedAt = now;
         if (plan.priceMonthly == null || plan.priceMonthly.signum() == 0) {
             if (trialAlreadyUsed(user, organization, plan)) {
                 throw ApiException.paymentRequired("Periode gratuite deja utilisee pour cette formule. Veuillez choisir un abonnement payant.");
@@ -473,9 +474,6 @@ public class BillingService {
             }
             return anchor == null ? null : anchor.plus(trialDays(subscription.plan), ChronoUnit.DAYS);
         }
-        if (isFreePlan(subscription.plan) && anchor != null) {
-            return anchor.plus(billingPeriodDays(subscription.plan), ChronoUnit.DAYS);
-        }
         if (subscription.currentPeriodEnd != null) {
             return subscription.currentPeriodEnd;
         }
@@ -498,10 +496,8 @@ public class BillingService {
         subscription.plan = payment.plan;
         subscription.status = Enums.SubscriptionStatus.ACTIVE;
         subscription.cancelAtPeriodEnd = false;
+        subscription.startedAt = now;
         subscription.currentPeriodEnd = now.plus(billingPeriodDays(payment.plan), ChronoUnit.DAYS);
-        if (subscription.startedAt == null) {
-            subscription.startedAt = now;
-        }
         if (payment.organization != null && payment.organization.status != Enums.OrganizationStatus.ACTIVE) {
             payment.organization.status = Enums.OrganizationStatus.ACTIVE;
             organizations.save(payment.organization);

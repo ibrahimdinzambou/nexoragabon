@@ -1166,7 +1166,7 @@ function planForm(item) {
             ${field("priceMonthly","Prix",item?.priceMonthly ?? 0,false,"number","0.01")}
             ${field("currency","Devise",item?.currency || "FCFA")}
             ${field("trialDays","Essai gratuit (jours)",item?.trialDays ?? 7,false,"number")}
-            ${field("billingPeriodDays","Période payée (jours)",item?.billingPeriodDays ?? 30,false,"number")}
+            ${field("billingPeriodDays","Durée abonnement (jours)",item?.billingPeriodDays ?? 30,false,"number")}
             ${field("highlight","Badge commercial",item?.highlight || "")}
             ${field("maxUsers","Utilisateurs max",item?.maxUsers ?? 1,false,"number")}
             ${field("maxIptvAccounts","Comptes IPTV max",item?.maxIptvAccounts ?? 1,false,"number")}

@@ -134,9 +134,6 @@ public final class ApiMappers {
             }
             return anchor == null ? null : anchor.plus(trialDays(subscription), ChronoUnit.DAYS);
         }
-        if (isFreePlan(subscription) && anchor != null) {
-            return anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
-        }
         if (subscription.currentPeriodEnd != null) {
             return subscription.currentPeriodEnd;
         }
@@ -153,11 +150,6 @@ public final class ApiMappers {
             return Enums.SubscriptionStatus.PAST_DUE;
         }
         return subscription.status;
-    }
-
-    private static boolean isFreePlan(Subscription subscription) {
-        return subscription.plan != null
-                && (subscription.plan.priceMonthly == null || subscription.plan.priceMonthly.signum() == 0);
     }
 
     private static int billingPeriodDays(Subscription subscription) {

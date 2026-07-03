@@ -456,18 +456,10 @@ public class StreamingService {
             }
             return anchor == null ? null : anchor.plus(trialDays(subscription), ChronoUnit.DAYS);
         }
-        if (isFreePlan(subscription) && anchor != null) {
-            return anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
-        }
         if (subscription.currentPeriodEnd != null) {
             return subscription.currentPeriodEnd;
         }
         return anchor == null ? null : anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
-    }
-
-    private boolean isFreePlan(Subscription subscription) {
-        return subscription.plan != null
-                && (subscription.plan.priceMonthly == null || subscription.plan.priceMonthly.signum() == 0);
     }
 
     private int billingPeriodDays(Subscription subscription) {
