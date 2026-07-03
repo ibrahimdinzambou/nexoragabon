@@ -449,19 +449,35 @@ public class StreamingService {
     }
 
     private Instant subscriptionPeriodEnd(Subscription subscription) {
-        if (subscription.status == Enums.SubscriptionStatus.TRIALING && subscription.trialEndsAt != null) {
-            return subscription.trialEndsAt;
+        Instant anchor = subscription.startedAt == null ? subscription.createdAt : subscription.startedAt;
+        if (subscription.status == Enums.SubscriptionStatus.TRIALING) {
+            if (subscription.trialEndsAt != null) {
+                return subscription.trialEndsAt;
+            }
+            return anchor == null ? null : anchor.plus(trialDays(subscription), ChronoUnit.DAYS);
+        }
+        if (isFreePlan(subscription) && anchor != null) {
+            return anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
         }
         if (subscription.currentPeriodEnd != null) {
             return subscription.currentPeriodEnd;
         }
-        if (subscription.startedAt == null) {
-            return null;
-        }
-        int days = subscription.plan == null || subscription.plan.billingPeriodDays == null || subscription.plan.billingPeriodDays <= 0
+        return anchor == null ? null : anchor.plus(billingPeriodDays(subscription), ChronoUnit.DAYS);
+    }
+
+    private boolean isFreePlan(Subscription subscription) {
+        return subscription.plan != null
+                && (subscription.plan.priceMonthly == null || subscription.plan.priceMonthly.signum() == 0);
+    }
+
+    private int billingPeriodDays(Subscription subscription) {
+        return subscription.plan == null || subscription.plan.billingPeriodDays == null || subscription.plan.billingPeriodDays <= 0
                 ? 30
                 : subscription.plan.billingPeriodDays;
-        return subscription.startedAt.plus(days, ChronoUnit.DAYS);
+    }
+
+    private int trialDays(Subscription subscription) {
+        return subscription.plan == null || subscription.plan.trialDays <= 0 ? 0 : subscription.plan.trialDays;
     }
 
     private void closeSession(UserSession session, Enums.SessionStatus status) {

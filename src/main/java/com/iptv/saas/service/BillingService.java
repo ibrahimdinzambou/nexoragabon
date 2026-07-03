@@ -427,16 +427,24 @@ public class BillingService {
         if (subscription == null) {
             return null;
         }
-        if (subscription.status == Enums.SubscriptionStatus.TRIALING && subscription.trialEndsAt != null) {
-            return subscription.trialEndsAt;
+        Instant anchor = subscription.startedAt == null ? subscription.createdAt : subscription.startedAt;
+        if (subscription.status == Enums.SubscriptionStatus.TRIALING) {
+            if (subscription.trialEndsAt != null) {
+                return subscription.trialEndsAt;
+            }
+            return anchor == null ? null : anchor.plus(trialDays(subscription.plan), ChronoUnit.DAYS);
+        }
+        if (isFreePlan(subscription.plan) && anchor != null) {
+            return anchor.plus(billingPeriodDays(subscription.plan), ChronoUnit.DAYS);
         }
         if (subscription.currentPeriodEnd != null) {
             return subscription.currentPeriodEnd;
         }
-        if (subscription.startedAt == null) {
-            return null;
-        }
-        return subscription.startedAt.plus(billingPeriodDays(subscription.plan), ChronoUnit.DAYS);
+        return anchor == null ? null : anchor.plus(billingPeriodDays(subscription.plan), ChronoUnit.DAYS);
+    }
+
+    private boolean isFreePlan(Plan plan) {
+        return plan != null && (plan.priceMonthly == null || plan.priceMonthly.signum() == 0);
     }
 
     private void activateSubscription(PaymentTransaction payment) {
