@@ -352,21 +352,30 @@ public class DataSeeder {
         if (free == null || free.priceMonthly == null || free.priceMonthly.signum() != 0) {
             return;
         }
-        boolean badFreeDuration = free.billingPeriodDays != null && free.billingPeriodDays == 1;
-        if (!badFreeDuration) {
+        List<Subscription> freeSubscriptions = subscriptions.findAll().stream()
+                .filter(subscription -> subscription.plan != null
+                        && subscription.plan.id != null
+                        && subscription.plan.id.equals(free.id))
+                .toList();
+        boolean hasRepairableSubscriptions = freeSubscriptions.stream().anyMatch(this::hasOneDayStoredPeriod);
+        boolean hasBadFreeConfig = (free.trialDays <= 0 || free.trialDays == 7)
+                || free.billingPeriodDays == null
+                || free.billingPeriodDays <= 1;
+        if (!hasBadFreeConfig && !hasRepairableSubscriptions) {
             return;
         }
-        free.trialDays = FREE_TRIAL_REPAIR_DAYS;
-        free.billingPeriodDays = FREE_BILLING_REPAIR_DAYS;
+        if (free.trialDays <= 0 || free.trialDays == 7 || hasRepairableSubscriptions) {
+            free.trialDays = FREE_TRIAL_REPAIR_DAYS;
+        }
+        if (free.billingPeriodDays == null || free.billingPeriodDays <= 1 || hasRepairableSubscriptions) {
+            free.billingPeriodDays = FREE_BILLING_REPAIR_DAYS;
+        }
         plans.save(free);
 
         Instant now = Instant.now();
         int repaired = 0;
-        for (Subscription subscription : subscriptions.findAll()) {
-            if (subscription.plan == null
-                    || subscription.plan.id == null
-                    || !subscription.plan.id.equals(free.id)
-                    || !hasOneDayStoredPeriod(subscription)) {
+        for (Subscription subscription : freeSubscriptions) {
+            if (!hasOneDayStoredPeriod(subscription)) {
                 continue;
             }
             subscription.plan = free;
@@ -395,13 +404,33 @@ public class DataSeeder {
         if (subscription == null || subscription.currentPeriodEnd == null) {
             return false;
         }
-        Instant anchor = subscription.startedAt == null ? subscription.createdAt : subscription.startedAt;
+        Instant anchor = subscriptionAccountAnchor(subscription);
         if (anchor == null) {
             return false;
         }
         Instant oneDayEnd = anchor.plus(1, ChronoUnit.DAYS);
         long seconds = Math.abs(Duration.between(subscription.currentPeriodEnd, oneDayEnd).toSeconds());
-        return seconds <= 60;
+        if (seconds <= 300) {
+            return true;
+        }
+        Instant expectedTrialEnd = anchor.plus(FREE_TRIAL_REPAIR_DAYS, ChronoUnit.DAYS);
+        return subscription.currentPeriodEnd.isBefore(expectedTrialEnd)
+                && Duration.between(anchor, subscription.currentPeriodEnd).toDays() <= 2;
+    }
+
+    private Instant subscriptionAccountAnchor(Subscription subscription) {
+        if (subscription.organization != null
+                && subscription.organization.owner != null
+                && subscription.organization.owner.createdAt != null) {
+            return subscription.organization.owner.createdAt;
+        }
+        if (subscription.organization != null && subscription.organization.createdAt != null) {
+            return subscription.organization.createdAt;
+        }
+        if (subscription.startedAt != null) {
+            return subscription.startedAt;
+        }
+        return subscription.createdAt;
     }
 
     private void ensureDemoExternalCatalogAccess(
