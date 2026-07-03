@@ -86,9 +86,11 @@ public class BillingService {
         Subscription subscription = new Subscription();
         subscription.organization = organization;
         subscription.plan = plan;
-        subscription.startedAt = Instant.now();
+        Instant now = Instant.now();
+        subscription.startedAt = now;
         if (plan.priceMonthly == null || plan.priceMonthly.signum() == 0) {
             subscription.status = Enums.SubscriptionStatus.ACTIVE;
+            subscription.currentPeriodEnd = now.plus(billingPeriodDays(plan), ChronoUnit.DAYS);
         } else {
             int days = trialDays(plan);
             if (days <= 0) {
@@ -98,7 +100,7 @@ public class BillingService {
                 throw ApiException.paymentRequired("Essai deja utilise pour cette formule. Veuillez valider un paiement.");
             }
             subscription.status = Enums.SubscriptionStatus.TRIALING;
-            subscription.trialEndsAt = Instant.now().plus(days, ChronoUnit.DAYS);
+            subscription.trialEndsAt = now.plus(days, ChronoUnit.DAYS);
             subscription.currentPeriodEnd = subscription.trialEndsAt;
         }
         audit.log(
@@ -183,17 +185,18 @@ public class BillingService {
             return subscription;
         }
         subscription.plan = plan;
+        Instant now = Instant.now();
         if (plan.priceMonthly == null || plan.priceMonthly.signum() == 0) {
             subscription.status = Enums.SubscriptionStatus.ACTIVE;
             subscription.trialEndsAt = null;
-            subscription.currentPeriodEnd = null;
+            subscription.currentPeriodEnd = now.plus(billingPeriodDays(plan), ChronoUnit.DAYS);
         } else {
             int days = trialDays(plan);
             if (days <= 0 || trialAlreadyUsed(user, organization, plan)) {
                 throw ApiException.paymentRequired("Paiement requis pour activer cette formule");
             }
             subscription.status = Enums.SubscriptionStatus.TRIALING;
-            subscription.trialEndsAt = Instant.now().plus(days, ChronoUnit.DAYS);
+            subscription.trialEndsAt = now.plus(days, ChronoUnit.DAYS);
             subscription.currentPeriodEnd = subscription.trialEndsAt;
         }
         audit.log(user, "billing.plan.changed", "Subscription", subscription.id, plan.code);
@@ -416,10 +419,24 @@ public class BillingService {
         }
         boolean validStatus = subscription.status == Enums.SubscriptionStatus.ACTIVE
                 || subscription.status == Enums.SubscriptionStatus.TRIALING;
-        Instant end = subscription.status == Enums.SubscriptionStatus.TRIALING
-                ? subscription.trialEndsAt
-                : subscription.currentPeriodEnd;
+        Instant end = subscriptionPeriodEnd(subscription);
         return validStatus && (end == null || end.isAfter(Instant.now()));
+    }
+
+    private Instant subscriptionPeriodEnd(Subscription subscription) {
+        if (subscription == null) {
+            return null;
+        }
+        if (subscription.status == Enums.SubscriptionStatus.TRIALING && subscription.trialEndsAt != null) {
+            return subscription.trialEndsAt;
+        }
+        if (subscription.currentPeriodEnd != null) {
+            return subscription.currentPeriodEnd;
+        }
+        if (subscription.startedAt == null) {
+            return null;
+        }
+        return subscription.startedAt.plus(billingPeriodDays(subscription.plan), ChronoUnit.DAYS);
     }
 
     private void activateSubscription(PaymentTransaction payment) {

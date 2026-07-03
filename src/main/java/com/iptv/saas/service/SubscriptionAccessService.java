@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -93,10 +94,24 @@ public class SubscriptionAccessService {
         }
         boolean validStatus = subscription.status == Enums.SubscriptionStatus.ACTIVE
                 || subscription.status == Enums.SubscriptionStatus.TRIALING;
-        Instant end = subscription.status == Enums.SubscriptionStatus.TRIALING
-                ? subscription.trialEndsAt
-                : subscription.currentPeriodEnd;
+        Instant end = subscriptionPeriodEnd(subscription);
         return validStatus && (end == null || end.isAfter(Instant.now()));
+    }
+
+    private Instant subscriptionPeriodEnd(Subscription subscription) {
+        if (subscription.status == Enums.SubscriptionStatus.TRIALING && subscription.trialEndsAt != null) {
+            return subscription.trialEndsAt;
+        }
+        if (subscription.currentPeriodEnd != null) {
+            return subscription.currentPeriodEnd;
+        }
+        if (subscription.startedAt == null) {
+            return null;
+        }
+        int days = subscription.plan == null || subscription.plan.billingPeriodDays == null || subscription.plan.billingPeriodDays <= 0
+                ? 30
+                : subscription.plan.billingPeriodDays;
+        return subscription.startedAt.plus(days, ChronoUnit.DAYS);
     }
 
     private Subscription currentUsableSubscription(UserEntity user) {

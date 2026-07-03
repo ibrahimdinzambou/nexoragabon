@@ -3,6 +3,8 @@ package com.iptv.saas.web;
 import com.iptv.saas.domain.*;
 import com.iptv.saas.security.CatalogCategoryAccess;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -119,9 +121,25 @@ public final class ApiMappers {
         m.put("status", subscription.status);
         m.put("startedAt", subscription.startedAt);
         m.put("trialEndsAt", subscription.trialEndsAt);
-        m.put("currentPeriodEnd", subscription.currentPeriodEnd);
+        m.put("currentPeriodEnd", subscriptionPeriodEnd(subscription));
         m.put("cancelAtPeriodEnd", subscription.cancelAtPeriodEnd);
         return m;
+    }
+
+    private static Instant subscriptionPeriodEnd(Subscription subscription) {
+        if (subscription.status == Enums.SubscriptionStatus.TRIALING && subscription.trialEndsAt != null) {
+            return subscription.trialEndsAt;
+        }
+        if (subscription.currentPeriodEnd != null) {
+            return subscription.currentPeriodEnd;
+        }
+        if (subscription.startedAt == null) {
+            return null;
+        }
+        int days = subscription.plan == null || subscription.plan.billingPeriodDays == null || subscription.plan.billingPeriodDays <= 0
+                ? 30
+                : subscription.plan.billingPeriodDays;
+        return subscription.startedAt.plus(days, ChronoUnit.DAYS);
     }
 
     public static Map<String, Object> paymentMethod(PaymentMethod method) {

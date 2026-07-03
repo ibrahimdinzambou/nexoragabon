@@ -441,13 +441,27 @@ public class StreamingService {
                 .orElseThrow(() -> ApiException.paymentRequired("Abonnement requis"));
         boolean validStatus = subscription.status == Enums.SubscriptionStatus.ACTIVE
                 || subscription.status == Enums.SubscriptionStatus.TRIALING;
-        Instant end = subscription.status == Enums.SubscriptionStatus.TRIALING
-                ? subscription.trialEndsAt
-                : subscription.currentPeriodEnd;
+        Instant end = subscriptionPeriodEnd(subscription);
         if (!validStatus || (end != null && end.isBefore(Instant.now()))) {
             throw ApiException.paymentRequired("Abonnement inactif ou expire");
         }
         return subscription;
+    }
+
+    private Instant subscriptionPeriodEnd(Subscription subscription) {
+        if (subscription.status == Enums.SubscriptionStatus.TRIALING && subscription.trialEndsAt != null) {
+            return subscription.trialEndsAt;
+        }
+        if (subscription.currentPeriodEnd != null) {
+            return subscription.currentPeriodEnd;
+        }
+        if (subscription.startedAt == null) {
+            return null;
+        }
+        int days = subscription.plan == null || subscription.plan.billingPeriodDays == null || subscription.plan.billingPeriodDays <= 0
+                ? 30
+                : subscription.plan.billingPeriodDays;
+        return subscription.startedAt.plus(days, ChronoUnit.DAYS);
     }
 
     private void closeSession(UserSession session, Enums.SessionStatus status) {
