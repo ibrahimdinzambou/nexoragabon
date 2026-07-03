@@ -697,7 +697,6 @@ function renderPlanStudio() {
 
 function planCard(plan) {
     const entitlements = plan.entitlements || [];
-    const paid = Number(plan.priceMonthly || 0) > 0;
     const enabledRules = entitlements.filter(entitlement => entitlement.enabled !== false);
     const categoryCount = enabledRules.filter(entitlement => entitlement.mode === "CATEGORY").length;
     const addonCount = enabledRules.filter(entitlement => entitlement.mode === "ADDON").length;
@@ -711,7 +710,7 @@ function planCard(plan) {
             <div><p class="admin-kicker">${escapeHtml(plan.highlight || plan.code)}</p><h3>${escapeHtml(plan.name)}</h3></div>
             ${badge(plan.active ? "ACTIVE" : "INACTIVE")}
         </div>
-        <div class="subscription-price"><strong>${money(plan.priceMonthly, plan.currency)}</strong><span>${paid ? `/${Number(plan.billingPeriodDays || 30)} j` : "gratuit"}</span></div>
+        <div class="subscription-price"><strong>${money(plan.priceMonthly, plan.currency)}</strong><span>/${Number(plan.billingPeriodDays || 30)} j</span></div>
         <p class="subscription-copy">${escapeHtml(plan.description || "Offre sans description.")}</p>
         <div class="subscription-steps">
             <span><b>${Number(plan.trialDays || 0)}</b><small>jours essai</small></span>

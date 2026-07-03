@@ -387,7 +387,9 @@ function renderPlans(plans) {
     plansGrid.innerHTML = activePlans.map((plan) => {
         const featured = plan.code === "pro";
         const price = formatPrice(plan);
-        const period = Number(plan.priceMonthly || 0) === 0 ? "pour commencer" : "/ mois";
+        const free = Number(plan.priceMonthly || 0) === 0;
+        const periodDays = Number(plan.billingPeriodDays || 30);
+        const period = `/${periodDays} jours`;
         return `
             <article class="plan-card ${featured ? "featured" : ""}">
                 <div class="plan-label">
@@ -404,7 +406,7 @@ function renderPlans(plans) {
                     <li>${plan.maxIptvAccounts} source${plan.maxIptvAccounts > 1 ? "s" : ""} IPTV</li>
                     <li>${plan.maxConcurrentStreams} stream${plan.maxConcurrentStreams > 1 ? "s" : ""} simultané${plan.maxConcurrentStreams > 1 ? "s" : ""}</li>
                     <li>${plan.storageGb} Go de stockage de service</li>
-                    <li>${plan.trialDays} jours d’essai</li>
+                    <li>${free ? `${periodDays} jours gratuits` : `${plan.trialDays} jours d’essai`}</li>
                 </ul>
                 <button class="plan-action" type="button" data-plan="${escapeHtml(plan.code)}">
                     ${Number(plan.priceMonthly || 0) === 0 ? "Commencer" : "Choisir cette offre"}
@@ -427,10 +429,10 @@ async function loadPlans() {
         renderPlans(body.data);
     } catch {
         renderPlans([
-            { code: "free", name: "Free", priceMonthly: 0, currency: "FCFA", trialDays: 7, maxUsers: 1, maxIptvAccounts: 1, maxConcurrentStreams: 1, storageGb: 1, active: true },
-            { code: "basic", name: "Basic", priceMonthly: 5000, currency: "FCFA", trialDays: 7, maxUsers: 2, maxIptvAccounts: 1, maxConcurrentStreams: 1, storageGb: 5, active: true },
-            { code: "pro", name: "Pro", priceMonthly: 15000, currency: "FCFA", trialDays: 7, maxUsers: 5, maxIptvAccounts: 3, maxConcurrentStreams: 3, storageGb: 20, active: true },
-            { code: "enterprise", name: "Enterprise", priceMonthly: 50000, currency: "FCFA", trialDays: 7, maxUsers: 25, maxIptvAccounts: 10, maxConcurrentStreams: 10, storageGb: 100, active: true }
+            { code: "free", name: "Free", priceMonthly: 0, currency: "FCFA", trialDays: 7, billingPeriodDays: 30, maxUsers: 1, maxIptvAccounts: 1, maxConcurrentStreams: 1, storageGb: 1, active: true },
+            { code: "basic", name: "Basic", priceMonthly: 5000, currency: "FCFA", trialDays: 7, billingPeriodDays: 30, maxUsers: 2, maxIptvAccounts: 1, maxConcurrentStreams: 1, storageGb: 5, active: true },
+            { code: "pro", name: "Pro", priceMonthly: 15000, currency: "FCFA", trialDays: 7, billingPeriodDays: 30, maxUsers: 5, maxIptvAccounts: 3, maxConcurrentStreams: 3, storageGb: 20, active: true },
+            { code: "enterprise", name: "Enterprise", priceMonthly: 50000, currency: "FCFA", trialDays: 7, billingPeriodDays: 30, maxUsers: 25, maxIptvAccounts: 10, maxConcurrentStreams: 10, storageGb: 100, active: true }
         ]);
     }
 }

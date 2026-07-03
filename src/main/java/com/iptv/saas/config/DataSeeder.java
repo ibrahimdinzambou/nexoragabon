@@ -30,6 +30,7 @@ public class DataSeeder {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataSeeder.class);
     private static final String LEGACY_SUPER_ADMIN_EMAIL = "admin@example.com";
     private static final String USER_SUPPLIED_LICENSE = "Manifeste fourni par l'utilisateur";
+    private static final int FREE_PERIOD_DAYS = 30;
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
 
@@ -307,6 +308,9 @@ public class DataSeeder {
         free.description = "Une porte d'entree simple pour tester l'espace client.";
         free.currency = "FCFA";
         free.highlight = "Decouverte";
+        if (free.billingPeriodDays == null || free.billingPeriodDays <= 1) {
+            free.billingPeriodDays = FREE_PERIOD_DAYS;
+        }
         basic.description = "Le socle familial avec le catalogue general.";
         basic.currency = "FCFA";
         basic.highlight = "Essentiel";

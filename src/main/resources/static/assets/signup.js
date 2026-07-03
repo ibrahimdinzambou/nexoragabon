@@ -81,6 +81,14 @@ function expectedTrialEnd(plan) {
     return date;
 }
 
+function expectedPeriodEnd(plan) {
+    const days = Number(plan?.billingPeriodDays || 30);
+    if (days <= 0) return null;
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return date;
+}
+
 function planFeatures(plan) {
     const features = [
         `${plan.maxUsers} utilisateur${plan.maxUsers > 1 ? "s" : ""}`,
@@ -98,21 +106,23 @@ function renderSelectedPlan() {
 
     const free = Number(plan.priceMonthly || 0) === 0;
     const trialDays = Number(plan.trialDays || 7);
+    const periodDays = Number(plan.billingPeriodDays || 30);
     const trialEnd = formatDate(expectedTrialEnd(plan));
+    const periodEnd = formatDate(expectedPeriodEnd(plan));
     elements.stepPlanName.textContent = plan.name;
     elements.planName.textContent = plan.name;
     elements.planMonogram.textContent = plan.name.charAt(0).toUpperCase();
     elements.planPrice.textContent = formatPrice(plan);
-    elements.planPeriod.textContent = free ? "pour toujours" : "/ mois";
+    elements.planPeriod.textContent = `/${periodDays} jours`;
     elements.summaryFeatures.innerHTML = planFeatures(plan)
         .map((feature) => `<li>${escapeHtml(feature)}</li>`)
         .join("");
-    elements.trialTitle.textContent = free ? "Accès gratuit" : `${trialDays} jours d’essai inclus`;
+    elements.trialTitle.textContent = free ? `${periodDays} jours gratuits` : `${trialDays} jours d’essai inclus`;
     elements.trialCopy.textContent = free
-        ? "Aucune carte bancaire nécessaire."
+        ? "Une seule periode gratuite par compte."
         : "Aucun paiement demandé aujourd’hui.";
     elements.billingNote.textContent = free
-        ? "Vous pourrez changer de formule depuis votre espace."
+        ? `Fin de la periode gratuite prevue le ${periodEnd || "selon la duree configuree"}.`
         : "La facturation sera confirmée avant la fin de votre essai.";
     if (!free && trialEnd) {
         elements.billingNote.textContent = `Fin de l'essai prévue le ${trialEnd}.`;
