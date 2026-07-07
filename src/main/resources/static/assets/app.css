@@ -3576,6 +3576,16 @@ body.compact-catalog .card-copy strong {
     white-space: nowrap;
 }
 
+.billing-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.billing-row-actions .text-button {
+    font-size: 11px;
+}
+
 .player-card {
     position: relative;
     z-index: 1;
@@ -7911,6 +7921,10 @@ body > main,
 
     .billing-payment-row div:last-child {
         text-align: left;
+    }
+
+    .billing-row-actions {
+        justify-content: flex-start;
     }
 
     .hero-meta span:nth-child(3) {

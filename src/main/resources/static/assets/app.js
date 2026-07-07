@@ -74,6 +74,7 @@ const state = {
     billingPlans: [],
     billingPaymentMethods: [],
     billingPayments: [],
+    billingInvoices: [],
     billingSelectedPlanCode: "",
     billingLoading: false,
     catalog: [...fallbackCatalog],
@@ -300,6 +301,8 @@ const elements = {
     billingPaymentSubmit: document.querySelector("#billingPaymentSubmit"),
     billingRefreshButton: document.querySelector("#billingRefreshButton"),
     billingPaymentsList: document.querySelector("#billingPaymentsList"),
+    billingInvoicesRefreshButton: document.querySelector("#billingInvoicesRefreshButton"),
+    billingInvoicesList: document.querySelector("#billingInvoicesList"),
     adminConsoleLink: document.querySelector("#adminConsoleLink"),
     logoutAllButton: document.querySelector("#logoutAllButton"),
     logoutButton: document.querySelector("#logoutButton"),
@@ -1181,6 +1184,7 @@ function renderBillingSettings() {
         : "IPTV non assigne";
     renderBillingPaymentForm();
     renderBillingPayments();
+    renderBillingInvoices();
 }
 
 function planIsPaid(plan) {
@@ -1220,15 +1224,17 @@ async function loadBillingSettings({ silent = false } = {}) {
     state.billingLoading = true;
     if (!silent) showBillingPaymentAlert("Chargement de la facturation...");
     try {
-        const [plans, methods, payments, current] = await Promise.all([
+        const [plans, methods, payments, invoices, current] = await Promise.all([
             api("/billing/plans"),
             api("/billing/payment-methods"),
             api("/billing/payments").catch(() => []),
+            api("/invoices").catch(() => []),
             api("/billing/current").catch(() => state.subscription)
         ]);
         state.billingPlans = Array.isArray(plans) ? plans.filter((plan) => plan.active !== false) : [];
         state.billingPaymentMethods = Array.isArray(methods) ? methods.filter((method) => method.active !== false) : [];
         state.billingPayments = Array.isArray(payments) ? payments : [];
+        state.billingInvoices = Array.isArray(invoices) ? invoices : [];
         state.subscription = current || state.subscription;
         if (!state.billingSelectedPlanCode && state.subscription?.plan?.code) {
             state.billingSelectedPlanCode = state.subscription.plan.code;
@@ -1240,10 +1246,12 @@ async function loadBillingSettings({ silent = false } = {}) {
         showBillingPaymentAlert(error.message || "Impossible de charger la facturation.", true);
         renderBillingPaymentForm();
         renderBillingPayments();
+        renderBillingInvoices();
     } finally {
         state.billingLoading = false;
         renderBillingPaymentForm();
         renderBillingPayments();
+        renderBillingInvoices();
     }
 }
 
@@ -1311,6 +1319,77 @@ function renderBillingPayments() {
             </div>
         </article>
     `).join("");
+}
+
+function renderBillingInvoices() {
+    if (!elements.billingInvoicesList) return;
+    if (state.billingLoading && !state.billingInvoices.length) {
+        elements.billingInvoicesList.innerHTML = `<p class="billing-empty">Chargement des factures...</p>`;
+        return;
+    }
+    if (!state.billingInvoices.length) {
+        elements.billingInvoicesList.innerHTML = `<p class="billing-empty">Aucune facture disponible. Elle apparaitra apres validation du paiement.</p>`;
+        return;
+    }
+    elements.billingInvoicesList.innerHTML = state.billingInvoices.slice(0, 6).map((invoice) => `
+        <article class="billing-payment-row">
+            <div>
+                <strong>${escapeHtml(invoice.invoiceNumber || `Facture #${invoice.id}`)}</strong>
+                <span>${escapeHtml(statusLabel(invoice.status))} - ${escapeHtml(formatAccountDate(invoice.issuedAt))}</span>
+            </div>
+            <div>
+                <strong>${escapeHtml(moneyLabel(invoice.amount, invoice.currency))}</strong>
+                <span class="billing-row-actions">
+                    <button class="text-button" type="button" data-invoice-download="${escapeHtml(invoice.id)}">Telecharger</button>
+                    <button class="text-button" type="button" data-invoice-resend="${escapeHtml(invoice.id)}">Renvoyer</button>
+                </span>
+            </div>
+        </article>
+    `).join("");
+}
+
+async function downloadInvoice(invoiceId) {
+    if (!invoiceId || !state.token) return;
+    showBillingPaymentAlert("Preparation de la facture...");
+    try {
+        const response = await fetch(apiUrl(`/invoices/${encodeURIComponent(invoiceId)}/download`), {
+            headers: {
+                Accept: "application/pdf",
+                Authorization: `Bearer ${state.token}`
+            }
+        });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.message || "Impossible de telecharger la facture.");
+        }
+        const blob = await response.blob();
+        const invoice = state.billingInvoices.find((item) => String(item.id) === String(invoiceId));
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${invoice?.invoiceNumber || `facture-${invoiceId}`}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        showBillingPaymentAlert("Facture telechargee.");
+        await loadBillingSettings({ silent: true });
+    } catch (error) {
+        showBillingPaymentAlert(error.message || "Impossible de telecharger la facture.", true);
+    }
+}
+
+async function resendInvoice(invoiceId) {
+    if (!invoiceId) return;
+    showBillingPaymentAlert("Envoi de la facture...");
+    try {
+        const invoice = await api(`/invoices/${encodeURIComponent(invoiceId)}/resend`, { method: "POST" });
+        state.billingInvoices = state.billingInvoices.map((item) => item.id === invoice.id ? invoice : item);
+        showBillingPaymentAlert("Facture envoyee par email.");
+        renderBillingInvoices();
+    } catch (error) {
+        showBillingPaymentAlert(error.message || "Impossible d'envoyer la facture.", true);
+    }
 }
 
 async function submitBillingPayment(event) {
@@ -7586,6 +7665,18 @@ elements.billingMethodSelect?.addEventListener("change", () => {
     elements.billingMethodInstructions.textContent = billingMethodInstructions(elements.billingMethodSelect.value);
 });
 elements.billingRefreshButton?.addEventListener("click", () => loadBillingSettings());
+elements.billingInvoicesRefreshButton?.addEventListener("click", () => loadBillingSettings());
+elements.billingInvoicesList?.addEventListener("click", (event) => {
+    const downloadButton = event.target.closest("[data-invoice-download]");
+    if (downloadButton) {
+        downloadInvoice(downloadButton.dataset.invoiceDownload);
+        return;
+    }
+    const resendButton = event.target.closest("[data-invoice-resend]");
+    if (resendButton) {
+        resendInvoice(resendButton.dataset.invoiceResend);
+    }
+});
 elements.settingsTwoFactor.addEventListener("change", toggleTwoFactor);
 elements.subscriptionGateAccount?.addEventListener("click", () => {
     openModal("profileModal");
