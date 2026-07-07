@@ -7,7 +7,7 @@
     <meta name="description" content="Votre espace de streaming personnel Nexora.">
     <title>Nexora Watch | TV, films et séries</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/app.css?v=20260703-subscription-gate-1">
+    <link rel="stylesheet" href="/assets/app.css?v=20260707-billing-payment-front-1">
 </head>
 <body>
 <div class="noise" aria-hidden="true"></div>
@@ -453,6 +453,35 @@
                         <div><dt id="settingsPeriodEndLabel">Fin de période</dt><dd id="settingsPeriodEnd">—</dd></div>
                         <div><dt>Streams inclus</dt><dd id="settingsStreams">—</dd></div>
                     </dl>
+                    <form class="billing-payment-form" id="billingPaymentForm">
+                        <p class="billing-payment-alert" id="billingPaymentAlert" hidden></p>
+                        <div class="billing-payment-grid">
+                            <label class="field">
+                                <span>Formule</span>
+                                <select id="billingPlanSelect" name="planCode" required></select>
+                            </label>
+                            <label class="field">
+                                <span>Moyen de paiement</span>
+                                <select id="billingMethodSelect" name="paymentMethodCode"></select>
+                            </label>
+                        </div>
+                        <p class="billing-method-instructions" id="billingMethodInstructions">Choisissez une formule et un moyen de paiement.</p>
+                        <label class="field" id="billingProofField">
+                            <span>Reference ou preuve de paiement</span>
+                            <input id="billingProofInput" name="proofUrl" type="text" placeholder="Ex. reference Mobile Money, virement, lien de capture">
+                        </label>
+                        <div class="billing-payment-footer">
+                            <span id="billingPaymentAmount">Montant: -</span>
+                            <button class="button button-primary" id="billingPaymentSubmit" type="submit">Envoyer le paiement</button>
+                        </div>
+                    </form>
+                    <div class="billing-payment-history">
+                        <div class="billing-history-heading">
+                            <p class="section-kicker">PAIEMENTS</p>
+                            <button class="text-button" id="billingRefreshButton" type="button">Actualiser</button>
+                        </div>
+                        <div class="billing-payment-list" id="billingPaymentsList"></div>
+                    </div>
                     <div class="settings-actions split-actions">
                         <a class="button button-outline" href="/api/invoices">Factures</a>
                         <a class="button button-outline" href="mailto:support@nexoragabon.com">Contacter le support</a>
@@ -688,6 +717,6 @@
 <script src="/assets/vendor/mpegts.js" defer></script>
 <script src="/assets/vendor/hls.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js" defer></script>
-<script src="/assets/app.js?v=20260703-subscription-formula-2" defer></script>
+<script src="/assets/app.js?v=20260707-billing-payment-front-1" defer></script>
 </body>
 </html>

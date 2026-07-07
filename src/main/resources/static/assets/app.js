@@ -71,6 +71,11 @@ const state = {
     organization: null,
     subscription: null,
     iptv: null,
+    billingPlans: [],
+    billingPaymentMethods: [],
+    billingPayments: [],
+    billingSelectedPlanCode: "",
+    billingLoading: false,
     catalog: [...fallbackCatalog],
     browseCatalog: [...fallbackCatalog],
     categories: [],
@@ -284,6 +289,17 @@ const elements = {
     settingsPeriodEndLabel: document.querySelector("#settingsPeriodEndLabel"),
     settingsPeriodEnd: document.querySelector("#settingsPeriodEnd"),
     settingsStreams: document.querySelector("#settingsStreams"),
+    billingPaymentForm: document.querySelector("#billingPaymentForm"),
+    billingPaymentAlert: document.querySelector("#billingPaymentAlert"),
+    billingPlanSelect: document.querySelector("#billingPlanSelect"),
+    billingMethodSelect: document.querySelector("#billingMethodSelect"),
+    billingMethodInstructions: document.querySelector("#billingMethodInstructions"),
+    billingProofField: document.querySelector("#billingProofField"),
+    billingProofInput: document.querySelector("#billingProofInput"),
+    billingPaymentAmount: document.querySelector("#billingPaymentAmount"),
+    billingPaymentSubmit: document.querySelector("#billingPaymentSubmit"),
+    billingRefreshButton: document.querySelector("#billingRefreshButton"),
+    billingPaymentsList: document.querySelector("#billingPaymentsList"),
     adminConsoleLink: document.querySelector("#adminConsoleLink"),
     logoutAllButton: document.querySelector("#logoutAllButton"),
     logoutButton: document.querySelector("#logoutButton"),
@@ -1163,6 +1179,188 @@ function renderBillingSettings() {
         : plan?.maxConcurrentStreams
         ? `${plan.maxConcurrentStreams} simultané${plan.maxConcurrentStreams > 1 ? "s" : ""} par utilisateur`
         : "IPTV non assigne";
+    renderBillingPaymentForm();
+    renderBillingPayments();
+}
+
+function planIsPaid(plan) {
+    return Number(plan?.priceMonthly || 0) > 0;
+}
+
+function selectedBillingPlan() {
+    return state.billingPlans.find((plan) => plan.code === state.billingSelectedPlanCode)
+        || state.billingPlans.find((plan) => plan.code === state.subscription?.plan?.code)
+        || state.billingPlans.find(planIsPaid)
+        || state.billingPlans[0]
+        || null;
+}
+
+function pendingPaymentForPlan(plan) {
+    if (!plan) return null;
+    return state.billingPayments.find((payment) => {
+        const status = String(payment.status || "").toUpperCase();
+        return status === "PENDING" && payment.plan?.code === plan.code;
+    }) || null;
+}
+
+function billingMethodInstructions(methodCode) {
+    const method = state.billingPaymentMethods.find((item) => item.code === methodCode);
+    return method?.instructions || "Effectuez le paiement puis indiquez la reference ou la preuve.";
+}
+
+function showBillingPaymentAlert(message, isError = false) {
+    if (!elements.billingPaymentAlert) return;
+    elements.billingPaymentAlert.textContent = message || "";
+    elements.billingPaymentAlert.hidden = !message;
+    elements.billingPaymentAlert.classList.toggle("error", Boolean(isError));
+}
+
+async function loadBillingSettings({ silent = false } = {}) {
+    if (!state.user || state.billingLoading) return;
+    state.billingLoading = true;
+    if (!silent) showBillingPaymentAlert("Chargement de la facturation...");
+    try {
+        const [plans, methods, payments, current] = await Promise.all([
+            api("/billing/plans"),
+            api("/billing/payment-methods"),
+            api("/billing/payments").catch(() => []),
+            api("/billing/current").catch(() => state.subscription)
+        ]);
+        state.billingPlans = Array.isArray(plans) ? plans.filter((plan) => plan.active !== false) : [];
+        state.billingPaymentMethods = Array.isArray(methods) ? methods.filter((method) => method.active !== false) : [];
+        state.billingPayments = Array.isArray(payments) ? payments : [];
+        state.subscription = current || state.subscription;
+        if (!state.billingSelectedPlanCode && state.subscription?.plan?.code) {
+            state.billingSelectedPlanCode = state.subscription.plan.code;
+        }
+        if (!silent) showBillingPaymentAlert("");
+        renderBillingSettings();
+        syncSubscriptionAccess();
+    } catch (error) {
+        showBillingPaymentAlert(error.message || "Impossible de charger la facturation.", true);
+        renderBillingPaymentForm();
+        renderBillingPayments();
+    } finally {
+        state.billingLoading = false;
+        renderBillingPaymentForm();
+        renderBillingPayments();
+    }
+}
+
+function renderBillingPaymentForm() {
+    if (!elements.billingPaymentForm) return;
+    const plan = selectedBillingPlan();
+    const pending = pendingPaymentForPlan(plan);
+    if (!state.billingSelectedPlanCode && plan?.code) state.billingSelectedPlanCode = plan.code;
+
+    elements.billingPlanSelect.innerHTML = state.billingPlans.length
+        ? state.billingPlans.map((item) => `
+            <option value="${escapeHtml(item.code)}" ${item.code === plan?.code ? "selected" : ""}>
+                ${escapeHtml(item.name)} - ${escapeHtml(moneyLabel(item.priceMonthly, item.currency))}
+            </option>
+        `).join("")
+        : `<option value="">Aucune formule disponible</option>`;
+
+    elements.billingMethodSelect.innerHTML = state.billingPaymentMethods.length
+        ? state.billingPaymentMethods.map((method) => `
+            <option value="${escapeHtml(method.code)}">${escapeHtml(method.name)}</option>
+        `).join("")
+        : `<option value="">Aucun moyen actif</option>`;
+
+    const paid = planIsPaid(plan);
+    elements.billingMethodSelect.disabled = !paid || !state.billingPaymentMethods.length;
+    elements.billingProofField.hidden = !paid;
+    elements.billingProofInput.required = paid;
+    elements.billingMethodInstructions.textContent = paid
+        ? billingMethodInstructions(elements.billingMethodSelect.value)
+        : "Cette formule ne necessite pas de paiement manuel.";
+    elements.billingPaymentAmount.textContent = plan
+        ? `Montant: ${moneyLabel(plan.priceMonthly, plan.currency)}`
+        : "Montant: -";
+
+    const disabled = state.billingLoading
+        || !plan
+        || (paid && (!state.billingPaymentMethods.length || Boolean(pending)));
+    elements.billingPaymentSubmit.disabled = disabled;
+    elements.billingPaymentSubmit.textContent = pending
+        ? `Paiement en attente ${pending.reference || ""}`.trim()
+        : paid
+            ? "Envoyer le paiement"
+            : "Activer cette formule";
+}
+
+function renderBillingPayments() {
+    if (!elements.billingPaymentsList) return;
+    if (state.billingLoading && !state.billingPayments.length) {
+        elements.billingPaymentsList.innerHTML = `<p class="billing-empty">Chargement des paiements...</p>`;
+        return;
+    }
+    if (!state.billingPayments.length) {
+        elements.billingPaymentsList.innerHTML = `<p class="billing-empty">Aucun paiement envoye pour le moment.</p>`;
+        return;
+    }
+    elements.billingPaymentsList.innerHTML = state.billingPayments.slice(0, 6).map((payment) => `
+        <article class="billing-payment-row">
+            <div>
+                <strong>${escapeHtml(payment.reference || `Paiement #${payment.id}`)}</strong>
+                <span>${escapeHtml(payment.plan?.name || "Formule")} - ${escapeHtml(payment.paymentMethod?.name || "Paiement manuel")}</span>
+            </div>
+            <div>
+                <strong>${escapeHtml(moneyLabel(payment.amount, payment.currency))}</strong>
+                <span>${escapeHtml(statusLabel(payment.status))} - ${escapeHtml(formatAccountDate(payment.createdAt))}</span>
+            </div>
+        </article>
+    `).join("");
+}
+
+async function submitBillingPayment(event) {
+    event.preventDefault();
+    const plan = selectedBillingPlan();
+    if (!plan) return;
+    const paid = planIsPaid(plan);
+    const pending = pendingPaymentForPlan(plan);
+    if (pending) {
+        showBillingPaymentAlert(`Un paiement est deja en attente: ${pending.reference || `#${pending.id}`}.`);
+        return;
+    }
+    const proof = elements.billingProofInput.value.trim();
+    if (paid && proof.length < 3) {
+        showBillingPaymentAlert("Indiquez la reference ou la preuve de paiement.", true);
+        elements.billingProofInput.focus();
+        return;
+    }
+
+    elements.billingPaymentSubmit.disabled = true;
+    showBillingPaymentAlert(paid ? "Envoi du paiement..." : "Activation de la formule...");
+    try {
+        if (paid) {
+            const payment = await api("/billing/payments", {
+                method: "POST",
+                body: JSON.stringify({
+                    planCode: plan.code,
+                    paymentMethodCode: elements.billingMethodSelect.value,
+                    proofUrl: proof
+                })
+            });
+            state.billingPayments = [payment, ...state.billingPayments.filter((item) => item.id !== payment.id)];
+            elements.billingProofInput.value = "";
+            showBillingPaymentAlert(`Paiement envoye. Reference: ${payment.reference || payment.id}.`);
+        } else {
+            state.subscription = await api("/billing/trial", {
+                method: "POST",
+                body: JSON.stringify({ planCode: plan.code })
+            });
+            showBillingPaymentAlert("Formule activee.");
+        }
+        await refreshProfile().catch(() => null);
+        await loadBillingSettings({ silent: true });
+        updateAccountUi();
+        refreshNotifications({ silent: true });
+    } catch (error) {
+        showBillingPaymentAlert(error.message || "Impossible d'envoyer le paiement.", true);
+    } finally {
+        renderBillingPaymentForm();
+    }
 }
 
 function normalizeItem(item, type, index) {
@@ -4315,6 +4513,9 @@ function switchSettingsTab(tab) {
     document.querySelectorAll("[data-settings-panel]").forEach((panel) => {
         panel.classList.toggle("active", panel.dataset.settingsPanel === tab);
     });
+    if (tab === "billing") {
+        loadBillingSettings({ silent: Boolean(state.billingPlans.length || state.billingPayments.length) });
+    }
 }
 
 async function submitProfileSettings(event) {
@@ -6694,6 +6895,10 @@ function typeLabel(type) {
 }
 
 function statusLabel(status) {
+    const normalized = String(status || "").toUpperCase();
+    if (normalized === "CANCELLED") return "Resilie";
+    if (normalized === "VERIFIED") return "Verifie";
+    if (normalized === "REJECTED") return "Rejete";
     return {
         ACTIVE: "Actif",
         TRIALING: "Période d’essai",
@@ -6702,7 +6907,7 @@ function statusLabel(status) {
         CANCELED: "Résilié",
         EXPIRED: "Expiré",
         PENDING: "En attente"
-    }[status] || status || "Inactif";
+    }[normalized] || status || "Inactif";
 }
 
 function escapeHtml(value) {
@@ -7371,6 +7576,16 @@ elements.settingsNav.addEventListener("click", (event) => {
 elements.profileSettingsForm.addEventListener("submit", submitProfileSettings);
 elements.playbackSettingsForm.addEventListener("submit", submitPlaybackSettings);
 elements.passwordSettingsForm.addEventListener("submit", submitPasswordSettings);
+elements.billingPaymentForm?.addEventListener("submit", submitBillingPayment);
+elements.billingPlanSelect?.addEventListener("change", () => {
+    state.billingSelectedPlanCode = elements.billingPlanSelect.value;
+    showBillingPaymentAlert("");
+    renderBillingPaymentForm();
+});
+elements.billingMethodSelect?.addEventListener("change", () => {
+    elements.billingMethodInstructions.textContent = billingMethodInstructions(elements.billingMethodSelect.value);
+});
+elements.billingRefreshButton?.addEventListener("click", () => loadBillingSettings());
 elements.settingsTwoFactor.addEventListener("change", toggleTwoFactor);
 elements.subscriptionGateAccount?.addEventListener("click", () => {
     openModal("profileModal");

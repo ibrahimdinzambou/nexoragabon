@@ -3469,6 +3469,113 @@ body.compact-catalog .card-copy strong {
     white-space: nowrap;
 }
 
+.billing-payment-form {
+    display: grid;
+    gap: 12px;
+    margin-top: 20px;
+    padding: 16px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.billing-payment-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.billing-payment-form .field {
+    margin-bottom: 0;
+}
+
+.billing-method-instructions,
+.billing-payment-alert,
+.billing-empty {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.billing-payment-alert {
+    padding: 10px 12px;
+    color: #f8d98f;
+    border-left: 2px solid var(--accent);
+    background: rgba(231, 195, 109, 0.08);
+}
+
+.billing-payment-alert.error {
+    color: #ffb0b0;
+    border-color: var(--danger);
+    background: rgba(235, 93, 93, 0.08);
+}
+
+.billing-payment-footer,
+.billing-history-heading,
+.billing-payment-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.billing-payment-footer span {
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.billing-payment-history {
+    display: grid;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.billing-history-heading {
+    align-items: end;
+}
+
+.text-button {
+    color: var(--accent);
+    font-size: 12px;
+}
+
+.billing-payment-list {
+    display: grid;
+    gap: 8px;
+}
+
+.billing-payment-row {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.billing-payment-row div {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+.billing-payment-row div:last-child {
+    text-align: right;
+}
+
+.billing-payment-row strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.billing-payment-row span {
+    overflow: hidden;
+    color: var(--dim);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .player-card {
     position: relative;
     z-index: 1;
@@ -7792,6 +7899,18 @@ body > main,
     .billing-summary div {
         grid-template-columns: 1fr;
         gap: 6px;
+    }
+
+    .billing-payment-grid,
+    .billing-payment-footer,
+    .billing-payment-row {
+        grid-template-columns: 1fr;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .billing-payment-row div:last-child {
+        text-align: left;
     }
 
     .hero-meta span:nth-child(3) {
