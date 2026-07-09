@@ -3605,7 +3605,6 @@ function isFrenchSource(value) {
         || sourceCode === "node-fr"
         || playbackProvider.startsWith("node-fr")
         || playbackProvider.startsWith("orion")
-        || categoryId === "tmdb-series-anime-vf"
         || categoryId.startsWith("orion~")
         || categoryId.startsWith("orion-french-")
         || source.includes("node-fr")

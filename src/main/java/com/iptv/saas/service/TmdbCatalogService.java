@@ -22,8 +22,6 @@ public class TmdbCatalogService {
     private static final String SOURCE = "TMDB";
     private static final String PLAYBACK_PROVIDER = "videasy";
     private static final String PLAYBACK_PROVIDER_NAME = "Videasy";
-    private static final String NODE_FR_PLAYBACK_PROVIDER = "node-fr";
-    private static final String NODE_FR_PLAYBACK_PROVIDER_NAME = "API Node FR";
     private static final int TMDB_PAGE_SIZE = 20;
     private static final List<Category> CATEGORIES = List.of(
             new Category("tmdb-movie-trending", "TMDB - Films tendances", TYPE_MOVIE, Kind.TRENDING, "trending"),
@@ -35,8 +33,7 @@ public class TmdbCatalogService {
             new Category("tmdb-series-popular", "TMDB - Series populaires", TYPE_SERIES, Kind.TV_LIST, "popular"),
             new Category("tmdb-series-on-the-air", "TMDB - En diffusion", TYPE_SERIES, Kind.TV_LIST, "on_the_air"),
             new Category("tmdb-series-top-rated", "TMDB - Series les mieux notees", TYPE_SERIES, Kind.TV_LIST, "top_rated"),
-            new Category("tmdb-series-korean-drama", "Drama coreens", TYPE_SERIES, Kind.DISCOVER_TV, "korean_drama"),
-            new Category("tmdb-series-anime-vf", "Animes VF", TYPE_SERIES, Kind.DISCOVER_TV, "anime_vf")
+            new Category("tmdb-series-korean-drama", "Drama coreens", TYPE_SERIES, Kind.DISCOVER_TV, "korean_drama")
     );
 
     private final TmdbMetadataService tmdb;
@@ -174,27 +171,14 @@ public class TmdbCatalogService {
             case TRENDING -> tmdb.trending(category.type(), page);
             case MOVIE_LIST -> tmdb.movieList(category.endpoint(), page);
             case TV_LIST -> tmdb.tvList(category.endpoint(), page);
-            case DISCOVER_TV -> tmdb.discoverTv(discoverTvFilters(category), page);
-        };
-    }
-
-    private Map<String, String> discoverTvFilters(Category category) {
-        if ("anime_vf".equals(category.endpoint())) {
-            return Map.of(
+            case DISCOVER_TV -> tmdb.discoverTv(Map.of(
                     "sort_by", "popularity.desc",
-                    "with_genres", "16",
-                    "with_origin_country", "JP",
-                    "with_original_language", "ja",
+                    "with_genres", "18",
+                    "with_origin_country", "KR",
+                    "with_original_language", "ko",
                     "include_null_first_air_dates", "false"
-            );
-        }
-        return Map.of(
-                "sort_by", "popularity.desc",
-                "with_genres", "18",
-                "with_origin_country", "KR",
-                "with_original_language", "ko",
-                "include_null_first_air_dates", "false"
-        );
+            ), page);
+        };
     }
 
     private void addResults(List<Map<String, Object>> result, JsonNode response, String type, Category category) {
@@ -239,8 +223,8 @@ public class TmdbCatalogService {
         payload.put("metadataAvailable", true);
         payload.put("streamAvailable", true);
         payload.put("externalPlayback", true);
-        putPlaybackProvider(payload, category);
-        putLanguageHints(payload, category);
+        payload.put("playbackProvider", PLAYBACK_PROVIDER);
+        payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
         payload.put("adult", item.path("adult").asBoolean(false));
         if (TYPE_SERIES.equals(type)) {
             payload.put("isSeries", true);
@@ -265,8 +249,8 @@ public class TmdbCatalogService {
         payload.put("ageRating", TYPE_MOVIE.equals(type) ? movieCertification(details) : tvCertification(details));
         payload.put("streamAvailable", true);
         payload.put("externalPlayback", true);
-        putPlaybackProvider(payload, category);
-        putLanguageHints(payload, category);
+        payload.put("playbackProvider", PLAYBACK_PROVIDER);
+        payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
         return payload;
     }
 
@@ -386,29 +370,6 @@ public class TmdbCatalogService {
                 "streamAvailable", true,
                 "adult", false
         );
-    }
-
-    private void putPlaybackProvider(Map<String, Object> payload, Category category) {
-        if (isAnimeVfCategory(category)) {
-            payload.put("playbackProvider", NODE_FR_PLAYBACK_PROVIDER);
-            payload.put("playbackProviderName", NODE_FR_PLAYBACK_PROVIDER_NAME);
-            return;
-        }
-        payload.put("playbackProvider", PLAYBACK_PROVIDER);
-        payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
-    }
-
-    private void putLanguageHints(Map<String, Object> payload, Category category) {
-        if (!isAnimeVfCategory(category)) {
-            return;
-        }
-        payload.put("language", "fr");
-        payload.put("languageName", "Francais / VF");
-        payload.put("audioLanguage", "fr");
-    }
-
-    private boolean isAnimeVfCategory(Category category) {
-        return category != null && "tmdb-series-anime-vf".equals(category.id());
     }
 
     private List<Category> matchingCategories(String type, String categoryId) {

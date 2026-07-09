@@ -58,20 +58,6 @@ class TmdbCatalogServiceTests {
     }
 
     @Test
-    void exposesAnimeVfSeriesCategory() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.start();
-        TmdbCatalogService service = service();
-
-        List<Map<String, Object>> categories = service.categories("series");
-
-        assertTrue(categories.stream().anyMatch(category ->
-                "tmdb-series-anime-vf".equals(category.get("id"))
-                        && "Animes VF".equals(category.get("name"))
-        ));
-    }
-
-    @Test
     void loadsMovieCategoryItemsMarkedAsTmdbAndVideasyPlayable() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/movie/popular", exchange -> json(exchange, """
@@ -180,48 +166,6 @@ class TmdbCatalogServiceTests {
         assertEquals("tmdb~series~96102", items.get(0).get("id"));
         assertEquals("videasy", items.get(0).get("playbackProvider"));
         assertEquals("Drama coreens", items.get(0).get("categoryName"));
-    }
-
-    @Test
-    void loadsAnimeVfDiscoveryWithNodeFrenchPlaybackHints() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
-        AtomicReference<String> query = new AtomicReference<>();
-        server.createContext("/discover/tv", exchange -> {
-            query.set(exchange.getRequestURI().getQuery());
-            json(exchange, """
-                    {"page":1,"results":[
-                      {
-                        "id":46260,
-                        "name":"Naruto",
-                        "overview":"Un ninja veut devenir Hokage.",
-                        "poster_path":"/naruto.jpg",
-                        "first_air_date":"2002-10-03",
-                        "vote_average":8.4
-                      }
-                    ]}
-                    """);
-        });
-        server.start();
-        TmdbCatalogService service = service();
-
-        List<Map<String, Object>> items = service.items(
-                "series",
-                null,
-                "tmdb-series-anime-vf",
-                null,
-                "default",
-                10
-        );
-
-        assertTrue(query.get().contains("with_genres=16"));
-        assertTrue(query.get().contains("with_origin_country=JP"));
-        assertTrue(query.get().contains("with_original_language=ja"));
-        assertEquals(1, items.size());
-        assertEquals("tmdb~series~46260", items.get(0).get("id"));
-        assertEquals("node-fr", items.get(0).get("playbackProvider"));
-        assertEquals("API Node FR", items.get(0).get("playbackProviderName"));
-        assertEquals("fr", items.get(0).get("language"));
-        assertEquals("Animes VF", items.get(0).get("categoryName"));
     }
 
     @Test
