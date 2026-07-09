@@ -45,6 +45,7 @@ public class StreamRelayService {
     private static final long SEEK_HEAD_ID = 0x114D9B74L;
     private static final long VOID_ID = 0xECL;
     private static final Pattern OPEN_RANGE = Pattern.compile("^bytes=(\\d+)-$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BYTE_RANGE_START = Pattern.compile("^bytes=(\\d+)-\\d*$", Pattern.CASE_INSENSITIVE);
     private static final Pattern CONTENT_RANGE = Pattern.compile(
             "^bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)$",
             Pattern.CASE_INSENSITIVE
@@ -70,7 +71,7 @@ public class StreamRelayService {
     });
 
     public StreamRelayService(
-            @Value("${app.iptv.proxy-range-chunk-bytes:4194304}") long rangeChunkBytes,
+            @Value("${app.iptv.proxy-range-chunk-bytes:16777216}") long rangeChunkBytes,
             @Value("${app.iptv.proxy-connect-timeout-seconds:15}") long connectTimeoutSeconds,
             @Value("${app.iptv.proxy-request-timeout-seconds:30}") long requestTimeoutSeconds,
             @Value("${app.iptv.proxy-first-byte-timeout-seconds:15}") long firstByteTimeoutSeconds
@@ -387,10 +388,21 @@ public class StreamRelayService {
                     throw upstreamFailure(status);
                 }
 
+                Optional<String> contentRange = response.headers().firstValue("Content-Range");
+                if (response.statusCode() == 200 && isNonZeroRange(upstreamRange) && contentRange.isEmpty()) {
+                    response.body().close();
+                    LOGGER.warn(
+                            "Flux IPTV sans support seek: host={}, path={}, range={}",
+                            uri.getHost(),
+                            safePath(uri),
+                            upstreamRange
+                    );
+                    throw ApiException.serviceUnavailable("Le fournisseur ne respecte pas les plages video");
+                }
+
                 String contentType = response.headers().firstValue("Content-Type")
                         .orElseGet(() -> inferredContentType(uri.getPath()));
                 OptionalLong contentLength = response.headers().firstValueAsLong("Content-Length");
-                Optional<String> contentRange = response.headers().firstValue("Content-Range");
                 Optional<String> acceptRanges = response.headers().firstValue("Accept-Ranges");
                 return new RelayResponse(
                         response.statusCode(),
@@ -555,6 +567,21 @@ public class StreamRelayService {
                 ? Long.MAX_VALUE
                 : start + rangeChunkBytes - 1;
         return "bytes=" + start + "-" + end;
+    }
+
+    private boolean isNonZeroRange(String range) {
+        if (range == null || range.isBlank()) {
+            return false;
+        }
+        Matcher matcher = BYTE_RANGE_START.matcher(range.strip());
+        if (!matcher.matches()) {
+            return false;
+        }
+        try {
+            return Long.parseLong(matcher.group(1)) > 0;
+        } catch (NumberFormatException exception) {
+            return false;
+        }
     }
 
     private URI streamUri(String value) {

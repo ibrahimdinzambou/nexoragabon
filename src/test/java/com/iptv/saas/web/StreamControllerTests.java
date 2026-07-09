@@ -66,6 +66,40 @@ class StreamControllerTests {
     }
 
     @Test
+    void exposesPartialContentHeadersForSeekableVideoResponses() throws Exception {
+        StreamingService streams = mock(StreamingService.class);
+        StreamRelayService relay = mock(StreamRelayService.class);
+        VlcRemuxService remux = mock(VlcRemuxService.class);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        StreamController controller = controller(streams, relay, remux);
+
+        byte[] payload = new byte[]{7, 8, 9};
+        UserSession session = session("token", "https://cdn.test/movie.mp4");
+        session.contentType = "movie";
+        when(streams.getActiveByToken("token")).thenReturn(session);
+        when(request.getHeader(HttpHeaders.RANGE)).thenReturn("bytes=500-");
+        when(relay.open(session.streamUrl, "bytes=500-")).thenReturn(new StreamRelayService.RelayResponse(
+                206,
+                "video/mp4",
+                (long) payload.length,
+                "bytes 500-502/10000",
+                null,
+                true,
+                new ByteArrayInputStream(payload)
+        ));
+
+        ResponseEntity<StreamingResponseBody> response = controller.proxy("token", request);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        response.getBody().writeTo(output);
+
+        assertEquals(206, response.getStatusCode().value());
+        assertEquals("bytes 500-502/10000", response.getHeaders().getFirst(HttpHeaders.CONTENT_RANGE));
+        assertEquals("bytes", response.getHeaders().getFirst(HttpHeaders.ACCEPT_RANGES));
+        assertEquals(String.valueOf(payload.length), response.getHeaders().getFirst(HttpHeaders.CONTENT_LENGTH));
+        assertEquals(payload.length, output.toByteArray().length);
+    }
+
+    @Test
     void doesNotFailoverAssignedIptvAccountProxyFailures() {
         StreamingService streams = mock(StreamingService.class);
         StreamRelayService relay = mock(StreamRelayService.class);
@@ -90,7 +124,7 @@ class StreamControllerTests {
     }
 
     @Test
-    void omitsContentLengthForPartialProxyResponses() throws Exception {
+    void exposesContentLengthForPartialProxyResponses() throws Exception {
         StreamingService streams = mock(StreamingService.class);
         StreamRelayService relay = mock(StreamRelayService.class);
         VlcRemuxService remux = mock(VlcRemuxService.class);
@@ -116,7 +150,7 @@ class StreamControllerTests {
         response.getBody().writeTo(output);
 
         assertEquals(206, response.getStatusCode().value());
-        assertEquals(-1, response.getHeaders().getContentLength());
+        assertEquals(payload.length, response.getHeaders().getContentLength());
         assertEquals("bytes 0-3/100", response.getHeaders().getFirst(HttpHeaders.CONTENT_RANGE));
         assertEquals(payload.length, output.size());
     }

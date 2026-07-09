@@ -11,13 +11,19 @@ const NETWORK_RETRY_DELAYS = [700, 1800, 4000];
 const STREAM_OPEN_RETRY_DELAYS = [500, 1200];
 const IMAGE_RETRY_LIMIT = 2;
 const PLAYER_RECOVERY_DELAY_MS = 6000;
+const PLAYER_VOD_RECOVERY_DELAY_MS = 12000;
 const PLAYER_STARTUP_TIMEOUT_MS = 18000;
+const PLAYER_VOD_STARTUP_TIMEOUT_MS = 24000;
 const STREAM_PREFLIGHT_TIMEOUT_MS = 12000;
 const PLAYER_VISUAL_WATCHDOG_MS = 8000;
 const PLAYER_VISUAL_WATCHDOG_MAX_MS = 24000;
 const PLAYER_MAX_RECOVERY_ATTEMPTS = 4;
 const PLAYER_MANUAL_PAUSE_WINDOW_MS = 1400;
 const PLAYER_PAUSE_RESUME_DELAY_MS = 900;
+const PLAYER_SEEK_RECOVERY_GRACE_MS = 12000;
+const PLAYER_RESUME_MIN_TIME_SECONDS = 5;
+const PLAYER_RESUME_END_GUARD_SECONDS = 12;
+const PLAYER_RESUME_SEEK_TIMEOUT_MS = 6000;
 const DASH_MANIFEST_TIMEOUT_MS = 10000;
 const DASH_PLAY_PROMISE_TIMEOUT_MS = 7000;
 const SEARCH_DEBOUNCE_MS = 550;
@@ -137,6 +143,12 @@ const state = {
     playerRecovering: false,
     playerRecoveryShouldFailover: false,
     playerLastProgressAt: 0,
+    playerLastKnownTime: 0,
+    playerSeeking: false,
+    playerSeekGraceUntil: 0,
+    playerLastSeekAt: 0,
+    playerLastSeekTime: 0,
+    playerWasPausedBeforeSeek: false,
     playerVisualWatchTimer: null,
     playerPauseResumeTimer: null,
     playerLastUserIntentAt: 0,
@@ -3590,9 +3602,13 @@ function isFrenchSource(value) {
     const categoryId = String(value?.categoryId || value?.id || "").toLowerCase();
     const source = String(value?.source || value?.provider || "").toLowerCase();
     return sourceCode === "orion"
+        || sourceCode === "node-fr"
+        || playbackProvider.startsWith("node-fr")
         || playbackProvider.startsWith("orion")
+        || categoryId === "tmdb-series-anime-vf"
         || categoryId.startsWith("orion~")
         || categoryId.startsWith("orion-french-")
+        || source.includes("node-fr")
         || source.includes("orion");
 }
 
@@ -4995,12 +5011,12 @@ async function playItem(item, options = {}) {
         showToast("Ce programme est un aperçu sans flux vidéo. Rechargez le catalogue.", true);
         return;
     }
-    if (isTmdbPlayable(item)) {
-        await playTmdbItem(item);
-        return;
-    }
     if (item.streamAvailable === false && !isTmdbPlayable(item)) {
         showToast(item.streamUnavailableReason || "Ce contenu n'a pas de flux IPTV actif disponible.", true);
+        return;
+    }
+    if (isTmdbPlayable(item) && !shouldUseNodeFrenchPlayback(item)) {
+        await playTmdbItem(item);
         return;
     }
     if (state.playerOpening) return;
@@ -5100,9 +5116,10 @@ async function changePlayerQuality(event) {
         "Le flux redémarre avec le nouveau débit."
     );
     try {
+        const resumeTime = snapshotPlaybackResumeTime();
         detachPlayerMedia();
         await settleDetachedPlayer();
-        await restartActiveSessionWithQuality(item, requestedQuality);
+        await restartActiveSessionWithQuality(item, requestedQuality, { startTime: resumeTime });
     } catch (error) {
         if (requestedQuality !== "auto") {
             try {
@@ -5377,13 +5394,13 @@ function positiveInteger(value) {
     return Number.isFinite(number) && number > 0 ? Math.trunc(number) : 0;
 }
 
-async function restartActiveSessionWithQuality(item, requestedQuality) {
+async function restartActiveSessionWithQuality(item, requestedQuality, options = {}) {
     const stream = await api(`/stream/quality/${state.activeSessionToken}`, {
         method: "POST",
         body: JSON.stringify({ quality: requestedQuality }),
         retryTransient: true
     });
-    await startStreamFromPayload(item, stream, requestedQuality);
+    await startStreamFromPayload(item, stream, requestedQuality, options);
 }
 
 async function fallbackActiveSessionToAuto(message) {
@@ -5391,17 +5408,18 @@ async function fallbackActiveSessionToAuto(message) {
         return false;
     }
     const previousQuality = state.activePlaybackQuality;
+    const resumeTime = snapshotPlaybackResumeTime();
     setPlayerLoading("Retour en mode automatique...", message || "La qualite forcee ne demarre pas.");
     elements.playerQuality.value = "auto";
     saveProfileSettings({ quality: "auto" });
     detachPlayerMedia();
     await settleDetachedPlayer();
-    await restartActiveSessionWithQuality(state.activePlayerItem, "auto");
+    await restartActiveSessionWithQuality(state.activePlayerItem, "auto", { startTime: resumeTime });
     showToast(message || `${qualityLabel(previousQuality)} instable, retour en Auto.`);
     return true;
 }
 
-async function startStreamFromPayload(item, stream, requestedQuality) {
+async function startStreamFromPayload(item, stream, requestedQuality, options = {}) {
     applyStreamPayload(stream, requestedQuality);
     setPlayerLoading("Verification du flux...", "Nexora choisit la source la plus stable.");
     const verifiedStream = await preflightActiveStream(requestedQuality);
@@ -5420,7 +5438,10 @@ async function startStreamFromPayload(item, stream, requestedQuality) {
     await startStreamPlayback(
         item,
         verifiedStream.proxyUrl,
-        verifiedStream.playbackMode
+        verifiedStream.playbackMode,
+        {
+            startTime: options.startTime
+        }
     );
 }
 
@@ -5626,10 +5647,187 @@ function attemptStreamPlayerPlay(generation, options = {}) {
     return attemptPlaybackPromise(() => elements.streamPlayer.play(), generation, options);
 }
 
+function isVodPlayback(item = state.activePlayerItem) {
+    return item && item.type !== "live";
+}
+
+function playerRecoveryDelayMs() {
+    return isVodPlayback() ? PLAYER_VOD_RECOVERY_DELAY_MS : PLAYER_RECOVERY_DELAY_MS;
+}
+
+function playerStartupTimeoutMs() {
+    return isVodPlayback() ? PLAYER_VOD_STARTUP_TIMEOUT_MS : PLAYER_STARTUP_TIMEOUT_MS;
+}
+
+function safeStreamPlayerTime() {
+    const time = Number(elements.streamPlayer.currentTime);
+    return Number.isFinite(time) && time > 0 ? time : 0;
+}
+
+function rememberStreamPlayerTime() {
+    const time = safeStreamPlayerTime();
+    if (time > 0) {
+        state.playerLastKnownTime = time;
+    }
+    return time;
+}
+
+function canResumePlaybackPosition(item = state.activePlayerItem, playbackMode = state.activePlaybackMode) {
+    return Boolean(item && isVodPlayback(item) && playbackMode && playbackMode !== "embed");
+}
+
+function normalizedResumeTime(value) {
+    const time = Number(value);
+    if (!Number.isFinite(time) || time < PLAYER_RESUME_MIN_TIME_SECONDS) {
+        return 0;
+    }
+    const duration = Number(elements.streamPlayer.duration);
+    if (Number.isFinite(duration)
+        && duration > 0
+        && time >= Math.max(0, duration - PLAYER_RESUME_END_GUARD_SECONDS)) {
+        return 0;
+    }
+    return Math.max(0, time);
+}
+
+function snapshotPlaybackResumeTime() {
+    if (!canResumePlaybackPosition()) {
+        return 0;
+    }
+    return normalizedResumeTime(
+        safeStreamPlayerTime()
+        || state.playerLastSeekTime
+        || state.playerLastKnownTime
+    );
+}
+
+function isPlayerSeekSettling() {
+    return state.playerSeeking || Date.now() < state.playerSeekGraceUntil;
+}
+
+function waitForStreamPlayerReady(generation, timeoutMs = PLAYER_RESUME_SEEK_TIMEOUT_MS) {
+    const video = elements.streamPlayer;
+    if (generation !== state.playerGeneration || video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        let settled = false;
+        let timeoutId = null;
+        const events = ["loadedmetadata", "durationchange", "canplay"];
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            events.forEach((eventName) => video.removeEventListener(eventName, finish));
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+            resolve();
+        };
+        events.forEach((eventName) => video.addEventListener(eventName, finish, { once: true }));
+        timeoutId = window.setTimeout(finish, timeoutMs);
+    });
+}
+
+function waitForStreamPlayerSeeked(generation, timeoutMs = 2500) {
+    const video = elements.streamPlayer;
+    if (generation !== state.playerGeneration || !video.seeking) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        let settled = false;
+        let timeoutId = null;
+        const events = ["seeked", "canplay", "timeupdate"];
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            events.forEach((eventName) => video.removeEventListener(eventName, finish));
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+            resolve();
+        };
+        events.forEach((eventName) => video.addEventListener(eventName, finish, { once: true }));
+        timeoutId = window.setTimeout(finish, timeoutMs);
+    });
+}
+
+async function restoreStreamPlayerTime(startTime, generation) {
+    const resumeTime = normalizedResumeTime(startTime);
+    if (!resumeTime || generation !== state.playerGeneration) {
+        return;
+    }
+    await waitForStreamPlayerReady(generation);
+    if (generation !== state.playerGeneration) {
+        return;
+    }
+    const target = normalizedResumeTime(resumeTime);
+    if (!target) {
+        return;
+    }
+    try {
+        elements.streamPlayer.currentTime = target;
+        state.playerLastSeekTime = target;
+        state.playerSeekGraceUntil = Date.now() + PLAYER_SEEK_RECOVERY_GRACE_MS;
+        await waitForStreamPlayerSeeked(generation);
+    } catch {
+        // Some live-like VOD providers expose no seekable range until more data is buffered.
+    }
+}
+
+function hlsPlayerConfig(item, startTime = 0) {
+    const live = item?.type === "live";
+    const config = {
+        enableWorker: true,
+        lowLatencyMode: live,
+        backBufferLength: live ? 30 : 180,
+        maxBufferLength: live ? 30 : 90,
+        maxMaxBufferLength: live ? 45 : 180,
+        maxBufferSize: live ? 40 * 1000 * 1000 : 160 * 1000 * 1000,
+        maxBufferHole: 1.5,
+        maxFragLookUpTolerance: 0.35,
+        nudgeOffset: 0.2,
+        nudgeMaxRetry: 5,
+        capLevelToPlayerSize: true,
+        startFragPrefetch: !live,
+        testBandwidth: true,
+        manifestLoadingTimeOut: 15000,
+        manifestLoadingMaxRetry: 4,
+        manifestLoadingRetryDelay: 700,
+        manifestLoadingMaxRetryTimeout: 12000,
+        levelLoadingTimeOut: 15000,
+        levelLoadingMaxRetry: 5,
+        levelLoadingRetryDelay: 700,
+        levelLoadingMaxRetryTimeout: 12000,
+        fragLoadingTimeOut: live ? 15000 : 25000,
+        fragLoadingMaxRetry: live ? 4 : 7,
+        fragLoadingRetryDelay: 700,
+        fragLoadingMaxRetryTimeout: live ? 10000 : 16000
+    };
+    const resumeTime = live ? 0 : normalizedResumeTime(startTime);
+    if (resumeTime) {
+        config.startPosition = resumeTime;
+    }
+    if (live) {
+        config.liveSyncDurationCount = 3;
+        config.liveMaxLatencyDurationCount = 8;
+    }
+    return config;
+}
+
 async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     const streamUrl = resolveApiResourceUrl(proxyUrl);
     const generation = state.playerGeneration + 1;
+    const startTime = canResumePlaybackPosition(item, playbackMode)
+        ? normalizedResumeTime(options.startTime)
+        : 0;
     state.playerGeneration = generation;
+    if (!startTime) {
+        state.playerLastKnownTime = 0;
+        state.playerLastSeekTime = 0;
+    }
+    state.playerSeeking = false;
+    state.playerSeekGraceUntil = 0;
+    state.playerWasPausedBeforeSeek = false;
     state.activeProxyUrl = proxyUrl;
     state.activePlaybackMode = playbackMode;
     state.activeEmbedFallbackUrl = playbackMode === "hls" ? options.embedFallbackUrl || null : null;
@@ -5687,6 +5885,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
         });
         player.initialize(elements.streamPlayer, streamUrl, false);
         try {
+            await restoreStreamPlayerTime(startTime, generation);
             await attemptStreamPlayerPlay(generation, { waitForAttempt: true });
         } catch (error) {
             destroyDashPlayer(player);
@@ -5697,17 +5896,14 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     if (playbackMode === "hls") {
         if (elements.streamPlayer.canPlayType("application/vnd.apple.mpegurl")) {
             elements.streamPlayer.src = streamUrl;
+            await restoreStreamPlayerTime(startTime, generation);
             await attemptStreamPlayerPlay(generation);
             return;
         }
         if (!window.Hls?.isSupported?.()) {
             throw new Error("Lecteur HLS indisponible dans ce navigateur.");
         }
-        const player = new window.Hls({
-            enableWorker: true,
-            lowLatencyMode: item.type === "live",
-            backBufferLength: item.type === "live" ? 30 : 90
-        });
+        const player = new window.Hls(hlsPlayerConfig(item, startTime));
         let mediaRecoveries = 0;
         state.hlsPlayer = player;
         player.on(window.Hls.Events.ERROR, (event, data) => {
@@ -5725,6 +5921,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
                 preferredSubtitleLanguage: state.activePreferredSubtitleLanguage,
                 enableSubtitles: Boolean(options.enableSubtitles)
             });
+            await restoreStreamPlayerTime(startTime, generation);
             await attemptStreamPlayerPlay(generation, { waitForAttempt: true });
         } catch (error) {
             if (!isPlaybackPermissionError(error)) {
@@ -5773,6 +5970,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
         });
         try {
             player.load();
+            await restoreStreamPlayerTime(startTime, generation);
             await attemptPlaybackPromise(() => player.play(), generation);
         } catch (error) {
             destroyMpegtsPlayer(player);
@@ -5782,6 +5980,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     }
 
     elements.streamPlayer.src = streamUrl;
+    await restoreStreamPlayerTime(startTime, generation);
     await attemptStreamPlayerPlay(generation);
 }
 
@@ -6129,6 +6328,8 @@ function setPlayerLoading(placeholderText, statusText) {
 function setPlayerPlaying() {
     state.playerHasStarted = true;
     state.playerUserPaused = false;
+    state.playerSeeking = false;
+    rememberStreamPlayerTime();
     state.playerErrorShown = false;
     state.playerLastProgressAt = Date.now();
     clearPlayerRecoveryTimer();
@@ -6229,6 +6430,43 @@ function markPlayerUserPaused() {
     clearPlayerStartupTimer();
     clearPlayerPauseResumeTimer();
     clearPlayerVisualWatchdog();
+}
+
+function markPlayerSeekStarted() {
+    if (!hasActivePlayback() || state.activePlaybackMode === "embed") {
+        return;
+    }
+    rememberStreamPlayerTime();
+    state.playerSeeking = true;
+    state.playerLastSeekAt = Date.now();
+    state.playerLastSeekTime = safeStreamPlayerTime();
+    state.playerWasPausedBeforeSeek = Boolean(elements.streamPlayer.paused && state.playerUserPaused);
+    state.playerSeekGraceUntil = Date.now() + PLAYER_SEEK_RECOVERY_GRACE_MS;
+    clearPlayerRecoveryTimer();
+    clearPlayerPauseResumeTimer();
+    elements.playerPlaceholder.hidden = true;
+    elements.playerMessage.textContent = "Recherche de la nouvelle position...";
+}
+
+function markPlayerSeekSettled() {
+    if (!hasActivePlayback() || state.activePlaybackMode === "embed") {
+        return;
+    }
+    state.playerSeeking = false;
+    state.playerLastSeekAt = Date.now();
+    state.playerLastSeekTime = rememberStreamPlayerTime();
+    state.playerSeekGraceUntil = Date.now() + PLAYER_SEEK_RECOVERY_GRACE_MS;
+    state.playerLastProgressAt = Date.now();
+    clearPlayerRecoveryTimer();
+    if (state.playerWasPausedBeforeSeek) {
+        state.playerWasPausedBeforeSeek = false;
+        elements.playerMessage.textContent = "Lecture en pause.";
+        return;
+    }
+    state.playerWasPausedBeforeSeek = false;
+    if (state.playerHasStarted && elements.streamPlayer.paused && !elements.streamPlayer.ended) {
+        schedulePausedPlaybackResume();
+    }
 }
 
 function schedulePausedPlaybackResume() {
@@ -6494,7 +6732,7 @@ function schedulePlayerStartupWatchdog(generation) {
             return;
         }
         schedulePlayerRecovery("Le flux met trop de temps a demarrer.", true, true);
-    }, PLAYER_STARTUP_TIMEOUT_MS);
+    }, playerStartupTimeoutMs());
 }
 
 function schedulePlayerRecovery(reason, immediate = false, preferFailover = false) {
@@ -6502,6 +6740,17 @@ function schedulePlayerRecovery(reason, immediate = false, preferFailover = fals
         return;
     }
     state.playerRecoveryShouldFailover = state.playerRecoveryShouldFailover || Boolean(preferFailover);
+    if (isPlayerSeekSettling()) {
+        if (!state.playerRecoveryTimer) {
+            const delay = Math.max(1200, state.playerSeekGraceUntil - Date.now());
+            elements.playerMessage.textContent = "Recherche de la nouvelle position...";
+            state.playerRecoveryTimer = window.setTimeout(() => {
+                state.playerRecoveryTimer = null;
+                schedulePlayerRecovery(reason, false, preferFailover);
+            }, delay);
+        }
+        return;
+    }
     if (state.playerRecoveryTimer) {
         if (!preferFailover) {
             return;
@@ -6509,11 +6758,12 @@ function schedulePlayerRecovery(reason, immediate = false, preferFailover = fals
         clearPlayerRecoveryTimer();
     }
     const stalledFor = Date.now() - state.playerLastProgressAt;
+    const recoveryDelay = playerRecoveryDelayMs();
     const delay = immediate
         ? 500
-        : state.playerHasStarted && stalledFor > PLAYER_RECOVERY_DELAY_MS
+        : state.playerHasStarted && stalledFor > recoveryDelay
         ? 900
-        : PLAYER_RECOVERY_DELAY_MS;
+        : recoveryDelay;
     elements.playerMessage.textContent = reason || "Le flux ralentit, tentative de reprise...";
     state.playerRecoveryTimer = window.setTimeout(() => recoverPlayer(reason), delay);
 }
@@ -6531,6 +6781,7 @@ async function recoverPlayer(reason) {
     state.playerRecovering = true;
     state.playerRecoveryAttempts += 1;
     const preferFailover = state.playerRecoveryShouldFailover;
+    const resumeTime = snapshotPlaybackResumeTime();
     state.playerRecoveryShouldFailover = false;
 
     try {
@@ -6555,7 +6806,7 @@ async function recoverPlayer(reason) {
             if (state.activeCanFailover) {
                 const failover = await tryFailoverPlayer();
                 if (failover) {
-                    await restartPlaybackFromPayload(failover);
+                    await restartPlaybackFromPayload(failover, { startTime: resumeTime });
                     return;
                 }
             }
@@ -6566,12 +6817,16 @@ async function recoverPlayer(reason) {
         if (state.activeCanFailover && state.playerRecoveryAttempts > 1) {
             const failover = await tryFailoverPlayer();
             if (failover) {
-                await restartPlaybackFromPayload(failover);
+                await restartPlaybackFromPayload(failover, { startTime: resumeTime });
                 return;
             }
         }
 
-        await restartCurrentPlayback();
+        await restartCurrentPlayback(
+            state.activeProxyUrl,
+            state.activePlaybackMode,
+            { startTime: resumeTime }
+        );
     } catch (error) {
         if (isInactiveSessionError(error)) {
             showPlayerError("Cette session de lecture a expire. Relancez le programme.");
@@ -6583,7 +6838,7 @@ async function recoverPlayer(reason) {
         }
         state.playerRecoveryTimer = window.setTimeout(
             () => recoverPlayer(error.message || reason),
-            PLAYER_RECOVERY_DELAY_MS
+            playerRecoveryDelayMs()
         );
     } finally {
         state.playerRecovering = false;
@@ -6605,23 +6860,31 @@ async function tryFailoverPlayer() {
     }
 }
 
-async function restartPlaybackFromPayload(stream) {
+async function restartPlaybackFromPayload(stream, options = {}) {
     applyStreamPayload(stream, stream.quality || state.activePlaybackQuality || "auto");
     startHeartbeat();
     await restartCurrentPlayback(
         stream.proxyUrl,
-        stream.playbackMode
+        stream.playbackMode,
+        options
     );
 }
 
-async function restartCurrentPlayback(proxyUrl = state.activeProxyUrl, playbackMode = state.activePlaybackMode) {
+async function restartCurrentPlayback(
+    proxyUrl = state.activeProxyUrl,
+    playbackMode = state.activePlaybackMode,
+    options = {}
+) {
     if (!state.activePlayerItem || !proxyUrl || !playbackMode) {
         throw new Error("Session de lecture incomplète.");
     }
+    const resumeTime = options.startTime || snapshotPlaybackResumeTime();
     detachPlayerMedia();
     state.playerHasStarted = false;
     state.playerLastProgressAt = Date.now();
-    await startStreamPlayback(state.activePlayerItem, proxyUrl, playbackMode);
+    await startStreamPlayback(state.activePlayerItem, proxyUrl, playbackMode, {
+        startTime: resumeTime
+    });
 }
 
 function detachPlayerMedia() {
@@ -6635,6 +6898,11 @@ function detachPlayerMedia() {
     clearEmbedAssistTimer();
     state.playerVisualWatchStartedAt = 0;
     state.playerLastUserIntentAt = 0;
+    state.playerSeeking = false;
+    state.playerSeekGraceUntil = 0;
+    state.playerLastSeekAt = 0;
+    state.playerLastSeekTime = 0;
+    state.playerWasPausedBeforeSeek = false;
     state.playerUserPaused = false;
     state.playerVisualFallbackPending = false;
     state.nativePlaybackRequiresUserLaunch = false;
@@ -7729,6 +7997,8 @@ elements.embedPlayer.addEventListener("load", () => {
 elements.streamPlayer.addEventListener("pointerdown", markPlayerUserIntent);
 elements.streamPlayer.addEventListener("keydown", markPlayerUserIntent);
 elements.streamPlayer.addEventListener("touchstart", markPlayerUserIntent, { passive: true });
+elements.streamPlayer.addEventListener("seeking", markPlayerSeekStarted);
+elements.streamPlayer.addEventListener("seeked", markPlayerSeekSettled);
 
 elements.streamPlayer.addEventListener("playing", () => {
     if (hasActivePlayback()) {
@@ -7777,6 +8047,7 @@ elements.streamPlayer.addEventListener("canplay", () => {
 
 elements.streamPlayer.addEventListener("timeupdate", () => {
     if (hasActivePlayback() && !elements.streamPlayer.paused && elements.streamPlayer.currentTime > 0) {
+        rememberStreamPlayerTime();
         state.playerLastProgressAt = Date.now();
         setPlayerPlaying();
     }
@@ -7794,6 +8065,10 @@ elements.streamPlayer.addEventListener("pause", () => {
     if (state.playerDetaching) return;
     if (hasActivePlayback() && state.playerHasStarted && !elements.streamPlayer.ended) {
         elements.playerPlaceholder.hidden = true;
+        if (state.playerSeeking || elements.streamPlayer.seeking) {
+            elements.playerMessage.textContent = "Recherche de la nouvelle position...";
+            return;
+        }
         if (isLikelyManualPause()) {
             markPlayerUserPaused();
             elements.playerMessage.textContent = "Lecture en pause.";

@@ -351,8 +351,9 @@ public class StreamController {
         if (remote.contentRange() != null) {
             response.header(HttpHeaders.CONTENT_RANGE, remote.contentRange());
         }
-        if (remote.acceptRanges() != null) {
-            response.header(HttpHeaders.ACCEPT_RANGES, remote.acceptRanges());
+        String acceptRanges = effectiveAcceptRanges(remote);
+        if (acceptRanges != null) {
+            response.header(HttpHeaders.ACCEPT_RANGES, acceptRanges);
         }
         return response.body(body);
     }
@@ -442,7 +443,17 @@ public class StreamController {
     }
 
     private boolean shouldExposeContentLength(StreamRelayService.RelayResponse remote) {
-        return remote.contentLength() != null && remote.status() != 206;
+        return remote.contentLength() != null;
+    }
+
+    private String effectiveAcceptRanges(StreamRelayService.RelayResponse remote) {
+        if (remote.acceptRanges() != null && !remote.acceptRanges().isBlank()) {
+            return remote.acceptRanges();
+        }
+        if (remote.status() == 206 || remote.contentRange() != null) {
+            return "bytes";
+        }
+        return null;
     }
 
     private MediaType mediaType(String value) {

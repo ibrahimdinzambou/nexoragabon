@@ -84,6 +84,36 @@ class StreamRelayServiceTests {
     }
 
     @Test
+    void rejectsSeekRangesWhenUpstreamIgnoresRangeRequests() throws Exception {
+        AtomicReference<String> receivedRange = new AtomicReference<>();
+        byte[] payload = "full-file-from-start".getBytes(StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/movie.mp4", exchange -> {
+            receivedRange.set(exchange.getRequestHeaders().getFirst("Range"));
+            exchange.getResponseHeaders().set("Content-Type", "video/mp4");
+            exchange.sendResponseHeaders(200, payload.length);
+            exchange.getResponseBody().write(payload);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            StreamRelayService service = service(1024);
+
+            assertThrows(
+                    com.iptv.saas.web.ApiException.class,
+                    () -> service.open(
+                            "http://127.0.0.1:" + server.getAddress().getPort() + "/movie.mp4",
+                            "bytes=1024-"
+                    )
+            );
+            assertEquals("bytes=1024-263167", receivedRange.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void retriesOneTransientUpstreamFailure() throws Exception {
         AtomicInteger attempts = new AtomicInteger();
         byte[] payload = "recovered-stream".getBytes(StandardCharsets.UTF_8);
