@@ -121,25 +121,94 @@ public class BillingService {
     }
 
     @Transactional
+    public RegistrationBilling registerPlanSelection(UserEntity user, String planCode, String paymentMethodCode, String proofUrl) {
+        String selectedPlan = planCode == null || planCode.isBlank() ? defaultTrialPlan : planCode;
+        Plan plan = plans.findByCodeAndActiveTrue(selectedPlan)
+                .orElseThrow(() -> ApiException.notFound("Plan introuvable"));
+        if (isFreePlan(plan)) {
+            return new RegistrationBilling(startTrial(user, selectedPlan), null);
+        }
+        if (!hasManualPaymentDetails(paymentMethodCode, proofUrl)) {
+            return new RegistrationBilling(startTrial(user, selectedPlan), null);
+        }
+        return startPendingManualPayment(
+                user,
+                plan,
+                paymentMethodCode,
+                proofUrl,
+                true,
+                "Inscription payante en attente",
+                "billing.payment.signup_requested"
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentTransaction latestPendingPayment(UserEntity user) {
+        Organization organization = organizationService.currentOrganization(user);
+        return payments.findByOrganizationOrderByCreatedAtDesc(organization).stream()
+                .filter(payment -> payment.status == Enums.PaymentStatus.PENDING)
+                .findFirst()
+                .orElse(null);
+    }
+
+    @Transactional
     public PaymentTransaction createPayment(UserEntity user, String planCode, String paymentMethodCode, String proofUrl) {
         Organization organization = organizationService.currentOrganization(user);
         Plan plan = plans.findByCodeAndActiveTrue(planCode).orElseThrow(() -> ApiException.notFound("Plan introuvable"));
-        PaymentMethod method = paymentMethods.findByCode(paymentMethodCode)
-                .orElseThrow(() -> ApiException.notFound("Moyen de paiement introuvable"));
-        PaymentTransaction payment = new PaymentTransaction();
-        payment.organization = organization;
-        payment.user = user;
-        payment.plan = plan;
-        payment.paymentMethod = method;
-        payment.paymentReference = "PAY-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        payment.amount = plan.priceMonthly == null ? BigDecimal.ZERO : plan.priceMonthly;
-        payment.currency = plan.currency;
-        payment.status = Enums.PaymentStatus.PENDING;
-        payment.proofUrl = proofUrl;
-        payment.expiresAt = Instant.now().plus(paymentExpiresHours, ChronoUnit.HOURS);
-        payment = payments.save(payment);
+        if (isFreePlan(plan)) {
+            throw ApiException.validation("Cette formule ne necessite pas de paiement manuel");
+        }
+        return startPendingManualPayment(
+                user,
+                organization,
+                plan,
+                paymentMethodCode,
+                proofUrl,
+                false,
+                "Renouvellement en attente",
+                "billing.payment.requested"
+        ).payment();
+    }
+
+    private RegistrationBilling startPendingManualPayment(
+            UserEntity user,
+            Plan plan,
+            String paymentMethodCode,
+            String proofUrl,
+            boolean suspendUntilValidation,
+            String notificationTitle,
+            String auditAction
+    ) {
+        return startPendingManualPayment(
+                user,
+                organizationService.currentOrganization(user),
+                plan,
+                paymentMethodCode,
+                proofUrl,
+                suspendUntilValidation,
+                notificationTitle,
+                auditAction
+        );
+    }
+
+    private RegistrationBilling startPendingManualPayment(
+            UserEntity user,
+            Organization organization,
+            Plan plan,
+            String paymentMethodCode,
+            String proofUrl,
+            boolean suspendUntilValidation,
+            String notificationTitle,
+            String auditAction
+    ) {
+        PaymentMethod method = paymentMethod(paymentMethodCode);
+        String proof = paymentProof(proofUrl);
+        ensureNoPendingPayment(organization, plan);
+        Subscription subscription = preparePendingManualSubscription(organization, plan, suspendUntilValidation);
+
+        PaymentTransaction payment = createPaymentTransaction(user, organization, plan, method, proof);
         telegram.send(
-                "Nouveau paiement en attente",
+                notificationTitle,
                 """
                 Reference: %s
                 Client: %s
@@ -147,6 +216,7 @@ public class BillingService {
                 Formule: %s
                 Montant: %s %s
                 Methode: %s
+                Preuve: %s
                 Expire: %s
                 """.formatted(
                         payment.paymentReference,
@@ -156,6 +226,7 @@ public class BillingService {
                         payment.amount,
                         payment.currency,
                         method.name,
+                        proof,
                         payment.expiresAt
                 ),
                 List.of(List.of(
@@ -163,8 +234,8 @@ public class BillingService {
                         new TelegramAlertService.Action("Refuser #" + payment.id, "confirm:reject_payment:" + payment.id)
                 ))
         );
-        audit.log(user, "billing.payment.requested", "PaymentTransaction", payment.id, payment.paymentReference);
-        return payment;
+        audit.log(user, auditAction, "PaymentTransaction", payment.id, payment.paymentReference);
+        return new RegistrationBilling(subscription, payment);
     }
 
     @Transactional(readOnly = true)
@@ -366,6 +437,35 @@ public class BillingService {
         return expired;
     }
 
+    @Transactional
+    public Subscription reactivateSuspendedSubscription(UserEntity actor, Long organizationId) {
+        Organization organization = organizations.findById(organizationId)
+                .orElseThrow(() -> ApiException.notFound("Client introuvable"));
+        Subscription subscription = subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(organization)
+                .orElseThrow(() -> ApiException.notFound("Abonnement introuvable"));
+        Instant now = Instant.now();
+        Instant end = SubscriptionPeriods.currentPeriodEnd(subscription);
+        subscription.status = Enums.SubscriptionStatus.ACTIVE;
+        subscription.cancelAtPeriodEnd = false;
+        if (subscription.startedAt == null) {
+            subscription.startedAt = now;
+        }
+        subscription.trialEndsAt = null;
+        if (end == null || !end.isAfter(now)) {
+            subscription.currentPeriodEnd = now.plus(billingPeriodDays(subscription.plan), ChronoUnit.DAYS);
+        } else {
+            subscription.currentPeriodEnd = end;
+        }
+        if (organization.status != Enums.OrganizationStatus.ACTIVE) {
+            organization.status = Enums.OrganizationStatus.ACTIVE;
+            organizations.save(organization);
+        }
+        audit.log(actor, "billing.subscription.reactivated", "Subscription", subscription.id, organization.name);
+        Subscription saved = subscriptions.save(subscription);
+        activity.planChanged(actor, saved);
+        return saved;
+    }
+
     private PlanEntitlement entitlement(PlanEntitlementSpec spec, int fallbackPriority) {
         PlanEntitlement entitlement = new PlanEntitlement();
         Enums.PlanEntitlementMode mode = spec == null || spec.mode() == null
@@ -470,6 +570,101 @@ public class BillingService {
         return plan != null && (plan.priceMonthly == null || plan.priceMonthly.signum() == 0);
     }
 
+    private PaymentMethod paymentMethod(String paymentMethodCode) {
+        if (paymentMethodCode == null || paymentMethodCode.isBlank()) {
+            throw ApiException.validation("Moyen de paiement obligatoire pour une formule payante");
+        }
+        PaymentMethod method = paymentMethods.findByCode(paymentMethodCode.trim())
+                .orElseThrow(() -> ApiException.notFound("Moyen de paiement introuvable"));
+        if (!method.active) {
+            throw ApiException.validation("Ce moyen de paiement n'est pas disponible");
+        }
+        return method;
+    }
+
+    private String paymentProof(String proofUrl) {
+        String proof = proofUrl == null ? "" : proofUrl.trim();
+        if (proof.length() < 3) {
+            throw ApiException.validation("Reference ou preuve de paiement obligatoire pour une formule payante");
+        }
+        return proof;
+    }
+
+    private boolean hasManualPaymentDetails(String paymentMethodCode, String proofUrl) {
+        return (paymentMethodCode != null && !paymentMethodCode.isBlank())
+                || (proofUrl != null && !proofUrl.isBlank());
+    }
+
+    private void ensureNoPendingPayment(Organization organization, Plan plan) {
+        List<PaymentTransaction> organizationPayments = payments.findByOrganizationOrderByCreatedAtDesc(organization);
+        if (organizationPayments == null) {
+            return;
+        }
+        boolean alreadyPending = organizationPayments.stream()
+                .anyMatch(payment -> payment.status == Enums.PaymentStatus.PENDING && samePlan(payment.plan, plan));
+        if (alreadyPending) {
+            throw ApiException.validation("Un paiement est deja en attente pour cette formule");
+        }
+    }
+
+    private Subscription preparePendingManualSubscription(
+            Organization organization,
+            Plan plan,
+            boolean suspendUntilValidation
+    ) {
+        Instant now = Instant.now();
+        Subscription subscription = subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(organization).orElse(null);
+        boolean hasCurrentAccess = organization.status == Enums.OrganizationStatus.ACTIVE && subscriptionUsable(subscription);
+        boolean mustBlockAccess = suspendUntilValidation || !hasCurrentAccess;
+        if (subscription == null) {
+            subscription = new Subscription();
+            subscription.organization = organization;
+            subscription.startedAt = now;
+            mustBlockAccess = true;
+        }
+        if (!mustBlockAccess) {
+            return subscription;
+        }
+
+        Instant previousEnd = SubscriptionPeriods.currentPeriodEnd(subscription);
+        subscription.plan = plan;
+        subscription.status = Enums.SubscriptionStatus.PAST_DUE;
+        if (subscription.startedAt == null) {
+            subscription.startedAt = now;
+        }
+        subscription.trialEndsAt = null;
+        subscription.currentPeriodEnd = previousEnd != null && !previousEnd.isAfter(now) ? previousEnd : null;
+        subscription.cancelAtPeriodEnd = false;
+        Subscription saved = subscriptions.save(subscription);
+
+        if (organization.status == Enums.OrganizationStatus.ACTIVE) {
+            organization.status = Enums.OrganizationStatus.SUSPENDED;
+            organizations.save(organization);
+        }
+        return saved;
+    }
+
+    private PaymentTransaction createPaymentTransaction(
+            UserEntity user,
+            Organization organization,
+            Plan plan,
+            PaymentMethod method,
+            String proofUrl
+    ) {
+        PaymentTransaction payment = new PaymentTransaction();
+        payment.organization = organization;
+        payment.user = user;
+        payment.plan = plan;
+        payment.paymentMethod = method;
+        payment.paymentReference = "PAY-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        payment.amount = plan.priceMonthly == null ? BigDecimal.ZERO : plan.priceMonthly;
+        payment.currency = plan.currency;
+        payment.status = Enums.PaymentStatus.PENDING;
+        payment.proofUrl = proofUrl;
+        payment.expiresAt = Instant.now().plus(paymentExpiresHours, ChronoUnit.HOURS);
+        return payments.save(payment);
+    }
+
     private void activateSubscription(PaymentTransaction payment) {
         Instant now = Instant.now();
         Subscription subscription = subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(payment.organization)
@@ -479,17 +674,37 @@ public class BillingService {
                     created.startedAt = now;
                     return created;
                 });
+        Instant previousEnd = SubscriptionPeriods.currentPeriodEnd(subscription);
+        boolean extendCurrentPeriod = payment.organization != null
+                && payment.organization.status == Enums.OrganizationStatus.ACTIVE
+                && subscriptionUsable(subscription)
+                && samePlan(subscription.plan, payment.plan)
+                && previousEnd != null
+                && previousEnd.isAfter(now);
         subscription.plan = payment.plan;
         subscription.status = Enums.SubscriptionStatus.ACTIVE;
         subscription.cancelAtPeriodEnd = false;
-        subscription.startedAt = now;
+        if (!extendCurrentPeriod || subscription.startedAt == null) {
+            subscription.startedAt = now;
+        }
         subscription.trialEndsAt = null;
-        subscription.currentPeriodEnd = now.plus(billingPeriodDays(payment.plan), ChronoUnit.DAYS);
+        Instant periodAnchor = extendCurrentPeriod ? previousEnd : now;
+        subscription.currentPeriodEnd = periodAnchor.plus(billingPeriodDays(payment.plan), ChronoUnit.DAYS);
         if (payment.organization != null && payment.organization.status != Enums.OrganizationStatus.ACTIVE) {
             payment.organization.status = Enums.OrganizationStatus.ACTIVE;
             organizations.save(payment.organization);
         }
         subscriptions.save(subscription);
+    }
+
+    private boolean samePlan(Plan left, Plan right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        if (left.id != null && right.id != null) {
+            return Objects.equals(left.id, right.id);
+        }
+        return Objects.equals(left.code, right.code);
     }
 
     public record PlanEntitlementSpec(
@@ -501,5 +716,8 @@ public class BillingService {
             Boolean enabled,
             Integer priority
     ) {
+    }
+
+    public record RegistrationBilling(Subscription subscription, PaymentTransaction payment) {
     }
 }

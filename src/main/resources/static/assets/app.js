@@ -193,7 +193,8 @@ const state = {
     heroPaused: false,
     activeSeries: null,
     activeDetail: null,
-    requestedPlan: launchParams.get("plan")
+    requestedPlan: launchParams.get("plan"),
+    launchBillingIntentApplied: false
 };
 
 const elements = {
@@ -4244,6 +4245,7 @@ async function applySession(data) {
     state.recentlyWatched = loadRecentlyWatched(state.user);
     state.notificationReadIds = loadNotificationReadIds(state.user);
     updateAccountUi();
+    applyBillingLaunchIntent();
     if (!syncSubscriptionAccess({ scroll: true })) {
         await refreshNotifications();
         return;
@@ -4268,6 +4270,7 @@ async function restoreSession() {
         state.recentlyWatched = loadRecentlyWatched(state.user);
         state.notificationReadIds = loadNotificationReadIds(state.user);
         updateAccountUi();
+        applyBillingLaunchIntent();
         if (!syncSubscriptionAccess({ scroll: true })) {
             await refreshNotifications();
             return;
@@ -4283,6 +4286,25 @@ async function restoreSession() {
         }
         await loadCatalog();
     }
+}
+
+function billingLaunchRequested() {
+    return launchParams.get("billing") === "1"
+        || launchParams.get("settings") === "billing"
+        || Boolean(state.requestedPlan);
+}
+
+function applyBillingLaunchIntent() {
+    if (state.launchBillingIntentApplied || !state.user || !billingLaunchRequested()) {
+        return;
+    }
+    if (state.requestedPlan) {
+        state.billingSelectedPlanCode = state.requestedPlan;
+    }
+    state.launchBillingIntentApplied = true;
+    openModal("profileModal");
+    switchSettingsTab("billing");
+    window.history.replaceState({}, "", "/watch.html");
 }
 
 function applyLaunchIntent() {
@@ -5997,8 +6019,8 @@ function shouldGateEmbedLaunch(item) {
 function configureEmbedFrame() {
     elements.embedPlayer.removeAttribute("sandbox");
     elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
-    elements.embedPlayer.setAttribute("allowfullscreen", "");
-    elements.embedPlayer.setAttribute("webkitallowfullscreen", "");
+    elements.embedPlayer.removeAttribute("allowfullscreen");
+    elements.embedPlayer.removeAttribute("webkitallowfullscreen");
     elements.embedPlayer.referrerPolicy = isEpornerSource(state.activePlayerItem)
         ? "strict-origin-when-cross-origin"
         : "no-referrer";

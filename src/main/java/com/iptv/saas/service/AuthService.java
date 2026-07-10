@@ -2,6 +2,7 @@ package com.iptv.saas.service;
 
 import com.iptv.saas.domain.Enums;
 import com.iptv.saas.domain.Organization;
+import com.iptv.saas.domain.PaymentTransaction;
 import com.iptv.saas.domain.Subscription;
 import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.repository.UserRepository;
@@ -81,7 +82,9 @@ public class AuthService {
             String email,
             String password,
             String organizationName,
-            String planCode
+            String planCode,
+            String paymentMethodCode,
+            String paymentProof
     ) {
         String normalizedEmail = normalizeEmail(email);
         if (users.existsByEmailIgnoreCase(normalizedEmail)) {
@@ -104,18 +107,26 @@ public class AuthService {
                 organizationName == null || organizationName.isBlank() ? name + " Workspace" : organizationName,
                 normalizedEmail
         );
-        Subscription subscription = billingService.startTrial(user, planCode);
+        BillingService.RegistrationBilling registrationBilling = billingService.registerPlanSelection(
+                user,
+                planCode,
+                paymentMethodCode,
+                paymentProof
+        );
+        Subscription subscription = registrationBilling.subscription();
+        PaymentTransaction payment = registrationBilling.payment();
         if (requireEmailVerification) {
             sendEmailOtp(user);
             audit.log(user, "auth.registered.pending_email", "User", user.id, user.email);
             activity.userRegistered(user, organization, subscription, true);
-            return emailVerificationPayload(user, organization, subscription);
+            return emailVerificationPayload(user, organization, subscription, payment);
         }
         audit.log(user, "auth.registered", "User", user.id, user.email);
         activity.userRegistered(user, organization, subscription, false);
         String token = tokenService.createToken(user, "register");
         Map<String, Object> payload = authPayload(user, organization, token);
         payload.put("subscription", ApiMappers.subscription(subscription));
+        payload.put("payment", ApiMappers.payment(payment));
         return payload;
     }
 
@@ -146,7 +157,8 @@ public class AuthService {
             return emailVerificationPayload(
                     user,
                     organizationService.currentOrganization(user),
-                    billingService.currentSubscription(user)
+                    billingService.currentSubscription(user),
+                    null
             );
         }
         if (user.twoFactorEnabled) {
@@ -220,6 +232,7 @@ public class AuthService {
         String token = tokenService.createToken(user, "email-verified");
         Map<String, Object> payload = authPayload(user, organizationService.currentOrganization(user), token);
         payload.put("subscription", ApiMappers.subscription(billingService.currentSubscription(user)));
+        payload.put("payment", ApiMappers.payment(billingService.latestPendingPayment(user)));
         return payload;
     }
 
@@ -376,7 +389,12 @@ public class AuthService {
         return payload;
     }
 
-    private Map<String, Object> emailVerificationPayload(UserEntity user, Organization organization, Subscription subscription) {
+    private Map<String, Object> emailVerificationPayload(
+            UserEntity user,
+            Organization organization,
+            Subscription subscription,
+            PaymentTransaction payment
+    ) {
         Map<String, Object> payload = Responses.map();
         payload.put("requiresEmailVerification", true);
         payload.put("email", user.email);
@@ -384,6 +402,7 @@ public class AuthService {
         payload.put("user", ApiMappers.user(user));
         payload.put("organization", ApiMappers.organization(organization));
         payload.put("subscription", ApiMappers.subscription(subscription));
+        payload.put("payment", ApiMappers.payment(payment));
         payload.put("message", "Code OTP envoye par email");
         return payload;
     }

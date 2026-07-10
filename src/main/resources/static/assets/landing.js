@@ -68,6 +68,16 @@ function signupUrl(email, plan) {
     return `/signup.html${query ? `?${query}` : ""}`;
 }
 
+function planActionUrl(plan) {
+    if (landingState.token) {
+        const params = new URLSearchParams();
+        params.set("billing", "1");
+        if (plan) params.set("plan", plan);
+        return `/watch.html?${params.toString()}`;
+    }
+    return signupUrl("", plan);
+}
+
 function setupSignupForms() {
     document.querySelectorAll("[data-signup-form]").forEach((form) => {
         form.addEventListener("submit", (event) => {
@@ -416,7 +426,7 @@ function renderPlans(plans) {
     }).join("");
     plansGrid.querySelectorAll("[data-plan]").forEach((button) => {
         button.addEventListener("click", () => {
-            window.location.href = signupUrl("", button.dataset.plan);
+            window.location.href = planActionUrl(button.dataset.plan);
         });
     });
 }

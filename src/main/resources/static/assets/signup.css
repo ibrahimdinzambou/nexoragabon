@@ -208,6 +208,56 @@ a { color: inherit; }
 }
 .terms-check p { margin: 1px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .terms-error { display: block; margin: 5px 0 0 32px; }
+.payment-panel {
+    display: grid;
+    gap: 18px;
+    margin-top: 34px;
+    padding-top: 34px;
+    border-top: 1px solid var(--line);
+}
+.payment-heading { margin-bottom: 0; }
+.payment-methods {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.payment-method {
+    display: grid;
+    gap: 8px;
+    min-height: 112px;
+    padding: 16px;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.025);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+.payment-method:hover {
+    border-color: rgba(255,255,255,.38);
+    transform: translateY(-2px);
+}
+.payment-method.selected {
+    border-color: var(--red-bright);
+    background: linear-gradient(145deg, rgba(229, 9, 34, 0.12), rgba(255, 255, 255, 0.025));
+}
+.payment-method span {
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+.payment-method small,
+.payment-empty {
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+}
+.payment-empty {
+    grid-column: 1 / -1;
+    padding: 16px;
+    border: 1px solid rgba(239, 94, 111, 0.4);
+    background: rgba(229, 9, 34, 0.08);
+}
 .otp-panel {
     display: grid;
     gap: 15px;
@@ -408,6 +458,7 @@ a { color: inherit; }
     .signup-intro { margin-bottom: 42px; }
     .signup-intro h1 { font-size: clamp(46px, 15vw, 66px); }
     .form-grid { grid-template-columns: 1fr; gap: 16px; }
+    .payment-methods { grid-template-columns: 1fr; }
     .field-wide { grid-column: auto; }
     .security-heading { margin-top: 32px; padding-top: 30px; }
     .plan-summary { padding: 25px 20px; }

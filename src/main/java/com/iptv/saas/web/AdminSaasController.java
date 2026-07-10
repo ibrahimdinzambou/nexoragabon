@@ -6,6 +6,7 @@ import com.iptv.saas.repository.OrganizationRepository;
 import com.iptv.saas.repository.SubscriptionRepository;
 import com.iptv.saas.security.SecurityUtils;
 import com.iptv.saas.service.AdminDashboardService;
+import com.iptv.saas.service.BillingService;
 import com.iptv.saas.web.ApiException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,17 +21,20 @@ public class AdminSaasController {
     private final OrganizationRepository organizations;
     private final SubscriptionRepository subscriptions;
     private final InvoiceRepository invoices;
+    private final BillingService billing;
 
     public AdminSaasController(
             AdminDashboardService dashboard,
             OrganizationRepository organizations,
             SubscriptionRepository subscriptions,
-            InvoiceRepository invoices
+            InvoiceRepository invoices,
+            BillingService billing
     ) {
         this.dashboard = dashboard;
         this.organizations = organizations;
         this.subscriptions = subscriptions;
         this.invoices = invoices;
+        this.billing = billing;
     }
 
     @GetMapping("/dashboard")
@@ -63,10 +67,8 @@ public class AdminSaasController {
 
     @PostMapping("/customers/{id}/reactivate")
     public Object reactivate(@PathVariable Long id) {
-        var organization = organizations.findById(id).orElseThrow(() -> ApiException.notFound("Client introuvable"));
-        organization.status = Enums.OrganizationStatus.ACTIVE;
-        organizations.save(organization);
-        return Responses.ok(ApiMappers.organization(organization));
+        var subscription = billing.reactivateSuspendedSubscription(SecurityUtils.currentUser(), id);
+        return Responses.ok(ApiMappers.organization(subscription.organization));
     }
 
     @GetMapping("/whoami")

@@ -5,6 +5,9 @@ const params = new URLSearchParams(window.location.search);
 const state = {
     plans: [],
     selectedPlan: null,
+    paymentMethods: [],
+    selectedPaymentMethod: null,
+    pendingPayment: null,
     pendingEmail: null
 };
 
@@ -25,6 +28,7 @@ const elements = {
     passwordQualityText: document.querySelector("#passwordQuality"),
     termsError: document.querySelector("#termsError"),
     stepPlanName: document.querySelector("#stepPlanName"),
+    stepConfirmationLabel: document.querySelector("#stepConfirmationLabel"),
     planName: document.querySelector("#summaryTitle"),
     planMonogram: document.querySelector("#planMonogram"),
     planPrice: document.querySelector("#planPrice"),
@@ -32,7 +36,11 @@ const elements = {
     trialTitle: document.querySelector("#trialTitle"),
     trialCopy: document.querySelector("#trialCopy"),
     billingNote: document.querySelector("#billingNote"),
+    summaryToday: document.querySelector("#summaryToday"),
     summaryFeatures: document.querySelector("#summaryFeatures"),
+    paymentPanel: document.querySelector("#paymentPanel"),
+    paymentMethods: document.querySelector("#paymentMethods"),
+    paymentProof: document.querySelector("#paymentProofInput"),
     changePlanButton: document.querySelector("#changePlanButton"),
     planDialog: document.querySelector("#planDialog"),
     closePlanDialog: document.querySelector("#closePlanDialog"),
@@ -40,6 +48,7 @@ const elements = {
     successName: document.querySelector("#successName"),
     successOrganization: document.querySelector("#successOrganization"),
     successPlan: document.querySelector("#successPlan"),
+    successCopy: document.querySelector("#successCopy"),
     successStatus: document.querySelector("#successStatus"),
     successPeriodLabel: document.querySelector("#successPeriodLabel"),
     successPeriodValue: document.querySelector("#successPeriodValue")
@@ -64,6 +73,10 @@ function formatPrice(plan) {
     const amount = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(price);
     const currency = String(plan.currency || "FCFA").toUpperCase();
     return `${amount} ${currency === "XOF" || currency === "XAF" ? "FCFA" : currency}`;
+}
+
+function isPaidPlan(plan) {
+    return Number(plan?.priceMonthly || 0) > 0;
 }
 
 function formatDate(value) {
@@ -104,8 +117,8 @@ function renderSelectedPlan() {
     const plan = state.selectedPlan;
     if (!plan) return;
 
-    const free = Number(plan.priceMonthly || 0) === 0;
-    const trialDays = Number(plan.trialDays || 7);
+    const paid = isPaidPlan(plan);
+    const free = !paid;
     const periodDays = Number(plan.billingPeriodDays || 30);
     const trialEnd = formatDate(expectedTrialEnd(plan));
     const periodEnd = formatDate(expectedPeriodEnd(plan));
@@ -117,24 +130,49 @@ function renderSelectedPlan() {
     elements.summaryFeatures.innerHTML = planFeatures(plan)
         .map((feature) => `<li>${escapeHtml(feature)}</li>`)
         .join("");
-    elements.trialTitle.textContent = free ? `${periodDays} jours gratuits` : `${trialDays} jours d’essai inclus`;
+    elements.trialTitle.textContent = free ? `${periodDays} jours gratuits` : "Paiement manuel requis";
     elements.trialCopy.textContent = free
         ? "Une seule periode gratuite par compte."
-        : "Aucun paiement demandé aujourd’hui.";
+        : "Validation admin avant activation.";
     elements.billingNote.textContent = free
         ? `Fin de la periode gratuite prevue le ${periodEnd || "selon la duree configuree"}.`
-        : "La facturation sera confirmée avant la fin de votre essai.";
-    if (!free && trialEnd) {
-        elements.billingNote.textContent = `Fin de l'essai prévue le ${trialEnd}.`;
+        : "Votre espace sera active apres verification du paiement.";
+    if (paid && trialEnd) {
+        elements.billingNote.textContent = `Le paiement est verifie avant activation. Duree de formule: ${periodDays} jours.`;
     }
+    elements.summaryToday.textContent = free ? "0 FCFA" : formatPrice(plan);
+    elements.paymentPanel.hidden = !paid;
+    elements.paymentProof.required = paid;
+    elements.stepConfirmationLabel.textContent = paid ? "Validation admin" : "Acces immediat";
     elements.submitLabel.textContent = free
         ? "Créer mon compte gratuit"
-        : `Créer mon compte et essayer ${plan.name}`;
+        : "Creer mon compte et envoyer le paiement";
+    if (paid) {
+        renderPaymentMethods();
+    }
 
     const url = new URL(window.location.href);
     url.searchParams.set("plan", plan.code);
     window.history.replaceState({}, "", url);
     renderPlanPicker();
+}
+
+function renderPaymentMethods() {
+    if (!elements.paymentMethods) return;
+    if (!state.paymentMethods.length) {
+        state.selectedPaymentMethod = null;
+        elements.paymentMethods.innerHTML = `<div class="payment-empty">Aucun moyen de paiement actif. Contactez le support.</div>`;
+        return;
+    }
+    if (!state.paymentMethods.some((method) => method.code === state.selectedPaymentMethod)) {
+        state.selectedPaymentMethod = state.paymentMethods[0].code;
+    }
+    elements.paymentMethods.innerHTML = state.paymentMethods.map((method) => `
+        <button class="payment-method ${method.code === state.selectedPaymentMethod ? "selected" : ""}" type="button" data-payment-method="${escapeHtml(method.code)}">
+            <span>${escapeHtml(method.name)}</span>
+            <small>${escapeHtml(method.instructions || "Envoyez le paiement puis indiquez la reference.")}</small>
+        </button>
+    `).join("");
 }
 
 function renderPlanPicker() {
@@ -152,13 +190,20 @@ function renderPlanPicker() {
 }
 
 async function loadPlans() {
-    const response = await fetch(apiUrl("/billing/plans"), { headers: { Accept: "application/json" } });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body.success === false || !Array.isArray(body.data) || !body.data.length) {
+    const [plansResponse, methodsResponse] = await Promise.all([
+        fetch(apiUrl("/billing/plans"), { headers: { Accept: "application/json" } }),
+        fetch(apiUrl("/billing/payment-methods"), { headers: { Accept: "application/json" } })
+    ]);
+    const body = await plansResponse.json().catch(() => ({}));
+    const methodsBody = await methodsResponse.json().catch(() => ({}));
+    if (!plansResponse.ok || body.success === false || !Array.isArray(body.data) || !body.data.length) {
         throw new Error("Les formules sont momentanément indisponibles.");
     }
 
     state.plans = body.data.filter((plan) => plan.active);
+    state.paymentMethods = methodsResponse.ok && methodsBody.success !== false && Array.isArray(methodsBody.data)
+        ? methodsBody.data.filter((method) => method.active)
+        : [];
     const requestedCode = params.get("plan");
     state.selectedPlan = state.plans.find((plan) => plan.code === requestedCode)
         || state.plans.find((plan) => plan.code === "basic")
@@ -244,6 +289,18 @@ function validateForm(formData) {
         elements.termsError.textContent = "Votre accord est nécessaire pour créer le compte.";
         valid = false;
     }
+    if (isPaidPlan(state.selectedPlan)) {
+        const proof = String(formData.get("paymentProof") || "").trim();
+        if (!state.selectedPaymentMethod) {
+            elements.formAlert.textContent = "Aucun moyen de paiement actif n'est configure.";
+            elements.formAlert.hidden = false;
+            valid = false;
+        }
+        if (proof.length < 3) {
+            showFieldError("paymentProof", "Indiquez la reference ou un lien vers la preuve de paiement.");
+            valid = false;
+        }
+    }
     return valid;
 }
 
@@ -284,7 +341,9 @@ async function submitSignup(event) {
                     organizationName: String(formData.get("organizationName")).trim(),
                     email: String(formData.get("email")).trim(),
                     password: String(formData.get("password")),
-                    planCode: state.selectedPlan.code
+                    planCode: state.selectedPlan.code,
+                    paymentMethodCode: isPaidPlan(state.selectedPlan) ? state.selectedPaymentMethod : null,
+                    paymentProof: isPaidPlan(state.selectedPlan) ? String(formData.get("paymentProof") || "").trim() : null
                 })
             });
         const body = await response.json().catch(() => ({}));
@@ -314,6 +373,7 @@ async function submitSignup(event) {
 
 function showEmailVerification(data) {
     state.pendingEmail = data.email;
+    state.pendingPayment = data.payment || null;
     elements.otpEmail.textContent = data.email;
     elements.otpPanel.hidden = false;
     elements.otpInput.required = true;
@@ -355,17 +415,25 @@ async function resendOtp() {
 
 function showSuccess(data) {
     const subscription = data.subscription || {};
+    const payment = data.payment || state.pendingPayment || null;
+    const paymentPending = String(payment?.status || "").toUpperCase() === "PENDING";
     const trialEnd = formatDate(subscription.trialEndsAt);
     const periodEnd = formatDate(subscription.currentPeriodEnd);
     elements.form.hidden = true;
     elements.intro.hidden = true;
     elements.successName.textContent = data.user?.name?.split(" ")[0] || "vous";
-    elements.successOrganization.textContent = data.organization?.name || "Nexora";
-    elements.successPlan.textContent = data.subscription?.plan?.name || state.selectedPlan.name;
-    elements.successStatus.textContent = data.subscription?.status === "TRIALING"
-        ? "Essai activé"
-        : "Actif";
-    if (subscription.status === "TRIALING" && trialEnd) {
+    elements.successCopy.innerHTML = paymentPending
+        ? `Votre compte est cree pour <strong>${escapeHtml(data.organization?.name || "Nexora")}</strong>. La formule <strong>${escapeHtml(data.subscription?.plan?.name || state.selectedPlan.name)}</strong> sera activee apres validation du paiement.`
+        : `Votre espace <strong id="successOrganization">${escapeHtml(data.organization?.name || "Nexora")}</strong> et votre formule <strong id="successPlan">${escapeHtml(data.subscription?.plan?.name || state.selectedPlan.name)}</strong> sont prets.`;
+    elements.successStatus.textContent = paymentPending
+        ? "Paiement en attente"
+        : data.subscription?.status === "TRIALING"
+            ? "Essai activé"
+            : "Actif";
+    if (paymentPending) {
+        elements.successPeriodLabel.textContent = "REFERENCE";
+        elements.successPeriodValue.textContent = payment.reference || "Paiement en attente";
+    } else if (subscription.status === "TRIALING" && trialEnd) {
         elements.successPeriodLabel.textContent = "FIN D'ESSAI";
         elements.successPeriodValue.textContent = trialEnd;
     } else if (periodEnd) {
@@ -403,6 +471,12 @@ elements.planPicker.addEventListener("click", (event) => {
     state.selectedPlan = state.plans.find((plan) => plan.code === button.dataset.plan);
     renderSelectedPlan();
     elements.planDialog.close();
+});
+elements.paymentMethods.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-payment-method]");
+    if (!button) return;
+    state.selectedPaymentMethod = button.dataset.paymentMethod;
+    renderPaymentMethods();
 });
 
 const email = params.get("email");

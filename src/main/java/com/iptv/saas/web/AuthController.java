@@ -54,7 +54,9 @@ public class AuthController {
                 request.email(),
                 request.password(),
                 request.organizationName(),
-                request.planCode()
+                request.planCode(),
+                request.paymentMethodCode(),
+                request.paymentProof()
         ));
     }
 
@@ -164,7 +166,9 @@ public class AuthController {
             @Email @NotBlank String email,
             @Size(min = 6) String password,
             String organizationName,
-            String planCode
+            String planCode,
+            String paymentMethodCode,
+            String paymentProof
     ) {
     }
 

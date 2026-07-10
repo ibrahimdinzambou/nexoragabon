@@ -9,7 +9,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/signup.css?v=20260629-responsive-all-screens-1">
     <script src="/assets/runtime-config.js?v=20260630-api-routing-3" defer></script>
-    <script src="/assets/signup.js?v=20260703-free-period-1" defer></script>
+    <script src="/assets/signup.js?v=20260707-payment-verification-1" defer></script>
 </head>
 <body>
 <div class="signup-grain" aria-hidden="true"></div>
@@ -29,7 +29,7 @@
             <i></i>
             <div class="step active"><span>2</span><p><small>COMPTE</small><strong>Vos informations</strong></p></div>
             <i></i>
-            <div class="step"><span>3</span><p><small>CONFIRMATION</small><strong>Accès immédiat</strong></p></div>
+            <div class="step"><span>3</span><p><small>CONFIRMATION</small><strong id="stepConfirmationLabel">Acces immediat</strong></p></div>
         </nav>
 
         <div class="signup-intro" id="signupIntro">
@@ -104,6 +104,22 @@
             </label>
             <small class="terms-error" id="termsError"></small>
 
+            <section class="payment-panel" id="paymentPanel" hidden>
+                <div class="form-section-heading payment-heading">
+                    <span>03</span>
+                    <div>
+                        <h2>Paiement manuel</h2>
+                        <p>Votre compte sera active apres validation par l'administration.</p>
+                    </div>
+                </div>
+                <div class="payment-methods" id="paymentMethods"></div>
+                <label class="signup-field field-wide" data-field="paymentProof">
+                    <span>Reference ou lien de preuve</span>
+                    <input id="paymentProofInput" name="paymentProof" type="text" placeholder="Ex. transaction Mobile Money, lien capture, reference bancaire">
+                    <small class="field-error"></small>
+                </label>
+            </section>
+
             <section class="otp-panel" id="otpPanel" hidden>
                 <p class="eyebrow">VERIFICATION EMAIL</p>
                 <h2>Entrez le code OTP.</h2>
@@ -130,7 +146,7 @@
             <div class="success-mark"><span>✓</span></div>
             <p class="eyebrow">COMPTE CRÉÉ</p>
             <h2>Bienvenue, <span id="successName">vous</span>.</h2>
-            <p>Votre espace <strong id="successOrganization"></strong> et votre formule <strong id="successPlan"></strong> sont prêts.</p>
+            <p id="successCopy">Votre espace <strong id="successOrganization"></strong> et votre formule <strong id="successPlan"></strong> sont prets.</p>
             <div class="success-details">
                 <div><small>STATUT</small><strong id="successStatus">Actif</strong></div>
                 <div><small id="successPeriodLabel">PROCHAINE ÉTAPE</small><strong id="successPeriodValue">Ajouter vos sources</strong></div>
@@ -162,7 +178,7 @@
         </div>
         <ul class="summary-features" id="summaryFeatures"></ul>
         <div class="summary-total">
-            <p><span>Total aujourd’hui</span><strong>0 FCFA</strong></p>
+            <p><span>Total aujourd’hui</span><strong id="summaryToday">0 FCFA</strong></p>
             <small id="billingNote">La facturation commencera après la période d’essai.</small>
         </div>
         <div class="summary-assurance">

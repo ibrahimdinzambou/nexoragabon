@@ -136,6 +136,9 @@ public final class ApiMappers {
     }
 
     public static Map<String, Object> payment(PaymentTransaction payment) {
+        if (payment == null) {
+            return null;
+        }
         Map<String, Object> m = map();
         m.put("id", payment.id);
         m.put("reference", payment.paymentReference);

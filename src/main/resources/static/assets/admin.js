@@ -285,6 +285,15 @@ function organizationMeta(value) {
     return organization?.slug || "";
 }
 
+function paymentProof(payment) {
+    const proof = String(payment?.proofUrl || "").trim();
+    if (!proof) return "";
+    if (/^https?:\/\//i.test(proof)) {
+        return `<a class="cell-sub" href="${escapeHtml(proof)}" target="_blank" rel="noopener">Voir la preuve</a>`;
+    }
+    return `<span class="cell-sub">Preuve: ${escapeHtml(proof)}</span>`;
+}
+
 function money(value, currency = "FCFA") {
     const label = String(currency || "FCFA").toUpperCase();
     const amount = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 })
@@ -748,7 +757,7 @@ function renderBilling() {
         el.billingTableTitle.textContent = "Paiements à traiter";
         el.billingHead.innerHTML = "<tr><th>Référence</th><th>Organisation</th><th>Montant</th><th>Méthode</th><th>Statut</th><th>Date</th><th></th></tr>";
         el.billingTable.innerHTML = state.payments.length ? state.payments.map(payment => `
-            <tr data-searchable="${escapeHtml(`${payment.reference} ${organizationName(payment)} ${payment.status}`)}"><td><span class="cell-main">${escapeHtml(payment.reference)}</span><span class="cell-sub">#${payment.id}</span></td><td><span class="cell-main">${escapeHtml(organizationName(payment))}</span><span class="cell-sub">${escapeHtml(organizationMeta(payment))}</span></td><td>${money(payment.amount, payment.currency)}</td><td>${escapeHtml(payment.paymentMethod?.name || "—")}</td><td>${badge(payment.status)}</td><td>${dateLabel(payment.createdAt)}</td><td><div class="row-actions">${payment.status === "PENDING" ? `<button class="row-action positive" data-payment-action="verify" data-id="${payment.id}">Valider</button><button class="row-action negative" data-payment-action="reject" data-id="${payment.id}">Rejeter</button>` : ""}</div></td></tr>
+            <tr data-searchable="${escapeHtml(`${payment.reference} ${organizationName(payment)} ${payment.status} ${payment.proofUrl || ""}`)}"><td><span class="cell-main">${escapeHtml(payment.reference)}</span><span class="cell-sub">#${payment.id}</span></td><td><span class="cell-main">${escapeHtml(organizationName(payment))}</span><span class="cell-sub">${escapeHtml(organizationMeta(payment))}</span></td><td>${money(payment.amount, payment.currency)}</td><td><span class="cell-main">${escapeHtml(payment.paymentMethod?.name || "—")}</span>${paymentProof(payment)}</td><td>${badge(payment.status)}</td><td>${dateLabel(payment.createdAt)}</td><td><div class="row-actions">${payment.status === "PENDING" ? `<button class="row-action positive" data-payment-action="verify" data-id="${payment.id}">Valider</button><button class="row-action negative" data-payment-action="reject" data-id="${payment.id}">Rejeter</button>` : ""}</div></td></tr>
         `).join("") : emptyRow(7);
     } else if (state.billingTab === "plans") {
         el.billingTableKicker.textContent = "CATALOGUE TARIFAIRE"; el.billingTableTitle.textContent = "Formules commerciales";
