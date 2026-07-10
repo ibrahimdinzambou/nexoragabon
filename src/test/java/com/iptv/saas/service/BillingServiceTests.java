@@ -275,6 +275,7 @@ class BillingServiceTests {
         payment.amount = BigDecimal.valueOf(15000);
         payment.currency = "FCFA";
         Invoice invoice = new Invoice();
+        invoice.id = 420L;
         invoice.invoiceNumber = "INV-42";
 
         when(payments.findById(42L)).thenReturn(Optional.of(payment));
@@ -291,6 +292,55 @@ class BillingServiceTests {
         assertNotNull(subscription.currentPeriodEnd);
         verify(organizationRepository).save(organization);
         verify(subscriptions).save(subscription);
+        verify(invoices).createForPayment(payment);
+        verify(invoices).resend(admin, 420L);
+    }
+
+    @Test
+    void alreadyVerifiedPaymentEnsuresInvoiceExistsWithoutSendingDuplicateEmail() {
+        PlanRepository plans = mock(PlanRepository.class);
+        PaymentMethodRepository paymentMethods = mock(PaymentMethodRepository.class);
+        PaymentTransactionRepository payments = mock(PaymentTransactionRepository.class);
+        SubscriptionRepository subscriptions = mock(SubscriptionRepository.class);
+        OrganizationRepository organizationRepository = mock(OrganizationRepository.class);
+        OrganizationService organizations = mock(OrganizationService.class);
+        InvoiceService invoices = mock(InvoiceService.class);
+        TelegramAlertService telegram = mock(TelegramAlertService.class);
+        AuditService audit = mock(AuditService.class);
+        BillingService service = new BillingService(
+                plans,
+                paymentMethods,
+                payments,
+                subscriptions,
+                organizationRepository,
+                organizations,
+                invoices,
+                telegram,
+                mock(TelegramActivityService.class),
+                audit,
+                "free",
+                7,
+                24
+        );
+
+        UserEntity admin = new UserEntity();
+        PaymentTransaction payment = new PaymentTransaction();
+        payment.id = 50L;
+        payment.status = Enums.PaymentStatus.VERIFIED;
+        Invoice invoice = new Invoice();
+        invoice.id = 500L;
+        invoice.invoiceNumber = "INV-50";
+
+        when(payments.findById(50L)).thenReturn(Optional.of(payment));
+        when(invoices.createForPayment(payment)).thenReturn(invoice);
+
+        PaymentTransaction verified = service.verifyPayment(admin, 50L);
+
+        assertEquals(Enums.PaymentStatus.VERIFIED, verified.status);
+        verify(invoices).createForPayment(payment);
+        verify(invoices, never()).resend(any(), any());
+        verify(payments, never()).save(any());
+        verify(subscriptions, never()).findFirstByOrganizationOrderByCreatedAtDesc(any());
     }
 
     @Test

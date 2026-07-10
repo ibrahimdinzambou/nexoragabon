@@ -309,8 +309,25 @@ function statusClass(status) {
     return "";
 }
 
+function statusLabel(status) {
+    const value = String(status || "").toUpperCase();
+    return {
+        ISSUED: "Emise",
+        SENT: "Envoyee",
+        DOWNLOADED: "Telechargee",
+        VERIFIED: "Verifie",
+        REJECTED: "Rejete",
+        PENDING: "En attente",
+        ACTIVE: "Actif",
+        SUSPENDED: "Suspendu",
+        PAST_DUE: "Paiement requis",
+        CANCELLED: "Resilie",
+        EXPIRED: "Expire"
+    }[value] || String(status || "-").replaceAll("_", " ");
+}
+
 function badge(status) {
-    return `<span class="badge ${statusClass(status)}">${escapeHtml(String(status || "—").replaceAll("_", " "))}</span>`;
+    return `<span class="badge ${statusClass(status)}">${escapeHtml(statusLabel(status))}</span>`;
 }
 
 function emptyRow(columns, label = "Aucune donnée disponible") {

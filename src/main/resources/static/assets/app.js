@@ -7274,7 +7274,10 @@ function statusLabel(status) {
         PAST_DUE: "Paiement requis",
         CANCELED: "Résilié",
         EXPIRED: "Expiré",
-        PENDING: "En attente"
+        PENDING: "En attente",
+        ISSUED: "Emise",
+        SENT: "Envoyee",
+        DOWNLOADED: "Telechargee"
     }[normalized] || status || "Inactif";
 }
 

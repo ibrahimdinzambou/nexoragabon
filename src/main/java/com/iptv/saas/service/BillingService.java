@@ -303,6 +303,7 @@ public class BillingService {
     public PaymentTransaction verifyPayment(UserEntity admin, Long paymentId) {
         PaymentTransaction payment = payments.findById(paymentId).orElseThrow(() -> ApiException.notFound("Paiement introuvable"));
         if (payment.status == Enums.PaymentStatus.VERIFIED) {
+            createInvoiceForVerifiedPayment(payment);
             return payment;
         }
         if (payment.status != Enums.PaymentStatus.PENDING) {
@@ -315,8 +316,12 @@ public class BillingService {
         activateSubscription(payment);
         audit.log(admin, "billing.payment.verified", "PaymentTransaction", payment.id, payment.paymentReference);
 
+        Invoice invoice = createInvoiceForVerifiedPayment(payment);
+        Long invoiceId = invoice == null ? null : invoice.id;
+        String invoiceNumber = invoice == null ? null : invoice.invoiceNumber;
         PaymentTransaction verifiedPayment = payment;
-        afterCommit("post-validation paiement " + paymentId, () -> sendVerifiedPaymentNotifications(admin, verifiedPayment));
+        afterCommit("post-validation paiement " + paymentId,
+                () -> sendVerifiedPaymentNotifications(admin, verifiedPayment, invoiceId, invoiceNumber));
 
         return payment;
     }
@@ -340,16 +345,23 @@ public class BillingService {
         return rejected;
     }
 
-    private void sendVerifiedPaymentNotifications(UserEntity admin, PaymentTransaction payment) {
-        String invoiceNumber = null;
+    private Invoice createInvoiceForVerifiedPayment(PaymentTransaction payment) {
         try {
-            Invoice invoice = invoiceService.createForPayment(payment);
-            invoiceNumber = invoice.invoiceNumber;
-            invoiceService.resend(admin, invoice.id);
+            return invoiceService.createForPayment(payment);
         } catch (Exception e) {
-            log.warn("Facture non generee/envoyee pour le paiement {}: {}", payment.id, e.getMessage(), e);
+            log.warn("Facture non generee pour le paiement {}: {}", payment.id, e.getMessage(), e);
         }
+        return null;
+    }
 
+    private void sendVerifiedPaymentNotifications(UserEntity admin, PaymentTransaction payment, Long invoiceId, String invoiceNumber) {
+        if (invoiceId != null) {
+            try {
+                invoiceService.resend(admin, invoiceId);
+            } catch (Exception e) {
+                log.warn("Facture non envoyee pour le paiement {}: {}", payment.id, e.getMessage(), e);
+            }
+        }
         try {
             telegram.send(
                     "Paiement valide",
