@@ -3,6 +3,8 @@ package com.iptv.saas.service;
 import com.iptv.saas.domain.*;
 import com.iptv.saas.repository.*;
 import com.iptv.saas.web.ApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +18,7 @@ import java.util.UUID;
 
 @Service
 public class BillingService {
+    private static final Logger log = LoggerFactory.getLogger(BillingService.class);
     private final PlanRepository plans;
     private final PaymentMethodRepository paymentMethods;
     private final PaymentTransactionRepository payments;
@@ -305,30 +308,43 @@ public class BillingService {
         payment.verifiedBy = admin;
         payment = payments.save(payment);
         activateSubscription(payment);
-        Invoice invoice = invoiceService.createForPayment(payment);
-        invoiceService.resend(admin, invoice.id);
-        telegram.send(
-                "Paiement valide",
-                """
-                Reference: %s
-                Client: %s
-                Organisation: %s
-                Formule: %s
-                Montant: %s %s
-                Admin: %s
-                Facture: %s
-                """.formatted(
-                        payment.paymentReference,
-                        payment.user == null ? "-" : payment.user.email,
-                        payment.organization == null ? "-" : payment.organization.name,
-                        payment.plan == null ? "-" : payment.plan.name,
-                        payment.amount,
-                        payment.currency,
-                        admin.email,
-                        invoice.invoiceNumber
-                )
-        );
         audit.log(admin, "billing.payment.verified", "PaymentTransaction", payment.id, payment.paymentReference);
+
+        String invoiceNumber = null;
+        try {
+            Invoice invoice = invoiceService.createForPayment(payment);
+            invoiceNumber = invoice.invoiceNumber;
+            invoiceService.resend(admin, invoice.id);
+        } catch (Exception e) {
+            log.warn("Facture non generee/envoyee pour le paiement {}: {}", paymentId, e.getMessage(), e);
+        }
+
+        try {
+            telegram.send(
+                    "Paiement valide",
+                    """
+                    Reference: %s
+                    Client: %s
+                    Organisation: %s
+                    Formule: %s
+                    Montant: %s %s
+                    Admin: %s
+                    Facture: %s
+                    """.formatted(
+                            payment.paymentReference,
+                            payment.user == null ? "-" : payment.user.email,
+                            payment.organization == null ? "-" : payment.organization.name,
+                            payment.plan == null ? "-" : payment.plan.name,
+                            payment.amount,
+                            payment.currency,
+                            admin.email,
+                            invoiceNumber == null ? "-" : invoiceNumber
+                    )
+            );
+        } catch (Exception e) {
+            log.warn("Notification Telegram echouee pour le paiement {}: {}", paymentId, e.getMessage());
+        }
+
         return payment;
     }
 
