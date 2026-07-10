@@ -8,6 +8,8 @@ import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.repository.InvoiceRepository;
 import com.iptv.saas.security.SecurityUtils;
 import com.iptv.saas.web.ApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +21,7 @@ import java.util.List;
 
 @Service
 public class InvoiceService {
+    private static final Logger log = LoggerFactory.getLogger(InvoiceService.class);
     private final InvoiceRepository invoices;
     private final OrganizationService organizationService;
     private final TransactionalMailService mail;
@@ -53,7 +56,11 @@ public class InvoiceService {
             invoice.currency = payment.currency;
             invoice.status = Enums.InvoiceStatus.ISSUED;
             invoice.issuedAt = Instant.now();
-            invoice.pdfContent = invoicePdf.render(invoice);
+            try {
+                invoice.pdfContent = invoicePdf.render(invoice);
+            } catch (Exception e) {
+                log.warn("Impossible de generer le PDF de la facture: {}", e.getMessage());
+            }
             return invoices.save(invoice);
         });
     }
@@ -81,7 +88,11 @@ public class InvoiceService {
         Invoice invoice = getForUser(user, id);
         invoice.status = Enums.InvoiceStatus.DOWNLOADED;
         invoice.downloadedAt = Instant.now();
-        invoice.pdfContent = invoicePdf.render(invoice);
+        try {
+            invoice.pdfContent = invoicePdf.render(invoice);
+        } catch (Exception e) {
+            log.warn("Impossible de regenerer le PDF de la facture: {}", e.getMessage());
+        }
         audit.log(user, "invoice.downloaded", "Invoice", invoice.id, invoice.invoiceNumber);
         return invoices.save(invoice);
     }
@@ -91,7 +102,11 @@ public class InvoiceService {
         Invoice invoice = getForUser(user, id);
         invoice.status = Enums.InvoiceStatus.SENT;
         invoice.sentAt = Instant.now();
-        invoice.pdfContent = invoicePdf.render(invoice);
+        try {
+            invoice.pdfContent = invoicePdf.render(invoice);
+        } catch (Exception e) {
+            log.warn("Impossible de regenerer le PDF pour l'envoi: {}", e.getMessage());
+        }
         invoices.save(invoice);
         String to = invoice.organization == null ? null : invoice.organization.billingEmail;
         mail.sendHtmlWithAttachment(
