@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -300,6 +302,9 @@ public class BillingService {
     @Transactional
     public PaymentTransaction verifyPayment(UserEntity admin, Long paymentId) {
         PaymentTransaction payment = payments.findById(paymentId).orElseThrow(() -> ApiException.notFound("Paiement introuvable"));
+        if (payment.status == Enums.PaymentStatus.VERIFIED) {
+            return payment;
+        }
         if (payment.status != Enums.PaymentStatus.PENDING) {
             throw ApiException.validation("Ce paiement n'est pas en attente");
         }
@@ -310,13 +315,39 @@ public class BillingService {
         activateSubscription(payment);
         audit.log(admin, "billing.payment.verified", "PaymentTransaction", payment.id, payment.paymentReference);
 
+        PaymentTransaction verifiedPayment = payment;
+        afterCommit("post-validation paiement " + paymentId, () -> sendVerifiedPaymentNotifications(admin, verifiedPayment));
+
+        return payment;
+    }
+
+    @Transactional
+    public PaymentTransaction rejectPayment(UserEntity admin, Long paymentId, String reason) {
+        PaymentTransaction payment = payments.findById(paymentId).orElseThrow(() -> ApiException.notFound("Paiement introuvable"));
+        if (payment.status == Enums.PaymentStatus.REJECTED) {
+            return payment;
+        }
+        if (payment.status != Enums.PaymentStatus.PENDING) {
+            throw ApiException.validation("Ce paiement n'est pas en attente");
+        }
+        payment.status = Enums.PaymentStatus.REJECTED;
+        payment.rejectionReason = reason == null || reason.isBlank() ? "Rejete par l'administration" : reason;
+        payment.verifiedBy = admin;
+        payment.verifiedAt = Instant.now();
+        audit.log(admin, "billing.payment.rejected", "PaymentTransaction", payment.id, payment.rejectionReason);
+        PaymentTransaction rejected = payments.save(payment);
+        afterCommit("notification rejet paiement " + paymentId, () -> sendRejectedPaymentNotification(admin, rejected));
+        return rejected;
+    }
+
+    private void sendVerifiedPaymentNotifications(UserEntity admin, PaymentTransaction payment) {
         String invoiceNumber = null;
         try {
             Invoice invoice = invoiceService.createForPayment(payment);
             invoiceNumber = invoice.invoiceNumber;
             invoiceService.resend(admin, invoice.id);
         } catch (Exception e) {
-            log.warn("Facture non generee/envoyee pour le paiement {}: {}", paymentId, e.getMessage(), e);
+            log.warn("Facture non generee/envoyee pour le paiement {}: {}", payment.id, e.getMessage(), e);
         }
 
         try {
@@ -342,42 +373,54 @@ public class BillingService {
                     )
             );
         } catch (Exception e) {
-            log.warn("Notification Telegram echouee pour le paiement {}: {}", paymentId, e.getMessage());
+            log.warn("Notification Telegram echouee pour le paiement {}: {}", payment.id, e.getMessage());
         }
-
-        return payment;
     }
 
-    @Transactional
-    public PaymentTransaction rejectPayment(UserEntity admin, Long paymentId, String reason) {
-        PaymentTransaction payment = payments.findById(paymentId).orElseThrow(() -> ApiException.notFound("Paiement introuvable"));
-        if (payment.status != Enums.PaymentStatus.PENDING) {
-            throw ApiException.validation("Ce paiement n'est pas en attente");
+    private void sendRejectedPaymentNotification(UserEntity admin, PaymentTransaction payment) {
+        try {
+            telegram.send(
+                    "Paiement rejete",
+                    """
+                    Reference: %s
+                    Client: %s
+                    Organisation: %s
+                    Formule: %s
+                    Raison: %s
+                    Admin: %s
+                    """.formatted(
+                            payment.paymentReference,
+                            payment.user == null ? "-" : payment.user.email,
+                            payment.organization == null ? "-" : payment.organization.name,
+                            payment.plan == null ? "-" : payment.plan.name,
+                            payment.rejectionReason,
+                            admin.email
+                    )
+            );
+        } catch (Exception e) {
+            log.warn("Notification Telegram rejet echouee pour le paiement {}: {}", payment.id, e.getMessage());
         }
-        payment.status = Enums.PaymentStatus.REJECTED;
-        payment.rejectionReason = reason == null || reason.isBlank() ? "Rejete par l'administration" : reason;
-        payment.verifiedBy = admin;
-        payment.verifiedAt = Instant.now();
-        telegram.send(
-                "Paiement rejete",
-                """
-                Reference: %s
-                Client: %s
-                Organisation: %s
-                Formule: %s
-                Raison: %s
-                Admin: %s
-                """.formatted(
-                        payment.paymentReference,
-                        payment.user == null ? "-" : payment.user.email,
-                        payment.organization == null ? "-" : payment.organization.name,
-                        payment.plan == null ? "-" : payment.plan.name,
-                        payment.rejectionReason,
-                        admin.email
-                )
-        );
-        audit.log(admin, "billing.payment.rejected", "PaymentTransaction", payment.id, payment.rejectionReason);
-        return payments.save(payment);
+    }
+
+    private void afterCommit(String label, Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            try {
+                action.run();
+            } catch (Exception e) {
+                log.warn("{} echoue: {}", label, e.getMessage(), e);
+            }
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    action.run();
+                } catch (Exception e) {
+                    log.warn("{} echoue: {}", label, e.getMessage(), e);
+                }
+            }
+        });
     }
 
     @Transactional

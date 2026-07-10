@@ -1726,7 +1726,11 @@ async function paymentAction(action, id) {
     }
     await api(`/admin/billing/payments/${id}/${action}`, { method: "POST", body });
     showToast(action === "verify" ? "Paiement validé." : "Paiement rejeté.");
-    await loadBilling();
+    await Promise.all([
+        loadBilling(),
+        loadCustomers(),
+        loadDashboard()
+    ]);
 }
 
 function filterCurrentView(query) {

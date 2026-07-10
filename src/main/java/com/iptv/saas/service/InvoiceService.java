@@ -11,6 +11,7 @@ import com.iptv.saas.web.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -45,7 +46,7 @@ public class InvoiceService {
         this.audit = audit;
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Invoice createForPayment(PaymentTransaction payment) {
         return invoices.findByPaymentTransaction(payment).orElseGet(() -> {
             Invoice invoice = new Invoice();
@@ -97,7 +98,7 @@ public class InvoiceService {
         return invoices.save(invoice);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Invoice resend(UserEntity user, Long id) {
         Invoice invoice = getForUser(user, id);
         invoice.status = Enums.InvoiceStatus.SENT;
