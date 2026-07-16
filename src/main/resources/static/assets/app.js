@@ -6757,7 +6757,11 @@ function schedulePlayerStartupWatchdog(generation) {
 }
 
 function schedulePlayerRecovery(reason, immediate = false, preferFailover = false) {
-    if (!state.activeSessionToken || state.playerRecovering || state.playerErrorShown || state.playerUserPaused) {
+    const nodePlayback = isNodeRecoverablePlayback();
+    if ((!state.activeSessionToken && !nodePlayback)
+        || state.playerRecovering
+        || state.playerErrorShown
+        || state.playerUserPaused) {
         return;
     }
     state.playerRecoveryShouldFailover = state.playerRecoveryShouldFailover || Boolean(preferFailover);
@@ -6791,6 +6795,10 @@ function schedulePlayerRecovery(reason, immediate = false, preferFailover = fals
 
 async function recoverPlayer(reason) {
     clearPlayerRecoveryTimer();
+    if (!state.activeSessionToken && isNodeRecoverablePlayback()) {
+        await recoverNodePlayback(reason);
+        return;
+    }
     if (!state.activeSessionToken || state.playerErrorShown || state.playerRecovering || state.playerUserPaused) return;
     if (state.playerOpening) {
         state.playerRecoveryTimer = window.setTimeout(
@@ -6859,6 +6867,84 @@ async function recoverPlayer(reason) {
         }
         state.playerRecoveryTimer = window.setTimeout(
             () => recoverPlayer(error.message || reason),
+            playerRecoveryDelayMs()
+        );
+    } finally {
+        state.playerRecovering = false;
+    }
+}
+
+function isNodeRecoverablePlayback() {
+    return Boolean(
+        isNodeFrenchPlayerItem()
+        && state.activeProxyUrl
+        && state.activePlaybackMode
+        && state.activePlaybackMode !== "embed"
+    );
+}
+
+async function recoverNodePlayback(reason) {
+    clearPlayerRecoveryTimer();
+    if (!isNodeRecoverablePlayback()
+        || state.playerErrorShown
+        || state.playerRecovering
+        || state.playerUserPaused) {
+        return;
+    }
+    if (state.playerOpening) {
+        state.playerRecoveryTimer = window.setTimeout(
+            () => recoverPlayer(reason),
+            500
+        );
+        return;
+    }
+
+    state.playerRecovering = true;
+    state.playerRecoveryAttempts += 1;
+    const resumeTime = snapshotPlaybackResumeTime();
+    const item = state.activePlayerItem;
+    const proxyUrl = state.activeProxyUrl;
+    const playbackMode = state.activePlaybackMode;
+    const playbackOptions = {
+        startTime: resumeTime,
+        embedFallbackUrl: state.activeEmbedFallbackUrl || "",
+        embedFallbackLabel: state.activeEmbedFallbackLabel || "",
+        preferredAudioLanguage: state.activePreferredAudioLanguage || "",
+        preferredSubtitleLanguage: state.activePreferredSubtitleLanguage || "",
+        visualWatch: state.activeVisualWatchdogEnabled
+    };
+
+    try {
+        if (state.playerRecoveryAttempts > 1) {
+            const switched = state.activeEmbedFallbackUrl
+                ? await switchToEmbedFallback(reason || "Le flux direct reste instable.")
+                : await switchToNodeTmdbFallback(reason || "Le flux direct reste instable.");
+            if (!switched) {
+                showPlayerError(reason || "La source video reste instable.");
+            }
+            return;
+        }
+
+        setPlayerLoading(
+            "Reprise du film...",
+            reason || "Nexora reconnecte la source video."
+        );
+        detachPlayerMedia();
+        await settleDetachedPlayer();
+        state.activePlayerItem = item;
+        await startStreamPlayback(item, proxyUrl, playbackMode, playbackOptions);
+    } catch (error) {
+        if (state.playerRecoveryAttempts >= 2) {
+            const switched = await switchToNodeTmdbFallback(
+                error?.message || reason || "Impossible de reprendre la source directe."
+            );
+            if (!switched) {
+                showPlayerError(error?.message || "Impossible de reprendre ce flux.");
+            }
+            return;
+        }
+        state.playerRecoveryTimer = window.setTimeout(
+            () => recoverPlayer(error?.message || reason),
             playerRecoveryDelayMs()
         );
     } finally {
