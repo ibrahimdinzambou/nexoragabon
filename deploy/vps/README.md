@@ -151,9 +151,24 @@ cd /opt/nexora/app
 sudo chown -R "$USER:$USER" /opt/nexora/app
 git pull
 ./mvnw -DskipTests package
-cd reelshort-api
+
+# Mettre Ã  jour FrenchNexoraAPI Ã©galement : elle agrÃ¨ge les providers
+# et expose /api/streams. Sans cette mise Ã  jour, le VPS peut rester sur
+# l'ancien contrat /api/sources qui ne renvoie qu'un seul hoster.
+cd /opt/nexora/frenchnexoraAPI
+git pull --ff-only
+npm ci --omit=dev
+
+cd /opt/nexora/app/reelshort-api
 . .venv/bin/activate
 pip install -r requirements.txt
 sudo chown -R nexora:nexora /opt/nexora
-sudo systemctl restart nexora-drama nexora-api
+sudo systemctl restart nexora-drama nexora-api frenchnexora-api
+```
+
+VÃ©rifier ensuite le contrat et le nombre de providers exposÃ©s:
+
+```bash
+curl http://127.0.0.1:3100/api/health
+curl "http://127.0.0.1:3100/api/streams?tmdbId=936075&mediaType=movie&provider=all"
 ```
