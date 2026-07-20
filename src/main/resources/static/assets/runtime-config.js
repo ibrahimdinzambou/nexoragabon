@@ -1,6 +1,10 @@
 (function () {
     const publicApiBase = "https://api.nexoragabon.com";
     const publicNodeApiBase = "https://api.nexoragabon.com/node-fr";
+    const publicLegacyNodeApiBase = "https://api.nexoragabon.com/orion";
+    // API compatible avec ibrahimdinzambou/frenchnexoraAPI.
+    // Peut être remplacée sans rebuild via window.NEXORA_FRENCH_NEXORA_API_BASE_URL.
+    const publicFrenchNexoraApiBase = "https://api.nexoragabon.com/node-fr";
     const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";
     const publicSiteUrl = "https://nexoragabon.com";
     const apiHost = "api.nexoragabon.com";
@@ -21,10 +25,27 @@
 
     function configuredNodeBase() {
         const explicit = trimSlash(
-            window.NEXORA_NODE_API_BASE_URL || window.NEXORA_ORION_API_BASE_URL || ""
+            window.NEXORA_FRENCH_NEXORA_API_BASE_URL
+            || window.NEXORA_NODE_API_BASE_URL
+            || window.NEXORA_ORION_API_BASE_URL
+            || ""
         );
         if (explicit) return explicit;
         return publicNodeApiBase;
+    }
+
+    function configuredFrenchNexoraBase() {
+        const explicit = trimSlash(window.NEXORA_FRENCH_NEXORA_API_BASE_URL || "");
+        return explicit || publicFrenchNexoraApiBase;
+    }
+
+    function configuredLegacyNodeBase() {
+        const explicit = trimSlash(
+            window.NEXORA_ORION_API_BASE_URL
+            || window.NEXORA_LEGACY_NODE_API_BASE_URL
+            || ""
+        );
+        return explicit || publicLegacyNodeApiBase;
     }
 
     function configuredDramaBase() {
@@ -37,6 +58,9 @@
     const apiRoot = `${apiBaseUrl}/api`;
     const nodeApiBaseUrl = configuredNodeBase();
     const nodeApiRoot = nodeApiBaseUrl ? `${nodeApiBaseUrl}/api` : "";
+    const frenchNexoraApiBaseUrl = configuredFrenchNexoraBase();
+    const legacyNodeApiBaseUrl = configuredLegacyNodeBase();
+    const legacyNodeApiRoot = legacyNodeApiBaseUrl ? `${legacyNodeApiBaseUrl}/api` : "";
     const dramaApiBaseUrl = configuredDramaBase();
     const dramaApiRoot = dramaApiBaseUrl ? `${dramaApiBaseUrl}/api/v1/reelshort` : "";
 
@@ -82,17 +106,39 @@
         return `${dramaApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
     }
 
+    function legacyNodeApiUrl(path) {
+        if (!legacyNodeApiBaseUrl) return "";
+        const value = String(path || "");
+        if (/^https?:\/\//i.test(value)) return value;
+        if (value.startsWith("/api/")) return `${legacyNodeApiBaseUrl}${value}`;
+        if (value.startsWith("api/")) return `${legacyNodeApiBaseUrl}/${value}`;
+        return `${legacyNodeApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
+    }
+
+    function resolveLegacyNodeUrl(value) {
+        const raw = String(value || "");
+        if (!raw) return raw;
+        if (/^https?:\/\//i.test(raw)) return raw;
+        if (raw.startsWith("/api/") || raw.startsWith("api/")) return legacyNodeApiUrl(raw);
+        return new URL(raw, legacyNodeApiBaseUrl || window.location.origin).href;
+    }
+
     window.NEXORA_CONFIG = {
         apiBaseUrl,
         apiRoot,
         nodeApiBaseUrl,
         nodeApiRoot,
+        frenchNexoraApiBaseUrl,
+        legacyNodeApiBaseUrl,
+        legacyNodeApiRoot,
         dramaApiBaseUrl,
         dramaApiRoot,
         orionApiBaseUrl: nodeApiBaseUrl,
         publicSiteUrl,
         railwayApiBase: publicApiBase,
         railwayNodeApiBase: publicNodeApiBase,
+        railwayFrenchNexoraApiBase: publicFrenchNexoraApiBase,
+        railwayLegacyNodeApiBase: publicLegacyNodeApiBase,
         railwayDramaApiBase: publicDramaApiBase
     };
     window.NexoraApi = {
@@ -107,6 +153,13 @@
         enabled: function () { return Boolean(nodeApiBaseUrl); },
         url: nodeApiUrl,
         resolve: resolveNodeUrl
+    };
+    window.NexoraLegacyNodeApi = {
+        baseUrl: legacyNodeApiBaseUrl,
+        root: function () { return legacyNodeApiRoot; },
+        enabled: function () { return Boolean(legacyNodeApiBaseUrl); },
+        url: legacyNodeApiUrl,
+        resolve: resolveLegacyNodeUrl
     };
     window.NexoraDramaApi = {
         baseUrl: dramaApiBaseUrl,

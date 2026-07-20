@@ -4,7 +4,8 @@ Cette configuration deploie deux services sur le meme VPS:
 
 - `nexora-api`: application Spring Boot, port local `8080`.
 - `nexora-drama`: API Python ReelShort/Drama, port local `5000`.
-- `node-fr` / Orion: API Node des sources films FR, port local `3000` si activee.
+- `node-fr` / frenchnexoraAPI: API Node des sources films FR, port local `3100`.
+- `orion`: API legacy Orion/Aether, port local `3000`, utilisée en fallback.
 
 Nginx expose le site et l'API en HTTPS, puis Spring appelle l'API drama en interne avec:
 
@@ -36,6 +37,11 @@ sudo chown "$USER:$USER" /opt/nexora
 git clone https://github.com/Dinzambou241/DramaAPI-nexora.git /opt/nexora/app
 cd /opt/nexora/app
 ./mvnw -DskipTests package
+
+# Source des films en français
+git clone https://github.com/ibrahimdinzambou/frenchnexoraAPI.git /opt/nexora/frenchnexoraAPI
+cd /opt/nexora/frenchnexoraAPI
+npm ci --omit=dev
 ```
 
 Installer l'API Python:
@@ -66,6 +72,7 @@ DRAMA_API_BASE_URL=http://127.0.0.1:5000/api/v1/reelshort
 DRAMA_API_TIMEOUT_SECONDS=20
 ORION_BASE_URL=http://127.0.0.1:3000
 ORION_TIMEOUT_SECONDS=30
+FRENCH_NEXORA_API_BASE_URL=https://api.nexoragabon.com/node-fr
 ```
 
 Si tu utilises PostgreSQL:
@@ -84,9 +91,11 @@ Copier les services:
 ```bash
 sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-api.service /etc/systemd/system/
 sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-drama.service /etc/systemd/system/
+sudo cp /opt/nexora/app/deploy/vps/systemd/frenchnexora-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now nexora-drama
 sudo systemctl enable --now nexora-api
+sudo systemctl enable --now frenchnexora-api
 ```
 
 Verifier:
@@ -97,6 +106,7 @@ systemctl status nexora-api --no-pager
 curl http://127.0.0.1:5000/api/v1/reelshort/search?keywords=love
 curl http://127.0.0.1:8080/actuator/health
 curl http://127.0.0.1:8080/api/dramas/bookshelves?lang=fr
+curl http://127.0.0.1:3000/api/health
 ```
 
 ## 5. Installer Nginx

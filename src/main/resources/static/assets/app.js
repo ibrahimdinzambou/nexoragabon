@@ -1,5 +1,6 @@
 const API_ROOT = window.NexoraApi?.root?.() || "/api";
 const NODE_API_ROOT = window.NexoraNodeApi?.root?.() || "";
+const LEGACY_NODE_API_ROOT = window.NexoraLegacyNodeApi?.root?.() || "";
 const DRAMA_API_ROOT = window.NexoraDramaApi?.root?.() || "";
 const TOKEN_KEY = "nexora_access_token";
 const MOVIE_SORT_KEY = "nexora_movie_sort";
@@ -435,6 +436,29 @@ function resolveNodeApiResourceUrl(value) {
 
 function nodeApiEnabled() {
     return Boolean(NODE_API_ROOT || window.NexoraNodeApi?.enabled?.());
+}
+
+function legacyNodeApiUrl(path) {
+    return window.NexoraLegacyNodeApi?.url ? window.NexoraLegacyNodeApi.url(path) : "";
+}
+
+function legacyNodeApiEnabled() {
+    return Boolean(LEGACY_NODE_API_ROOT || window.NexoraLegacyNodeApi?.enabled?.());
+}
+
+async function legacyNodeApi(path, options = {}) {
+    const url = legacyNodeApiUrl(path);
+    if (!url) throw new Error("API Orion/Aether non configuree.");
+    const headers = new Headers(options.headers || {});
+    headers.set("Accept", "application/json");
+    const response = await fetchWithRetry(url, { ...options, headers });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.ok === false) {
+        const error = new Error(body.erreur || body.message || "API Orion/Aether indisponible.");
+        error.status = response.status;
+        throw error;
+    }
+    return body;
 }
 
 async function nodeApi(path, options = {}) {
@@ -5192,13 +5216,13 @@ function nodeFrenchEndpointForItem(item) {
     const tmdbId = tmdbIdFromItem(item);
     if (!tmdbId) return "";
     if (item.type === "movie") {
-        return `/sources/movie/${tmdbId}?provider=${encodeURIComponent(NODE_MOVIE_PROVIDER)}`;
+        return `/streams?tmdbId=${encodeURIComponent(tmdbId)}&mediaType=movie&provider=all`;
     }
     if (item.type === "series") {
         const season = positiveInteger(item.season);
         const episode = positiveInteger(item.episode);
         if (!season || !episode) return "";
-        return `/sources/series/${tmdbId}/${season}/${episode}`;
+        return `/streams?tmdbId=${encodeURIComponent(tmdbId)}&mediaType=tv&season=${season}&episode=${episode}&provider=all`;
     }
     return "";
 }
@@ -5229,6 +5253,35 @@ function bestNodeFrenchHoster(hosters) {
 }
 
 function nodeFrenchStreamFromSource(source) {
+    // Contrat de frenchnexoraAPI: { streams: [{ url, language, ... }] }.
+    if (Array.isArray(source?.streams)) {
+        const streams = source.streams.filter((stream) => stream?.url);
+        const hoster = streams.find((stream) => /^(fr|vf|truefrench)/i.test(String(stream.language || "")))
+            || streams.find((stream) => /fr|vf|truefrench/i.test(`${stream.title || ""} ${stream.providerName || ""} ${stream.language || ""}`))
+            || streams[0];
+        if (!hoster) {
+            throw new Error("Aucune source FR exploitable.");
+        }
+        const rawUrl = String(hoster.url);
+        const isHls = /\.m3u8(?:$|[?#])/i.test(rawUrl) || /mpegurl/i.test(String(hoster.type || ""));
+        const headers = hoster.headers && typeof hoster.headers === "object" ? hoster.headers : {};
+        const proxyParams = new URLSearchParams({ url: rawUrl });
+        if (Object.keys(headers).length) proxyParams.set("headers", JSON.stringify(headers));
+        const proxyUrl = `/proxy?${proxyParams}`;
+        return {
+            proxyUrl: isHls ? resolveNodeApiResourceUrl(proxyUrl) : rawUrl,
+            playbackMode: isHls ? "hls" : "direct",
+            embedUrl: "",
+            preferredAudioLanguage: /^fr|vf/i.test(String(hoster.language || "")) ? "fr" : "",
+            preferredSubtitleLanguage: "",
+            hoster: {
+                ...hoster,
+                nom: hoster.providerName || hoster.provider || "Source FR",
+                lang: hoster.language || "fr"
+            }
+        };
+    }
+
     const hoster = bestNodeFrenchHoster(source?.hosters);
     if (!hoster) {
         throw new Error(source?.erreur || "Aucune source FR exploitable.");
@@ -5272,17 +5325,23 @@ async function playNodeFrenchItem(item) {
     elements.playerBadge.textContent = "FR";
     setPlayerLoading(
         "Recherche de la source FR...",
-        "Connexion directe a l'API Node: Orion puis Aether."
+        "frenchnexoraAPI, puis Orion/Aether en solution de secours."
     );
 
     let source;
     try {
+        // Priorité 1 : frenchnexoraAPI.
         source = await nodeApi(endpoint);
-    } catch (strictError) {
-        const fallbackEndpoint = nodeTmdbEmbedFallbackEndpointForItem(item);
-        if (!fallbackEndpoint) throw strictError;
-        source = await nodeApi(fallbackEndpoint);
-        await confirmNonFrenchPlayback(source);
+    } catch (frenchNexoraError) {
+        // Priorité 2 : ancienne API Orion/Aether sur son endpoint dédié.
+        const legacyEndpoint = legacyNodeFrenchEndpointForItem(item);
+        if (!legacyNodeApiEnabled() || !legacyEndpoint) throw frenchNexoraError;
+        try {
+            source = await legacyNodeApi(legacyEndpoint);
+        } catch (legacyError) {
+            legacyError.cause = frenchNexoraError;
+            throw legacyError;
+        }
     }
     elements.playerBadge.textContent = source.requiresLanguageConfirmation ? "VO" : "FR";
     const stream = nodeFrenchStreamFromSource(source);
@@ -5424,6 +5483,21 @@ async function restartActiveSessionWithQuality(item, requestedQuality, options =
         retryTransient: true
     });
     await startStreamFromPayload(item, stream, requestedQuality, options);
+}
+
+function legacyNodeFrenchEndpointForItem(item) {
+    const tmdbId = tmdbIdFromItem(item);
+    if (!tmdbId) return "";
+    if (item.type === "movie") {
+        return `/sources/movie/${tmdbId}?provider=auto`;
+    }
+    if (item.type === "series") {
+        const season = positiveInteger(item.season);
+        const episode = positiveInteger(item.episode);
+        if (!season || !episode) return "";
+        return `/sources/series/${tmdbId}/${season}/${episode}`;
+    }
+    return "";
 }
 
 async function fallbackActiveSessionToAuto(message) {
