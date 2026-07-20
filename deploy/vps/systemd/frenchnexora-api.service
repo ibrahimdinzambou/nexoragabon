@@ -7,7 +7,7 @@ Type=simple
 User=nexora
 WorkingDirectory=/opt/nexora/frenchnexoraAPI
 Environment=NODE_ENV=production
-Environment=PORT=3000
+Environment=PORT=3100
 Environment=API_PROVIDER_TIMEOUT_MS=55000
 ExecStart=/usr/bin/node server.js
 Restart=always
