@@ -160,6 +160,8 @@ const state = {
     playerVisualLastFrameAt: 0,
     playerVisualFallbackPending: false,
     activePlayerItem: null,
+    activeFrenchSourcePayload: null,
+    activeFrenchSourceIndex: 0,
     activeProxyUrl: null,
     activeEmbedUrl: null,
     activeEmbedFallbackUrl: null,
@@ -387,6 +389,9 @@ const elements = {
     playerEmbedRetryButton: document.querySelector("#playerEmbedRetryButton"),
     playerEmbedOpenLink: document.querySelector("#playerEmbedOpenLink"),
     playerMessage: document.querySelector("#playerMessage"),
+    playerSourcePanel: document.querySelector("#playerSourcePanel"),
+    playerSourceCount: document.querySelector("#playerSourceCount"),
+    playerSourceList: document.querySelector("#playerSourceList"),
     toast: document.querySelector("#toast")
 };
 
@@ -5078,6 +5083,9 @@ async function playItem(item, options = {}) {
     state.playerUserPaused = false;
     clearPlayerRecoveryTimer();
     state.activePlayerItem = item;
+    state.activeFrenchSourcePayload = null;
+    state.activeFrenchSourceIndex = 0;
+    renderFrenchSourcePanel(null);
     const requestedQuality = requestedPlaybackQuality(item, options);
     elements.playerQuality.value = requestedQuality;
     await ensurePlayerContext(item);
@@ -5192,6 +5200,9 @@ async function changePlayerQuality(event) {
 
 function setPlayerControlsBusy(isBusy) {
     elements.playerQuality.disabled = Boolean(isBusy) || state.activePlaybackMode === "embed";
+    elements.playerSourceList?.querySelectorAll("button").forEach((button) => {
+        button.disabled = Boolean(isBusy) || state.activePlaybackMode === "embed";
+    });
 }
 
 function hasActivePlayback() {
@@ -5310,6 +5321,122 @@ function nodeFrenchStreamFromSource(source) {
     };
 }
 
+function nodeFrenchSourceEntries(source) {
+    if (Array.isArray(source?.streams)) {
+        return source.streams.filter((stream) => stream?.url).map((stream, index) => ({
+            index,
+            name: stream.providerName || stream.provider || stream.title || `Source ${index + 1}`,
+            language: stream.language || "FR",
+            quality: stream.quality || stream.type || "Auto",
+            usable: true
+        }));
+    }
+    if (Array.isArray(source?.hosters)) {
+        return source.hosters.filter((hoster) => (
+            hoster?.proxyM3U8 || hoster?.proxyM3u8 || hoster?.m3u8
+            || hoster?.directUrl || hoster?.videoUrl || hoster?.embedUrl
+        )).map((hoster, index) => ({
+            index,
+            name: hoster.nom || hoster.provider || hoster.source || `Source ${index + 1}`,
+            language: hoster.lang || "FR",
+            quality: hoster.quality || (hoster.m3u8 || hoster.proxyM3U8 ? "HLS" : "Auto"),
+            usable: true
+        }));
+    }
+    return [];
+}
+
+function nodeFrenchSourcePayload(source, index) {
+    if (Array.isArray(source?.streams)) {
+        const stream = source.streams.filter((candidate) => candidate?.url)[index];
+        return stream ? { ...source, streams: [stream] } : null;
+    }
+    if (Array.isArray(source?.hosters)) {
+        const hoster = source.hosters.filter((candidate) => (
+            candidate?.proxyM3U8 || candidate?.proxyM3u8 || candidate?.m3u8
+            || candidate?.directUrl || candidate?.videoUrl || candidate?.embedUrl
+        ))[index];
+        return hoster ? { ...source, hosters: [hoster] } : null;
+    }
+    return null;
+}
+
+function nodeFrenchDefaultSourceIndex(source) {
+    const entries = nodeFrenchSourceEntries(source);
+    const frenchIndex = entries.findIndex((entry) => /truefrench|vf|fr/i.test(`${entry.language} ${entry.name}`));
+    return frenchIndex >= 0 ? frenchIndex : 0;
+}
+
+function renderFrenchSourcePanel(source, activeIndex = 0) {
+    if (!elements.playerSourcePanel || !elements.playerSourceList) return;
+    const entries = nodeFrenchSourceEntries(source);
+    elements.playerSourceList.innerHTML = "";
+    if (!entries.length) {
+        elements.playerSourcePanel.hidden = true;
+        return;
+    }
+    elements.playerSourcePanel.hidden = false;
+    elements.playerSourceCount.textContent = `${entries.length} source${entries.length > 1 ? "s" : ""}`;
+    const autoButton = document.createElement("button");
+    autoButton.type = "button";
+    autoButton.className = `player-source-option ${activeIndex === nodeFrenchDefaultSourceIndex(source) ? "active" : ""}`;
+    autoButton.dataset.sourceIndex = String(nodeFrenchDefaultSourceIndex(source));
+    autoButton.disabled = state.playerOpening || state.activePlaybackMode === "embed";
+    autoButton.dataset.sourceAuto = "true";
+    autoButton.setAttribute("role", "option");
+    autoButton.setAttribute("aria-selected", String(activeIndex === nodeFrenchDefaultSourceIndex(source)));
+    autoButton.innerHTML = '<span class="player-source-dot"></span><span><strong>AUTO</strong><small>Source FR recommandée</small></span>';
+    elements.playerSourceList.append(autoButton);
+    entries.forEach((entry) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `player-source-option ${entry.index === activeIndex ? "active" : ""}`;
+        button.dataset.sourceIndex = String(entry.index);
+        button.disabled = state.playerOpening || state.activePlaybackMode === "embed";
+        button.setAttribute("role", "option");
+        button.setAttribute("aria-selected", String(entry.index === activeIndex));
+        button.innerHTML = `<span class="player-source-dot"></span><span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.language)} · ${escapeHtml(entry.quality)}</small></span>`;
+        elements.playerSourceList.append(button);
+    });
+}
+
+async function switchToFrenchSource(index) {
+    const source = state.activeFrenchSourcePayload;
+    const item = state.activePlayerItem;
+    if (!source || !item || state.playerOpening) return;
+    const entries = nodeFrenchSourceEntries(source);
+    if (!entries[index]) return;
+    state.playerOpening = true;
+    setPlayerControlsBusy(true);
+    state.playerErrorShown = false;
+    const resumeTime = snapshotPlaybackResumeTime();
+    try {
+        setPlayerLoading("Changement de source...", `Ouverture de ${entries[index].name}.`);
+        detachPlayerMedia();
+        await settleDetachedPlayer();
+        const selectedSource = nodeFrenchSourcePayload(source, index);
+        const stream = nodeFrenchStreamFromSource(selectedSource);
+        const sourceLabel = [entries[index].name, entries[index].language].filter(Boolean).join(" · ");
+        state.activeFrenchSourceIndex = index;
+        state.activePlayerItem = { ...item, playbackProviderName: sourceLabel };
+        renderFrenchSourcePanel(source, index);
+        await startStreamPlayback(state.activePlayerItem, stream.proxyUrl, stream.playbackMode, {
+            startTime: resumeTime,
+            embedFallbackUrl: stream.playbackMode === "hls" ? stream.embedUrl : "",
+            embedFallbackLabel: sourceLabel,
+            preferredAudioLanguage: stream.preferredAudioLanguage,
+            preferredSubtitleLanguage: stream.preferredSubtitleLanguage,
+            visualWatch: true
+        });
+        elements.playerMessage.textContent = `Source active : ${sourceLabel}.`;
+    } catch (error) {
+        showPlayerError(error.message || "Impossible d'ouvrir cette source.");
+    } finally {
+        state.playerOpening = false;
+        setPlayerControlsBusy(false);
+    }
+}
+
 async function playNodeFrenchItem(item) {
     if (!nodeApiEnabled()) {
         throw new Error("API Node FR non configurée.");
@@ -5359,7 +5486,12 @@ async function playNodeFrenchItem(item) {
         }
     }
     elements.playerBadge.textContent = source.requiresLanguageConfirmation ? "VO" : "FR";
-    const stream = nodeFrenchStreamFromSource(source);
+    state.activeFrenchSourcePayload = source;
+    state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(source);
+    renderFrenchSourcePanel(source, state.activeFrenchSourceIndex);
+    const stream = nodeFrenchStreamFromSource(
+        nodeFrenchSourcePayload(source, state.activeFrenchSourceIndex) || source
+    );
     const sourceLabel = [
         stream.hoster.nom || "Source FR",
         stream.hoster.lang || ""
@@ -8325,6 +8457,11 @@ elements.streamPlayer.addEventListener("error", () => {
     }
 });
 elements.playerQuality.addEventListener("change", changePlayerQuality);
+elements.playerSourceList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-source-index]");
+    if (!button) return;
+    switchToFrenchSource(Number(button.dataset.sourceIndex));
+});
 
 state.notifications = buildNotifications();
 renderNotifications();
