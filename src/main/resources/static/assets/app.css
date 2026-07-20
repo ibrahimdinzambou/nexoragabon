@@ -11803,15 +11803,15 @@ svg {
     }
 
     #playerModal .player-title-group {
-        display: grid !important;
-        grid-template-columns: auto minmax(0, 1fr) !important;
-        gap: 5px 9px !important;
-        align-items: start !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 6px !important;
     }
 
     #playerModal .player-title-group .live-badge {
-        grid-row: 1 / span 2 !important;
-        align-self: start !important;
+        grid-row: auto !important;
+        align-self: flex-start !important;
         margin-top: 2px !important;
         padding: 5px 7px !important;
         font-size: 8px !important;
@@ -11840,6 +11840,26 @@ svg {
         color: rgba(255, 255, 255, 0.68) !important;
         font-size: 12px !important;
         line-height: 1.35 !important;
+    }
+
+    #playerModal .player-source-panel {
+        width: calc(100% - 24px) !important;
+        margin: 0 auto !important;
+        padding: 12px !important;
+        border-radius: 14px !important;
+    }
+
+    #playerModal .player-source-heading {
+        align-items: flex-start !important;
+        margin-bottom: 10px !important;
+    }
+
+    #playerModal .player-source-heading h3 {
+        font-size: 14px !important;
+    }
+
+    #playerModal .player-source-list {
+        grid-template-columns: 1fr !important;
     }
 
     #playerModal .player-tools {
