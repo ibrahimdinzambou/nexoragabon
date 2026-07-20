@@ -5229,13 +5229,15 @@ function nodeFrenchEndpointForItem(item) {
     const tmdbId = tmdbIdFromItem(item);
     if (!tmdbId) return "";
     if (item.type === "movie") {
-        return `/streams?tmdbId=${encodeURIComponent(tmdbId)}&mediaType=movie&provider=all`;
+        // The public node-fr deployment currently exposes the compatible
+        // French source contract under /sources, not /streams.
+        return `/sources/movie/${encodeURIComponent(tmdbId)}?provider=auto`;
     }
     if (item.type === "series") {
         const season = positiveInteger(item.season);
         const episode = positiveInteger(item.episode);
         if (!season || !episode) return "";
-        return `/streams?tmdbId=${encodeURIComponent(tmdbId)}&mediaType=tv&season=${season}&episode=${episode}&provider=all`;
+        return `/sources/series/${encodeURIComponent(tmdbId)}/${season}/${episode}?provider=auto`;
     }
     return "";
 }
