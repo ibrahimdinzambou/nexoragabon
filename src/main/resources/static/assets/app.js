@@ -5464,25 +5464,12 @@ async function playNodeFrenchItem(item) {
     } catch (frenchNexoraError) {
         // Priorité 2 : ancienne API Orion/Aether sur son endpoint dédié.
         const legacyEndpoint = legacyNodeFrenchEndpointForItem(item);
-        // Mixed deployments may expose the legacy /sources contract on the
-        // primary Node API base URL. Try it before the separate Orion base.
-        if (legacyEndpoint) {
-            try {
-                source = await nodeApi(legacyEndpoint);
-            } catch (_) {
-                source = null;
-            }
-        }
-        if (source) {
-            // Keep the source returned by the compatible legacy contract.
-        } else {
-            if (!legacyNodeApiEnabled() || !legacyEndpoint) throw frenchNexoraError;
-            try {
-                source = await legacyNodeApi(legacyEndpoint);
-            } catch (legacyError) {
-                legacyError.cause = frenchNexoraError;
-                throw legacyError;
-            }
+        if (!legacyNodeApiEnabled() || !legacyEndpoint) throw frenchNexoraError;
+        try {
+            source = await legacyNodeApi(legacyEndpoint);
+        } catch (legacyError) {
+            legacyError.cause = frenchNexoraError;
+            throw legacyError;
         }
     }
     elements.playerBadge.textContent = source.requiresLanguageConfirmation ? "VO" : "FR";

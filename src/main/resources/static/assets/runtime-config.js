@@ -24,11 +24,7 @@
     }
 
     function configuredNodeBase() {
-        const explicit = trimSlash(
-            window.NEXORA_FRENCH_NEXORA_API_BASE_URL
-            || window.NEXORA_NODE_API_BASE_URL
-            || ""
-        );
+        const explicit = trimSlash(window.NEXORA_FRENCH_NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
         return publicNodeApiBase;
     }
