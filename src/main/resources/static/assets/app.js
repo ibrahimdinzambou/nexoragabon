@@ -155,6 +155,8 @@ const state = {
     playerUserPaused: false,
     playerDetaching: false,
     playerVisualWatchStartedAt: 0,
+    playerVisualLastFrameCount: null,
+    playerVisualLastFrameAt: 0,
     playerVisualFallbackPending: false,
     activePlayerItem: null,
     activeProxyUrl: null,
@@ -5853,11 +5855,15 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     state.activePlaybackMode = playbackMode;
     state.activeEmbedFallbackUrl = playbackMode === "hls" ? options.embedFallbackUrl || null : null;
     state.activeEmbedFallbackLabel = playbackMode === "hls" ? options.embedFallbackLabel || "" : "";
-    state.activeVisualWatchdogEnabled = playbackMode === "hls" && Boolean(options.visualWatch);
+    // An audio-only failure can occur with HLS, MPEG-TS, DASH, or a direct
+    // source. Unless explicitly disabled, monitor every native video mode.
+    state.activeVisualWatchdogEnabled = playbackMode !== "embed" && options.visualWatch !== false;
     state.activePreferredAudioLanguage = options.preferredAudioLanguage || null;
     state.activePreferredSubtitleLanguage = options.preferredSubtitleLanguage || null;
     state.playerVisualFallbackPending = false;
     state.playerLastProgressAt = Date.now();
+    state.playerVisualLastFrameCount = null;
+    state.playerVisualLastFrameAt = 0;
     state.nativePlaybackRequiresUserLaunch = false;
     if (playbackMode === "embed") {
         detachPlayerMedia();
@@ -5880,7 +5886,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     elements.streamPlayer.hidden = false;
     elements.streamPlayer.preload = "auto";
     schedulePlayerStartupWatchdog(generation);
-    schedulePlayerVisualWatchdog(generation);
+    schedulePlayerVisualWatchdog(generation, true);
     const useMpegTs = playbackMode === "mpegts";
     if (playbackMode === "dash") {
         if (!window.dashjs?.MediaPlayer) {
@@ -6127,6 +6133,7 @@ function showNativePlaybackLaunchPanel() {
     state.nativePlaybackRequiresUserLaunch = true;
     clearPlayerStartupTimer();
     clearPlayerPauseResumeTimer();
+    clearPlayerVisualWatchdog();
     elements.streamPlayer.hidden = true;
     elements.embedPlayer.hidden = true;
     elements.embedLaunchPanel.hidden = false;
@@ -6200,7 +6207,7 @@ function resolveNativePlaybackLaunch() {
     elements.playerPlaceholder.querySelector("p").textContent = "Demarrage de la lecture...";
     elements.playerMessage.textContent = "Ouverture du flux video.";
     if (state.activeVisualWatchdogEnabled) {
-        schedulePlayerVisualWatchdog(state.playerGeneration);
+        schedulePlayerVisualWatchdog(state.playerGeneration, true);
     }
     attemptStreamPlayerPlay(state.playerGeneration)
         .catch((error) => {
@@ -6539,12 +6546,14 @@ function schedulePausedPlaybackResume() {
     }, PLAYER_PAUSE_RESUME_DELAY_MS);
 }
 
-function schedulePlayerVisualWatchdog(generation) {
+function schedulePlayerVisualWatchdog(generation, resetWatch = false) {
     clearPlayerVisualWatchdog();
-    if (!state.activeVisualWatchdogEnabled || state.activePlaybackMode !== "hls" || state.playerUserPaused) {
+    if (!state.activeVisualWatchdogEnabled || state.activePlaybackMode === "embed" || state.playerUserPaused) {
         return;
     }
-    state.playerVisualWatchStartedAt = Date.now();
+    if (resetWatch || !state.playerVisualWatchStartedAt) {
+        state.playerVisualWatchStartedAt = Date.now();
+    }
     state.playerVisualWatchTimer = window.setTimeout(
         () => inspectPlayerVisualTrack(generation),
         PLAYER_VISUAL_WATCHDOG_MS
@@ -6554,7 +6563,7 @@ function schedulePlayerVisualWatchdog(generation) {
 function inspectPlayerVisualTrack(generation) {
     state.playerVisualWatchTimer = null;
     if (generation !== state.playerGeneration
-        || state.activePlaybackMode !== "hls"
+        || state.activePlaybackMode === "embed"
         || !state.activeVisualWatchdogEnabled
         || state.playerErrorShown
         || state.playerUserPaused
@@ -6564,7 +6573,25 @@ function inspectPlayerVisualTrack(generation) {
     }
 
     const video = elements.streamPlayer;
-    if (video.videoWidth > 0 && video.videoHeight > 0) {
+    const now = Date.now();
+    const hasVideoDimensions = video.videoWidth > 0 && video.videoHeight > 0;
+    const quality = typeof video.getVideoPlaybackQuality === "function"
+        ? video.getVideoPlaybackQuality()
+        : null;
+    const frameCount = Number(quality?.totalVideoFrames);
+    const hasFrameCounter = Number.isFinite(frameCount);
+    const hasRenderedVideo = hasVideoDimensions && (!hasFrameCounter || frameCount > 0);
+    const hasNewVideoFrame = hasRenderedVideo
+        && (!hasFrameCounter
+            || state.playerVisualLastFrameCount === null
+            || frameCount > state.playerVisualLastFrameCount);
+    if (hasNewVideoFrame) {
+        // Keep checking after a successful start: some providers drop the video
+        // track while the audio track continues to play.
+        state.playerVisualLastFrameCount = hasFrameCounter ? frameCount : null;
+        state.playerVisualLastFrameAt = now;
+        state.playerVisualWatchStartedAt = now;
+        schedulePlayerVisualWatchdog(generation);
         return;
     }
 
@@ -6572,7 +6599,11 @@ function inspectPlayerVisualTrack(generation) {
         && !video.paused
         && !video.ended
         && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-    const watchedFor = Date.now() - state.playerVisualWatchStartedAt;
+    const lastVisualAt = Math.max(
+        state.playerVisualLastFrameAt,
+        state.playerVisualWatchStartedAt
+    );
+    const watchedFor = now - lastVisualAt;
     if (!hasAudioProgress && watchedFor < PLAYER_VISUAL_WATCHDOG_MAX_MS) {
         state.playerVisualWatchTimer = window.setTimeout(
             () => inspectPlayerVisualTrack(generation),
@@ -6670,7 +6701,7 @@ async function switchToNodeTmdbFallback(reason) {
             embedFallbackLabel: sourceLabel,
             preferredAudioLanguage: stream.preferredAudioLanguage,
             preferredSubtitleLanguage: stream.preferredSubtitleLanguage,
-            visualWatch: false
+            visualWatch: true
         });
         elements.playerMessage.textContent = "Source alternative ouverte.";
         return true;
@@ -7011,6 +7042,8 @@ function detachPlayerMedia() {
     state.playerLastSeekTime = 0;
     state.playerWasPausedBeforeSeek = false;
     state.playerUserPaused = false;
+    state.playerVisualLastFrameCount = null;
+    state.playerVisualLastFrameAt = 0;
     state.playerVisualFallbackPending = false;
     state.nativePlaybackRequiresUserLaunch = false;
     state.activeEmbedFallbackUrl = null;
@@ -8118,6 +8151,9 @@ elements.streamPlayer.addEventListener("playing", () => {
 
 elements.streamPlayer.addEventListener("play", () => {
     state.playerUserPaused = false;
+    if (hasActivePlayback() && state.activeVisualWatchdogEnabled) {
+        schedulePlayerVisualWatchdog(state.playerGeneration, true);
+    }
 });
 
 elements.streamPlayer.addEventListener("loadstart", () => {
