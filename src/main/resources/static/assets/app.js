@@ -5205,7 +5205,9 @@ function requestedPlaybackQuality(item, options = {}) {
 }
 
 function shouldUseNodeFrenchPlayback(item) {
-    return isFrenchSource(item) && ["movie", "series"].includes(item?.type);
+    // Tous les contenus TMDB passent par la chaîne FR avant Videasy :
+    // frenchnexoraAPI -> Orion/Aether -> TMDB/Videasy.
+    return ["movie", "series"].includes(item?.type) && Boolean(tmdbIdFromItem(item));
 }
 
 function isNodeFrenchPlayerItem(item = state.activePlayerItem) {
