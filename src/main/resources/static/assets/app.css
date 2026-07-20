@@ -4054,7 +4054,9 @@ body.compact-catalog .card-copy strong {
 }
 
 .player-source-panel {
-    margin: 14px 18px 0;
+    width: 100%;
+    max-width: 920px;
+    margin: 0;
     padding: 16px;
     border: 1px solid rgba(231, 195, 109, 0.2);
     background: linear-gradient(135deg, rgba(231, 195, 109, 0.08), rgba(255, 255, 255, 0.025));
