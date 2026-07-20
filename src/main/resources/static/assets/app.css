@@ -4054,6 +4054,8 @@ body.compact-catalog .card-copy strong {
 }
 
 .player-source-panel {
+    display: grid;
+    gap: 14px;
     width: 100%;
     max-width: 920px;
     margin: 0;
@@ -4093,7 +4095,8 @@ body.compact-catalog .card-copy strong {
 
 .player-source-list {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    align-items: stretch;
     gap: 8px;
 }
 
@@ -4161,6 +4164,24 @@ body.compact-catalog .card-copy strong {
 .player-source-option.active .player-source-dot {
     background: var(--gold, #e7c36d);
     box-shadow: 0 0 0 3px rgba(231, 195, 109, 0.14);
+}
+
+@media (min-width: 761px) {
+    #playerModal .player-room-main {
+        grid-template-rows: auto auto auto auto !important;
+        grid-auto-flow: row !important;
+    }
+
+    #playerModal .player-info-panel {
+        grid-row: 3 !important;
+    }
+
+    #playerModal .player-source-panel {
+        grid-column: 1 !important;
+        grid-row: 4 !important;
+        position: relative !important;
+        z-index: 1 !important;
+    }
 }
 
 .player-info-panel {
@@ -4841,6 +4862,24 @@ body.compact-catalog .card-copy strong {
     .episode-play {
         width: 32px;
         height: 32px;
+    }
+}
+
+@media (min-width: 761px) {
+    #playerModal .player-room-main {
+        grid-template-rows: auto auto auto auto !important;
+        grid-auto-flow: row !important;
+    }
+
+    #playerModal .player-info-panel {
+        grid-row: 3 !important;
+    }
+
+    #playerModal .player-source-panel {
+        grid-column: 1 !important;
+        grid-row: 4 !important;
+        position: relative !important;
+        z-index: 1 !important;
     }
 }
 
@@ -12274,5 +12313,24 @@ svg {
 
     .row-heading {
         gap: 8px !important;
+    }
+}
+
+/* Keep the external source chooser in its own desktop grid row. */
+@media (min-width: 761px) {
+    #playerModal .player-room-main {
+        grid-template-rows: auto auto auto auto !important;
+        grid-auto-flow: row !important;
+    }
+
+    #playerModal .player-info-panel {
+        grid-row: 3 !important;
+    }
+
+    #playerModal .player-source-panel {
+        grid-column: 1 !important;
+        grid-row: 4 !important;
+        position: relative !important;
+        z-index: 1 !important;
     }
 }
