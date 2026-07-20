@@ -1,10 +1,10 @@
 (function () {
     const publicApiBase = "https://api.nexoragabon.com";
-    const publicNodeApiBase = "https://api.nexoragabon.com/node-fr";
+    const publicNodeApiBase = "https://nexora-node-api-production.up.railway.app";
     const publicLegacyNodeApiBase = "https://api.nexoragabon.com/orion";
     // API compatible avec ibrahimdinzambou/frenchnexoraAPI.
     // Peut être remplacée sans rebuild via window.NEXORA_FRENCH_NEXORA_API_BASE_URL.
-    const publicFrenchNexoraApiBase = "https://api.nexoragabon.com/node-fr";
+    const publicFrenchNexoraApiBase = "https://nexora-node-api-production.up.railway.app";
     const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";
     const publicSiteUrl = "https://nexoragabon.com";
     const apiHost = "api.nexoragabon.com";
