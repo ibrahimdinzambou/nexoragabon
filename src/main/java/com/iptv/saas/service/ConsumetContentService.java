@@ -252,7 +252,15 @@ public class ConsumetContentService {
             if (episodeId == null || episodeId.isBlank()) {
                 episodeId = "1";
             }
-            return new StreamResolution(embedUrl(itemId.mediaId(), episodeId), Map.of());
+            // Les instances Consumet recentes peuvent encore resoudre le flux
+            // directement. On tente donc le provider anime configure avant de
+            // retomber sur le lecteur embed, utile lorsque l'instance est
+            // partiellement indisponible.
+            try {
+                return fetchAnimeStream(itemId.provider(), episodeId);
+            } catch (RuntimeException ignored) {
+                return new StreamResolution(embedUrl(itemId.mediaId(), episodeId), Map.of());
+            }
         }
         String episodeId = itemId.episodeId();
         if (episodeId == null || episodeId.isBlank()) {
@@ -275,10 +283,28 @@ public class ConsumetContentService {
                         itemId.provider(),
                         "watch"
                 );
-        JsonNode response = fetchJson(watchUri);
+        try {
+            JsonNode response = fetchJson(watchUri);
+            JsonNode source = bestSource(response.path("sources"));
+            if (source == null) {
+                throw ApiException.streamUnavailable("Consumet ne renvoie aucune source video lisible");
+            }
+            String streamUrl = text(source, "url");
+            validateStreamUrl(streamUrl);
+            return new StreamResolution(streamUrl, headers(response.path("headers")));
+        } catch (RuntimeException exception) {
+            if (FAMILY_ANIME.equals(itemId.family())) {
+                return new StreamResolution(embedUrl(itemId.mediaId(), episodeNumber(episodeId)), Map.of());
+            }
+            throw exception;
+        }
+    }
+
+    private StreamResolution fetchAnimeStream(String provider, String episodeId) {
+        JsonNode response = fetchJson(animeWatchEndpoint(provider, episodeId));
         JsonNode source = bestSource(response.path("sources"));
         if (source == null) {
-            throw ApiException.streamUnavailable("Consumet ne renvoie aucune source video lisible");
+            throw ApiException.streamUnavailable("Consumet ne renvoie aucune source anime lisible");
         }
         String streamUrl = text(source, "url");
         validateStreamUrl(streamUrl);
@@ -1068,6 +1094,9 @@ public class ConsumetContentService {
     private boolean hostAllowed(String host, Set<String> allowed) {
         if (host == null || allowed.isEmpty()) {
             return false;
+        }
+        if (allowed.contains("*")) {
+            return true;
         }
         String normalized = host.toLowerCase(Locale.ROOT);
         return allowed.stream().anyMatch(candidate -> candidate.startsWith(".")
