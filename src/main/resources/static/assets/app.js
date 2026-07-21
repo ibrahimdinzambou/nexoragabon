@@ -3064,7 +3064,9 @@ function isAnimeItem(item) {
         item?.categoryName,
         item?.categoryId,
         item?.source,
-        item?.languageName
+        item?.languageName,
+        item?.genre,
+        item?.genres
     ].filter(Boolean).join(" "));
     return /\b(anime|animation|manga|japanimation|shonen|seinen)\b/.test(haystack);
 }
@@ -5108,12 +5110,24 @@ async function playItem(item, options = {}) {
                 await playNodeFrenchItem(item);
                 return;
             } catch (directError) {
-                const opened = await switchToUniversalEmbedFallback(
-                    directError.message || "Aucune source FR disponible; bascule vers Videasy."
-                );
+                let opened;
+                if (isAnimeItem(item)) {
+                    opened = await switchToConsumetAnimeFallback(
+                        directError.message || "Aucune source FrenchNexora disponible; recherche dans Consumet."
+                    );
+                    if (!opened) {
+                        opened = await switchToUniversalEmbedFallback(
+                            directError.message || "Aucune source FrenchNexora ou Consumet disponible; bascule vers TMDB."
+                        );
+                    }
+                } else {
+                    opened = await switchToUniversalEmbedFallback(
+                        directError.message || "Aucune source FR disponible; bascule vers TMDB."
+                    );
+                }
                 if (!opened) {
                     detachPlayerMedia();
-                    showPlayerError(directError.message || "Source FR directe indisponible.");
+                    showPlayerError(directError.message || "Aucune source vidéo disponible.");
                 }
                 return;
             }
@@ -5216,8 +5230,8 @@ function requestedPlaybackQuality(item, options = {}) {
 }
 
 function shouldUseNodeFrenchPlayback(item) {
-    // Tous les contenus TMDB passent par la chaîne FR avant Videasy :
-    // frenchnexoraAPI -> Orion/Aether -> TMDB/Videasy.
+    // Films et séries TMDB : FrenchNexora -> Orion/Aether -> TMDB/Videasy.
+    // Animés TMDB : FrenchNexora -> Consumet.
     return ["movie", "series"].includes(item?.type) && Boolean(tmdbIdFromItem(item));
 }
 
@@ -5226,9 +5240,22 @@ function isNodeFrenchPlayerItem(item = state.activePlayerItem) {
 }
 
 function nodeFrenchEndpointForItem(item) {
-    // Le deploiement public actuel expose /api/sources. Cette route est
-    // compatible avec les anciennes et les nouvelles versions de l'API.
-    return nodeTmdbEmbedFallbackEndpointForItem(item);
+    const tmdbId = tmdbIdFromItem(item);
+    if (!tmdbId) return "";
+
+    const params = new URLSearchParams({
+        tmdbId: String(tmdbId),
+        mediaType: item.type === "movie" ? "movie" : "tv",
+        provider: "all"
+    });
+    if (item.type === "series") {
+        const season = positiveInteger(item.season);
+        const episode = positiveInteger(item.episode);
+        if (!season || !episode) return "";
+        params.set("season", String(season));
+        params.set("episode", String(episode));
+    }
+    return `/streams?${params}`;
 }
 
 function nodeTmdbEmbedFallbackEndpointForItem(item) {
@@ -5337,6 +5364,10 @@ function nodeFrenchSourceEntries(source) {
     return [];
 }
 
+function hasUsableNodeFrenchSource(source) {
+    return nodeFrenchSourceEntries(source).length > 0;
+}
+
 function nodeFrenchSourcePayload(source, index) {
     if (Array.isArray(source?.streams)) {
         const stream = source.streams.filter((candidate) => candidate?.url)[index];
@@ -5443,41 +5474,16 @@ async function playNodeFrenchItem(item) {
     elements.playerQuality.value = "auto";
     stopHeartbeat();
     elements.playerBadge.textContent = "FR";
+    const anime = isAnimeItem(item);
     setPlayerLoading(
         "Recherche de la source FR...",
-        "frenchnexoraAPI, puis Orion/Aether en solution de secours."
+        anime
+            ? "Providers frenchnexoraAPI, puis Consumet pour les animés."
+            : "Providers frenchnexoraAPI, puis Orion/Aether et enfin TMDB."
     );
 
-    let source;
-    try {
-        // Priorité 1 : frenchnexoraAPI.
-        source = await nodeApi(endpoint);
-    } catch (frenchNexoraError) {
-        // Priorité 2 : ancienne API Orion/Aether sur son endpoint dédié.
-        const legacyEndpoint = legacyNodeFrenchEndpointForItem(item);
-        if (!legacyEndpoint) throw frenchNexoraError;
-        try {
-            source = await nodeApi(legacyEndpoint);
-        } catch (nodeLegacyError) {
-            // Une reponse HTTP 200 avec ok=false signifie que l'API FR est
-            // joignable mais n'a aucune source pour ce film. Orion ne peut
-            // pas ameliorer ce cas et provoquait un second 404 inutile.
-            if (nodeLegacyError.status === 200) {
-                throw nodeLegacyError;
-            }
-            if (!legacyNodeApiEnabled()) {
-                nodeLegacyError.cause = frenchNexoraError;
-                throw nodeLegacyError;
-            }
-            try {
-                source = await legacyNodeApi(legacyEndpoint);
-            } catch (legacyError) {
-                legacyError.cause = nodeLegacyError;
-                nodeLegacyError.cause = frenchNexoraError;
-                throw legacyError;
-            }
-        }
-    }
+    const resolved = await resolveNodeFrenchSource(item, endpoint, { anime });
+    const source = resolved.source;
     elements.playerBadge.textContent = source.requiresLanguageConfirmation ? "VO" : "FR";
     state.activeFrenchSourcePayload = source;
     state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(source);
@@ -5486,7 +5492,7 @@ async function playNodeFrenchItem(item) {
         nodeFrenchSourcePayload(source, state.activeFrenchSourceIndex) || source
     );
     const sourceLabel = [
-        stream.hoster.nom || "Source FR",
+        stream.hoster.nom || resolved.providerLabel,
         stream.hoster.lang || ""
     ].filter(Boolean).join(" - ");
 
@@ -5507,9 +5513,174 @@ async function playNodeFrenchItem(item) {
         }
     );
     if (stream.playbackMode === "embed") {
-        elements.playerMessage.textContent = "Lecteur FR ouvert depuis l'API Node.";
+        elements.playerMessage.textContent = `Lecteur ouvert via ${resolved.providerLabel}.`;
     } else {
-        elements.playerMessage.textContent = "Lecture FR via l'API Node.";
+        elements.playerMessage.textContent = `Lecture ouverte via ${resolved.providerLabel}.`;
+    }
+}
+
+async function resolveNodeFrenchSource(item, frenchEndpoint, options = {}) {
+    const failures = [];
+    try {
+        const source = await nodeApi(frenchEndpoint);
+        if (hasUsableNodeFrenchSource(source)) {
+            return { source, providerLabel: "frenchnexoraAPI" };
+        }
+        failures.push(new Error("Les providers frenchnexoraAPI ne proposent aucune source exploitable."));
+    } catch (error) {
+        failures.push(error);
+    }
+
+    if (options.anime) {
+        throw unavailableSourceError(
+            "Aucun provider frenchnexoraAPI ne propose cet animé.",
+            failures
+        );
+    }
+
+    const legacyEndpoint = legacyNodeFrenchEndpointForItem(item);
+    if (!legacyEndpoint || !legacyNodeApiEnabled()) {
+        throw unavailableSourceError(
+            "Aucune source FrenchNexora disponible et Orion/Aether n'est pas configuré.",
+            failures
+        );
+    }
+
+    try {
+        const source = await legacyNodeApi(legacyEndpoint);
+        if (hasUsableNodeFrenchSource(source)) {
+            return { source, providerLabel: "Orion/Aether" };
+        }
+        failures.push(new Error("Orion/Aether ne propose aucune source exploitable."));
+    } catch (error) {
+        failures.push(error);
+    }
+
+    throw unavailableSourceError(
+        "Aucune source disponible chez FrenchNexora ni Orion/Aether.",
+        failures
+    );
+}
+
+function unavailableSourceError(message, failures = []) {
+    const error = new Error(message);
+    error.code = "stream_unavailable";
+    error.failures = failures;
+    if (failures[failures.length - 1]) {
+        error.cause = failures[failures.length - 1];
+    }
+    return error;
+}
+
+function consumetAnimeSearchTitle(item) {
+    const value = String(item?.seriesName || item?.parentTitle || item?.name || "");
+    return value
+        .replace(/\s*[·•|:-]\s*(?:episode|ep\.?|e)\s*\d+.*$/i, "")
+        .replace(/\s+s\d+\s*e\d+.*$/i, "")
+        .trim();
+}
+
+function consumetAnimeTitleScore(candidate, query) {
+    const candidateTitle = normalizeSearchText(candidate?.name || "");
+    const searchTitle = normalizeSearchText(query || "");
+    if (!candidateTitle || !searchTitle) return 0;
+    if (candidateTitle === searchTitle) return 100;
+    if (candidateTitle.includes(searchTitle) || searchTitle.includes(candidateTitle)) return 80;
+    const searchWords = new Set(searchTitle.split(/\s+/).filter(Boolean));
+    const candidateWords = new Set(candidateTitle.split(/\s+/).filter(Boolean));
+    const commonWords = [...searchWords].filter((word) => candidateWords.has(word)).length;
+    return commonWords ? Math.round((commonWords / Math.max(searchWords.size, candidateWords.size)) * 60) : 0;
+}
+
+async function findConsumetAnimeEpisode(item) {
+    const query = consumetAnimeSearchTitle(item);
+    if (!query) {
+        throw new Error("Titre anime manquant pour la recherche Consumet.");
+    }
+
+    const parameters = new URLSearchParams({
+        type: "series",
+        q: query,
+        categoryId: "consumet-anime-series",
+        limit: "12"
+    });
+    const candidates = await api(`/catalog/items?${parameters}`);
+    const candidate = (Array.isArray(candidates) ? candidates : [])
+        .map((value, index) => ({ value, score: consumetAnimeTitleScore(value, query) - index / 100 }))
+        .sort((left, right) => right.score - left.score)[0]?.value;
+    if (!candidate?.id) {
+        throw new Error(`Anime introuvable dans Consumet : ${query}`);
+    }
+
+    const details = await api(`/catalog/items/${encodeURIComponent(candidate.id)}`);
+    const episodes = (details?.seasons || []).flatMap((season) => (
+        (season?.episodes || []).map((episode) => ({
+            ...episode,
+            season: positiveInteger(episode.season) || positiveInteger(season.season) || 1
+        }))
+    ));
+    const requestedSeason = positiveInteger(item?.season) || 1;
+    const requestedEpisode = positiveInteger(item?.episode) || 1;
+    const selected = episodes.find((episode) => (
+        positiveInteger(episode.season) === requestedSeason
+        && positiveInteger(episode.episode) === requestedEpisode
+    )) || episodes.find((episode) => positiveInteger(episode.episode) === requestedEpisode);
+    if (!selected?.id) {
+        throw new Error(`Episode ${requestedSeason}x${requestedEpisode} indisponible dans Consumet.`);
+    }
+
+    return {
+        ...candidate,
+        ...selected,
+        id: selected.id,
+        type: "series",
+        isEpisode: true,
+        name: item?.name || selected.name || candidate.name,
+        image: item?.image || selected.image || candidate.image,
+        poster: item?.poster || selected.poster || candidate.poster,
+        categoryId: selected.categoryId || candidate.categoryId || "consumet-anime-series",
+        categoryName: selected.categoryName || candidate.categoryName || "Consumet Anime",
+        source: "Consumet",
+        provider: candidate.provider || "anilist",
+        playbackProvider: "consumet",
+        playbackProviderName: "Consumet",
+        streamAvailable: selected.streamAvailable !== false
+    };
+}
+
+async function switchToConsumetAnimeFallback(reason) {
+    const item = state.activePlayerItem;
+    if (!item || !isAnimeItem(item)) return false;
+
+    state.playerVisualFallbackPending = true;
+    try {
+        setPlayerControlsBusy(true);
+        setPlayerLoading("Bascule vers Consumet...", reason || "Recherche d'un flux anime fonctionnel.");
+        detachPlayerMedia();
+        await settleDetachedPlayer();
+
+        const consumetItem = await findConsumetAnimeEpisode(item);
+        const stream = await api("/stream/open", {
+            method: "POST",
+            body: JSON.stringify({
+                type: "series",
+                itemId: consumetItem.id,
+                quality: "auto"
+            })
+        });
+        state.activeFrenchSourcePayload = null;
+        state.activeFrenchSourceIndex = 0;
+        renderFrenchSourcePanel(null);
+        state.activePlayerItem = consumetItem;
+        elements.playerBadge.textContent = "ANIME";
+        await startStreamFromPayload(consumetItem, stream, "auto");
+        elements.playerMessage.textContent = "Lecture anime via Consumet.";
+        return true;
+    } catch (error) {
+        return false;
+    } finally {
+        state.playerVisualFallbackPending = false;
+        setPlayerControlsBusy(false);
     }
 }
 
