@@ -257,7 +257,7 @@ public class ConsumetContentService {
             // retomber sur le lecteur embed, utile lorsque l'instance est
             // partiellement indisponible.
             try {
-                return fetchAnimeStream(itemId.provider(), episodeId);
+                return fetchAnimeStream(animeProvider, episodeId);
             } catch (RuntimeException ignored) {
                 return new StreamResolution(embedUrl(itemId.mediaId(), episodeId), Map.of());
             }
