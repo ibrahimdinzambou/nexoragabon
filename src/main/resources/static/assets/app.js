@@ -5226,18 +5226,9 @@ function isNodeFrenchPlayerItem(item = state.activePlayerItem) {
 }
 
 function nodeFrenchEndpointForItem(item) {
-    const tmdbId = tmdbIdFromItem(item);
-    if (!tmdbId) return "";
-    if (item.type === "movie") {
-        return `/streams?tmdbId=${encodeURIComponent(tmdbId)}&mediaType=movie&provider=all`;
-    }
-    if (item.type === "series") {
-        const season = positiveInteger(item.season);
-        const episode = positiveInteger(item.episode);
-        if (!season || !episode) return "";
-        return `/streams?tmdbId=${encodeURIComponent(tmdbId)}&mediaType=tv&season=${season}&episode=${episode}&provider=all`;
-    }
-    return "";
+    // Le deploiement public actuel expose /api/sources. Cette route est
+    // compatible avec les anciennes et les nouvelles versions de l'API.
+    return nodeTmdbEmbedFallbackEndpointForItem(item);
 }
 
 function nodeTmdbEmbedFallbackEndpointForItem(item) {
@@ -5468,6 +5459,12 @@ async function playNodeFrenchItem(item) {
         try {
             source = await nodeApi(legacyEndpoint);
         } catch (nodeLegacyError) {
+            // Une reponse HTTP 200 avec ok=false signifie que l'API FR est
+            // joignable mais n'a aucune source pour ce film. Orion ne peut
+            // pas ameliorer ce cas et provoquait un second 404 inutile.
+            if (nodeLegacyError.status === 200) {
+                throw nodeLegacyError;
+            }
             if (!legacyNodeApiEnabled()) {
                 nodeLegacyError.cause = frenchNexoraError;
                 throw nodeLegacyError;
