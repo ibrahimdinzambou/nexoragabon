@@ -542,7 +542,14 @@ public class ConsumetContentService {
     }
 
     private boolean animeNexoraMode() {
-        return isEnabled() && ("anime-nexora".equals(sourceMode) || "animesama".equals(sourceMode));
+        if (!isEnabled()) {
+            return false;
+        }
+        String configuredBase = baseUrl == null ? "" : baseUrl.toLowerCase(Locale.ROOT);
+        return "anime-nexora".equals(sourceMode)
+                || "animesama".equals(sourceMode)
+                || configuredBase.contains("anime-api")
+                || configuredBase.contains("anime-nexora");
     }
 
     private boolean isAnimeNexoraItem(ConsumetItemId itemId) {
