@@ -2635,8 +2635,8 @@ async function ensurePlayerSeriesContext(item) {
     const tmdbId = tmdbIdFromItem(item);
     const catalogSeries = findSeriesCatalogParent(item);
     try {
-        const series = tmdbId && nodeApiEnabled()
-            ? await nodeApi(`/catalog/series/${encodeURIComponent(tmdbId)}`)
+        const series = isAnimeNexoraItem(item)
+            ? await animeNexoraSeriesInfo(item)
             : await api(
                 `/catalog/series/${encodeURIComponent(catalogSeries?.id || seriesCatalogIdFromEpisode(item))}?title=${encodeURIComponent(seriesTitleKey(item.name || "") || item.name || "")}`
             );
