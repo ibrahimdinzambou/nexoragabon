@@ -483,14 +483,21 @@ function mapAnimeNexoraItem(value, type) {
 
 async function animeNexoraItems(type, query, limit) {
     const params = new URLSearchParams();
-    if (query) params.set("q", query);
+    const enrichmentLimit = Math.min(12, Math.max(1, limit || 12));
+    if (query) {
+        params.set("q", query);
+        params.set("limit", String(enrichmentLimit));
+    }
     else params.set("limit", String(Math.min(100, Math.max(1, limit || 24))));
     const endpoint = query ? "/search" : "/catalogues";
     const body = await animeNexoraApi(`${endpoint}?${params}`);
     const values = Array.isArray(body.data) ? body.data : [];
     const items = values.map((value) => mapAnimeNexoraItem(value, type)).filter(Boolean);
     if (type === "movie") {
-        return enrichAnimeNexoraPosters(items.slice(0, limit || items.length));
+        const selected = items.slice(0, limit || items.length);
+        // En dehors d'une recherche, conserver l'image fournie par Anime Nexora
+        // évite de lancer une requête TMDB/Spring pour chaque carte du catalogue.
+        return query ? enrichAnimeNexoraPosters(selected.slice(0, enrichmentLimit)) : selected;
     }
     if (type !== "series" || !query) {
         return items.slice(0, limit || items.length);
@@ -499,7 +506,7 @@ async function animeNexoraItems(type, query, limit) {
     // Une recherche comme "Baki" renvoie une fiche racine dont les saisons
     // sont en realite des versions distinctes. Le front les expose comme
     // cartes independantes pour permettre de choisir directement la version.
-    const versionCards = (await Promise.all(items.map(async (item) => {
+    const versionCards = (await Promise.all(items.slice(0, enrichmentLimit).map(async (item) => {
         try {
             const body = await animeNexoraApi(
                 `/catalogue/${encodeURIComponent(item.animeNexoraSlug)}/seasons`
