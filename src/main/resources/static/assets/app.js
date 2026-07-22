@@ -5657,6 +5657,53 @@ function nodeFrenchStreamFromSource(source) {
     };
 }
 
+ function nodeFrenchSourceHosters(source, resolver, label) {
+     const hosters = [];
+     if (Array.isArray(source?.hosters)) {
+         source.hosters.forEach((hoster) => {
+             if (!hoster) return;
+             const copy = { ...hoster };
+             const proxy = copy.proxyM3U8 || copy.proxyM3u8 || "";
+             if (proxy && resolver && !/^https?:\/\//i.test(proxy)) {
+                 copy.proxyM3U8 = resolver(proxy);
+                 delete copy.proxyM3u8;
+             }
+             copy.nom = copy.nom || label || copy.provider || copy.source || "Source FR";
+             hosters.push(copy);
+         });
+     }
+     if (Array.isArray(source?.streams)) {
+         source.streams.filter((stream) => stream?.url).forEach((stream) => {
+             const rawUrl = String(stream.url);
+             const hls = /\.m3u8(?:$|[?#])/i.test(rawUrl) || /mpegurl/i.test(String(stream.type || ""));
+             const headers = stream.headers && typeof stream.headers === "object" ? stream.headers : {};
+             const copy = {
+                 nom: stream.providerName || stream.provider || stream.title || label || "Source FR",
+                 lang: stream.language || "FR",
+                 quality: stream.quality || stream.type || "Auto"
+             };
+             if (hls && resolver) {
+                 const params = new URLSearchParams({ url: rawUrl });
+                 if (Object.keys(headers).length) params.set("headers", JSON.stringify(headers));
+                 copy.proxyM3U8 = resolver(`/proxy?${params}`);
+                 copy.m3u8 = rawUrl;
+             } else {
+                 copy.directUrl = rawUrl;
+             }
+             hosters.push(copy);
+         });
+     }
+     return hosters;
+ }
+
+ function mergeNodeFrenchSources(first, second) {
+     const hosters = [
+         ...nodeFrenchSourceHosters(first, legacyNodeApiUrl, "node-fr"),
+         ...nodeFrenchSourceHosters(second, nodeApiUrl, "frenchnexoraAPI")
+     ];
+     return hosters.length ? { ...(first || {}), hosters } : (first || second || null);
+ }
+
 function nodeFrenchSourceEntries(source) {
     if (Array.isArray(source?.streams)) {
         return source.streams.filter((stream) => stream?.url).map((stream, index) => ({
@@ -5709,9 +5756,12 @@ function nodeFrenchDefaultSourceIndex(source) {
 
 function publishBackgroundFrenchSource(item, resolved) {
     if (!resolved?.source || state.activePlayerItem?.id !== item?.id) return;
-    state.activeFrenchSourcePayload = resolved.source;
-    state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(resolved.source);
-    renderFrenchSourcePanel(resolved.source, state.activeFrenchSourceIndex);
+    state.activeFrenchSourcePayload = mergeNodeFrenchSources(
+        state.activeFrenchSourcePayload,
+        resolved.source
+    );
+    state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(state.activeFrenchSourcePayload);
+    renderFrenchSourcePanel(state.activeFrenchSourcePayload, state.activeFrenchSourceIndex);
 }
 
 function renderFrenchSourcePanel(source, activeIndex = 0) {
@@ -5809,16 +5859,17 @@ async function playNodeFrenchItem(item) {
 
     const resolved = await resolveNodeFrenchSource(item, endpoint, { anime });
     const source = resolved.source;
+    const sourceForPlayback = resolved.isFrenchNexora
+        ? source
+        : mergeNodeFrenchSources(source, null);
     elements.playerBadge.textContent = resolved.isFrenchNexora
         ? (source.requiresLanguageConfirmation ? "VO" : "FR")
         : "FR";
-    if (resolved.isFrenchNexora) {
-        state.activeFrenchSourcePayload = source;
-        state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(source);
-        renderFrenchSourcePanel(source, state.activeFrenchSourceIndex);
-    }
+    state.activeFrenchSourcePayload = sourceForPlayback;
+    state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(sourceForPlayback);
+    renderFrenchSourcePanel(sourceForPlayback, state.activeFrenchSourceIndex);
     const stream = nodeFrenchStreamFromSource(
-        nodeFrenchSourcePayload(source, state.activeFrenchSourceIndex) || source
+        nodeFrenchSourcePayload(sourceForPlayback, state.activeFrenchSourceIndex) || sourceForPlayback
     );
     const sourceLabel = [
         stream.hoster.nom || resolved.providerLabel,
