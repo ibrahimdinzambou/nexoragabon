@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=codex
-WorkingDirectory=/opt/nexora/frenchnexoraAPI
+WorkingDirectory=/opt/nexora/node-api
 Environment=NODE_ENV=production
 Environment=PORT=3100
 Environment=PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
