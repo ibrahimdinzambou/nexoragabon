@@ -558,45 +558,6 @@ async function enrichAnimeNexoraPosters(items) {
     }));
 }
 
-async function enrichFrenchNexoraCatalogItems(items, type) {
-    if (!Array.isArray(items) || !items.length || !["movie", "series"].includes(type)) {
-        return [];
-    }
-    const candidates = items.filter((item) => isTmdbSource(item) && tmdbIdFromItem(item));
-    const verified = await Promise.all(candidates.map(async (item) => {
-        const tmdbId = tmdbIdFromItem(item);
-        const params = new URLSearchParams({
-            tmdbId: String(tmdbId),
-            mediaType: type === "movie" ? "movie" : "tv",
-            provider: "all"
-        });
-        if (type === "series") {
-            params.set("season", "1");
-            params.set("episode", "1");
-        }
-        try {
-            const source = await nodeApi(`/streams?${params}`);
-            if (!hasUsableNodeFrenchSource(source)) return null;
-            return {
-                ...item,
-                source: "FrenchNexoraAPI",
-                sourceCode: "node-fr",
-                provider: "frenchnexora",
-                playbackProvider: "node-fr",
-                playbackProviderName: "FrenchNexoraAPI",
-                language: "fr",
-                languageName: "Français / VF",
-                audioLanguage: "fr",
-                frenchNexoraVerified: true,
-                frenchNexoraProviders: nodeFrenchSourceEntries(source).map((entry) => entry.name)
-            };
-        } catch {
-            return null;
-        }
-    }));
-    return verified.filter(Boolean);
-}
-
 async function animeNexoraSeriesInfo(item) {
     const slug = item.animeNexoraSlug || animeNexoraSlug(item.id.split("~").pop());
     const detail = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}`);
@@ -1940,14 +1901,9 @@ async function loadCatalog() {
                 // Le catalogue anime vient directement d'Anime NexoraAPI.
                 const nodeItemsPromise = Promise.resolve([]);
                 const [springItems, nodeItems, directItems] = await Promise.all([springItemsPromise, nodeItemsPromise, directAnimeItemsPromise]);
-                const frenchNexoraItems = query && nodeApiEnabled() && ["movie", "series"].includes(type)
-                    ? await enrichFrenchNexoraCatalogItems(springItems, type)
-                    : [];
-                const frenchById = new Map((frenchNexoraItems || []).map((item) => [String(item.id), item]));
-                const catalogSpringItems = (springItems || []).map((item) => frenchById.get(String(item.id)) || item);
                 return ["movie", "series"].includes(type)
-                    ? [...(directItems || []), ...(nodeItems || []), ...catalogSpringItems]
-                    : [...catalogSpringItems, ...(nodeItems || [])];
+                    ? [...(directItems || []), ...(nodeItems || []), ...(springItems || [])]
+                    : [...(springItems || []), ...(nodeItems || [])];
             })
         );
         if (requestId !== state.catalogRequestId) return;
