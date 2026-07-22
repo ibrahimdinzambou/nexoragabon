@@ -496,9 +496,13 @@ async function animeNexoraSeriesInfo(item) {
     const detail = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}`);
     const seasonsBody = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}/seasons`);
     const seasons = [];
-    for (const remoteSeason of (seasonsBody.data || [])) {
+    for (const [seasonIndex, remoteSeason] of (seasonsBody.data || []).entries()) {
         const seasonSlug = animeNexoraSlug(remoteSeason.url);
         if (!seasonSlug) continue;
+        // Anime Nexora utilise parfois des noms comme "OAV", "Film" ou
+        // "Baki Hanma saison 1". Le numero d'ordre de l'API est la vraie
+        // cle de version ; ne le deduisons pas du texte du nom.
+        const seasonNumber = seasonIndex + 1;
         const episodesBody = await animeNexoraApi(
             `/catalogue/${encodeURIComponent(slug)}/seasons/${encodeURIComponent(seasonSlug)}/episodes`
         );
@@ -507,7 +511,7 @@ async function animeNexoraSeriesInfo(item) {
             name: episode.name || `Episode ${index + 1}`,
             type: "series",
             isEpisode: true,
-            season: Number(String(remoteSeason.name || "").match(/\d+/)?.[0] || 1),
+            season: seasonNumber,
             episode: Number(episode.index || index + 1),
             poster: detail.data?.image_url || item.image,
             source: "Anime Nexora",
@@ -520,7 +524,7 @@ async function animeNexoraSeriesInfo(item) {
             animeNexoraEpisode: Number(episode.index || index + 1)
         }));
         seasons.push({
-            season: Number(String(remoteSeason.name || "").match(/\d+/)?.[0] || 1),
+            season: seasonNumber,
             name: remoteSeason.name || "Saison 1",
             episodeCount: episodes.length,
             episodes
