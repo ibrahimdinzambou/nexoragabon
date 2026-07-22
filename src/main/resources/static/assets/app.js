@@ -5478,7 +5478,7 @@ async function changePlayerQuality(event) {
 function setPlayerControlsBusy(isBusy) {
     elements.playerQuality.disabled = Boolean(isBusy) || state.activePlaybackMode === "embed";
     elements.playerSourceList?.querySelectorAll("button").forEach((button) => {
-        button.disabled = Boolean(isBusy) || state.activePlaybackMode === "embed";
+        button.disabled = Boolean(isBusy);
     });
 }
 
@@ -5652,6 +5652,13 @@ function nodeFrenchDefaultSourceIndex(source) {
     return frenchIndex >= 0 ? frenchIndex : 0;
 }
 
+function publishBackgroundFrenchSource(item, resolved) {
+    if (!resolved?.source || state.activePlayerItem?.id !== item?.id) return;
+    state.activeFrenchSourcePayload = resolved.source;
+    state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(resolved.source);
+    renderFrenchSourcePanel(resolved.source, state.activeFrenchSourceIndex);
+}
+
 function renderFrenchSourcePanel(source, activeIndex = 0) {
     if (!elements.playerSourcePanel || !elements.playerSourceList) return;
     const entries = nodeFrenchSourceEntries(source);
@@ -5739,18 +5746,22 @@ async function playNodeFrenchItem(item) {
     elements.playerBadge.textContent = "FR";
     const anime = isAnimeItem(item);
     setPlayerLoading(
-        "Recherche de la source FR...",
+        "Ouverture de la source principale...",
         anime
             ? "Providers frenchnexoraAPI, puis Consumet pour les animés."
-            : "Providers frenchnexoraAPI, puis Orion/Aether et enfin TMDB."
+            : "Connexion à Orion/Aether."
     );
 
     const resolved = await resolveNodeFrenchSource(item, endpoint, { anime });
     const source = resolved.source;
-    elements.playerBadge.textContent = source.requiresLanguageConfirmation ? "VO" : "FR";
-    state.activeFrenchSourcePayload = source;
-    state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(source);
-    renderFrenchSourcePanel(source, state.activeFrenchSourceIndex);
+    elements.playerBadge.textContent = resolved.isFrenchNexora
+        ? (source.requiresLanguageConfirmation ? "VO" : "FR")
+        : "FR";
+    if (resolved.isFrenchNexora) {
+        state.activeFrenchSourcePayload = source;
+        state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(source);
+        renderFrenchSourcePanel(source, state.activeFrenchSourceIndex);
+    }
     const stream = nodeFrenchStreamFromSource(
         nodeFrenchSourcePayload(source, state.activeFrenchSourceIndex) || source
     );
@@ -5761,7 +5772,7 @@ async function playNodeFrenchItem(item) {
 
     setPlayerLoading(
         "Ouverture de la source FR...",
-        sourceLabel || "Lecture directe depuis l'API Node."
+        sourceLabel || (resolved.isFrenchNexora ? "Lecture via FrenchNexoraAPI." : "Lecture via Orion/Aether.")
     );
     await startStreamPlayback(
         { ...item, playbackProvider: "node-fr", playbackProviderName: sourceLabel },
@@ -5782,17 +5793,14 @@ async function playNodeFrenchItem(item) {
     }
 }
 
-async function resolveNodeFrenchSource(item, frenchEndpoint, options = {}) {
+async function resolveNodeFrenchSourceLegacy(item, frenchEndpoint, options = {}) {
     const failures = [];
-    try {
-        const source = await nodeApi(frenchEndpoint);
-        if (hasUsableNodeFrenchSource(source)) {
-            return { source, providerLabel: "frenchnexoraAPI" };
+    const frenchPromise = nodeApi(frenchEndpoint).then((source) => {
+        if (!hasUsableNodeFrenchSource(source)) {
+            throw new Error("Les providers frenchnexoraAPI ne proposent aucune source exploitable.");
         }
-        failures.push(new Error("Les providers frenchnexoraAPI ne proposent aucune source exploitable."));
-    } catch (error) {
-        failures.push(error);
-    }
+        return { source, providerLabel: "frenchnexoraAPI", isFrenchNexora: true };
+    });
 
     if (options.anime) {
         throw unavailableSourceError(
@@ -5823,6 +5831,43 @@ async function resolveNodeFrenchSource(item, frenchEndpoint, options = {}) {
         "Aucune source disponible chez FrenchNexora ni Orion/Aether.",
         failures
     );
+}
+
+async function resolveNodeFrenchSource(item, frenchEndpoint, options = {}) {
+    const frenchPromise = nodeApi(frenchEndpoint).then((source) => {
+        if (!hasUsableNodeFrenchSource(source)) {
+            throw new Error("Les providers FrenchNexora ne proposent aucune source exploitable.");
+        }
+        return { source, providerLabel: "frenchnexoraAPI", isFrenchNexora: true };
+    });
+
+    if (options.anime) {
+        try {
+            return await frenchPromise;
+        } catch (error) {
+            throw unavailableSourceError("Aucun provider FrenchNexora ne propose cet anime.", [error]);
+        }
+    }
+
+    const legacyEndpoint = legacyNodeFrenchEndpointForItem(item);
+    if (legacyEndpoint && legacyNodeApiEnabled()) {
+        try {
+            const source = await legacyNodeApi(legacyEndpoint);
+            if (hasUsableNodeFrenchSource(source)) {
+                frenchPromise
+                    .then((resolved) => publishBackgroundFrenchSource(item, resolved))
+                    .catch(() => {});
+                return { source, providerLabel: "Orion/Aether", isFrenchNexora: false };
+            }
+        } catch {
+            // TMDB Easy sera utilisé par l'appelant; FrenchNexora continue en arrière-plan.
+        }
+    }
+
+    frenchPromise
+        .then((resolved) => publishBackgroundFrenchSource(item, resolved))
+        .catch(() => {});
+    throw unavailableSourceError("Orion/Aether indisponible; bascule vers TMDB Easy.");
 }
 
 function unavailableSourceError(message, failures = []) {
