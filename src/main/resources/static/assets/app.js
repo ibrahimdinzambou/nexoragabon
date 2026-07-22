@@ -3129,6 +3129,15 @@ function findCatalogItem(id, type) {
         || pool.find((entry) => String(entry.id) === String(id));
 }
 
+function isAnimeNexoraItem(item) {
+    const id = String(item?.id || "").toLowerCase();
+    const provider = String(item?.provider || item?.source || item?.playbackProvider || "").toLowerCase();
+    const category = String(item?.categoryId || "").toLowerCase();
+    return id.startsWith("consumet~anime~anime-nexora~")
+        || provider.includes("anime-nexora")
+        || category.startsWith("anime-nexora");
+}
+
 function recentlyWatchedItems(items = state.catalog) {
     const lookup = new Map(
         [...state.browseCatalog, ...state.searchResults, ...items]
@@ -5069,7 +5078,7 @@ async function playItem(item, options = {}) {
         showToast(item.streamUnavailableReason || "Ce contenu n'a pas de flux IPTV actif disponible.", true);
         return;
     }
-    if (isTmdbPlayable(item) && !shouldUseNodeFrenchPlayback(item)) {
+    if (isTmdbPlayable(item) && !isAnimeNexoraItem(item) && !shouldUseNodeFrenchPlayback(item)) {
         await playTmdbItem(item);
         return;
     }
@@ -5111,7 +5120,7 @@ async function playItem(item, options = {}) {
                 return;
             } catch (directError) {
                 let opened;
-                if (isAnimeItem(item)) {
+                if (isAnimeItem(item) && !isAnimeNexoraItem(item)) {
                     opened = await switchToConsumetAnimeFallback(
                         directError.message || "Aucune source FrenchNexora disponible; recherche dans Consumet."
                     );
@@ -5142,7 +5151,7 @@ async function playItem(item, options = {}) {
         });
         await startStreamFromPayload(item, stream, requestedQuality);
     } catch (error) {
-        if (["movie", "series"].includes(item.type) && videasyUrlForItem(item)) {
+        if (!isAnimeNexoraItem(item) && ["movie", "series"].includes(item.type) && videasyUrlForItem(item)) {
             const opened = await switchToUniversalEmbedFallback(
                 playerOpenErrorMessage(error, item) || "Aucune source directe disponible; bascule vers Videasy."
             );
