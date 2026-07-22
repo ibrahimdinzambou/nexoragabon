@@ -1886,9 +1886,9 @@ async function loadCatalog() {
                 const directAnimeItemsPromise = animeNexoraApiEnabled() && ["movie", "series"].includes(type)
                     ? animeNexoraItems(type, query, requestedLimit).catch(() => [])
                     : Promise.resolve([]);
-                const springItemsPromise = animeNexoraApiEnabled() && ["movie", "series"].includes(type)
-                    ? Promise.resolve([])
-                    : api(`/catalog/items?${params}`, { signal: abortController.signal }).catch(() => []);
+                // Le catalogue Spring contient les films et séries françaises.
+                // Anime NexoraAPI est ajouté en parallèle, sans masquer ce catalogue.
+                const springItemsPromise = api(`/catalog/items?${params}`, { signal: abortController.signal }).catch(() => []);
                 // FrenchNexoraAPI fournit les sources de lecture via
                 // /api/streams, pas un catalogue /api/catalog/items.
                 // Le catalogue anime vient directement d'Anime NexoraAPI.
