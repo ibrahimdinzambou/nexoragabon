@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexora FrenchNexora fallback providers API
+After=network.target
+
+[Service]
+Type=simple
+User=codex
+WorkingDirectory=/opt/nexora/frenchnexoraAPI
+Environment=NODE_ENV=production
+Environment=PORT=3200
+Environment=API_PROVIDER_TIMEOUT_MS=55000
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

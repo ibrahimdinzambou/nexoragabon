@@ -5,6 +5,7 @@ Cette configuration deploie deux services sur le meme VPS:
 - `nexora-api`: application Spring Boot, port local `8080`.
 - `nexora-drama`: API Python ReelShort/Drama, port local `5000`.
 - `node-fr` / node-api: API Next.js des films et séries FR, port local `3100`.
+- `french-providers` / frenchnexoraAPI: fallback providers, port local `3200`.
 - `nexora-anime`: API Python Anime-Sama, port local `5001`, exposee sous `/anime-api`.
 - `orion`: API legacy Orion/Aether, port local `3000`, utilisée en fallback.
 
@@ -104,11 +105,13 @@ Copier les services:
 sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-api.service /etc/systemd/system/
 sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-drama.service /etc/systemd/system/
 sudo cp /opt/nexora/app/deploy/vps/systemd/frenchnexora-api.service /etc/systemd/system/
+sudo cp /opt/nexora/app/deploy/vps/systemd/frenchnexora-fallback.service /etc/systemd/system/
 sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-anime.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now nexora-drama
 sudo systemctl enable --now nexora-api
 sudo systemctl enable --now frenchnexora-api
+sudo systemctl enable --now frenchnexora-fallback
 sudo systemctl enable --now nexora-anime
 ```
 

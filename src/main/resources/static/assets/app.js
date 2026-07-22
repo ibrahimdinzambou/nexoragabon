@@ -5923,10 +5923,11 @@ async function resolveNodeFrenchSource(item, frenchEndpoint, options = {}) {
         }
     }
 
-    frenchPromise
-        .then((resolved) => publishBackgroundFrenchSource(item, resolved))
-        .catch(() => {});
-    throw unavailableSourceError("Orion/Aether indisponible; bascule vers TMDB Easy.");
+    try {
+        return await frenchPromise;
+    } catch (error) {
+        throw unavailableSourceError("Aucun provider FR disponible chez node-api ou frenchnexoraAPI.", [error]);
+    }
 }
 
 function unavailableSourceError(message, failures = []) {
