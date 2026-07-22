@@ -1749,6 +1749,30 @@ function normalizeItem(item, type, index) {
     };
 }
 
+function buildOrionFrenchCards(items, type) {
+    if (!Array.isArray(items) || !["movie", "series"].includes(type)) return [];
+    return items.filter((item) => isTmdbSource(item) && tmdbIdFromItem(item)).map((item) => {
+        const tmdbId = tmdbIdFromItem(item);
+        return {
+            ...item,
+            id: `orion~${type}~${tmdbId}`,
+            source: "Orion/Aether",
+            sourceCode: "orion",
+            provider: "orion",
+            playbackProvider: "orion",
+            playbackProviderName: "Orion/Aether",
+            categoryId: `orion-french-${type}`,
+            categoryName: type === "movie" ? "Films français" : "Séries françaises",
+            language: "fr",
+            languageName: "Français / VF",
+            audioLanguage: "fr",
+            streamAvailable: true,
+            externalPlayback: true,
+            tmdbId
+        };
+    });
+}
+
 function mergeCatalogCategories(items) {
     const known = new Set(state.categories.map((category) => String(category.id)));
     const generated = [];
@@ -1901,8 +1925,9 @@ async function loadCatalog() {
                 // Le catalogue anime vient directement d'Anime NexoraAPI.
                 const nodeItemsPromise = Promise.resolve([]);
                 const [springItems, nodeItems, directItems] = await Promise.all([springItemsPromise, nodeItemsPromise, directAnimeItemsPromise]);
+                const orionFrenchItems = buildOrionFrenchCards(springItems, type);
                 return ["movie", "series"].includes(type)
-                    ? [...(directItems || []), ...(nodeItems || []), ...(springItems || [])]
+                    ? [...(directItems || []), ...orionFrenchItems, ...(nodeItems || []), ...(springItems || [])]
                     : [...(springItems || []), ...(nodeItems || [])];
             })
         );
@@ -5155,7 +5180,9 @@ async function openSeries(item) {
         const series = isAnimeNexoraItem(item)
             ? await animeNexoraSeriesInfo(item)
             : await api(
-                `/catalog/series/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.name || "")}`
+                `/catalog/series/${encodeURIComponent(isFrenchSource(item) && tmdbIdFromItem(item)
+                    ? `tmdb~series~${tmdbIdFromItem(item)}`
+                    : item.id)}?title=${encodeURIComponent(item.name || "")}`
             );
         state.activeSeries = series;
         renderSeriesDetails(series, item.image);
