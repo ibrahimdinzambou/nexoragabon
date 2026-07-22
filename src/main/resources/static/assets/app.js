@@ -735,7 +735,9 @@ async function nodeApi(path, options = {}) {
 }
 
 async function nodeCatalogApi(path, options = {}) {
-    const body = await nodeApi(path, options);
+    // Le catalogue appartient à node-api (/node-fr). Le fallback
+    // frenchnexoraAPI expose uniquement les sources /streams.
+    const body = await legacyNodeApi(path, options);
     return Array.isArray(body) ? body : (body.data || body.items || []);
 }
 
@@ -1943,7 +1945,15 @@ async function loadCatalog() {
                 // FrenchNexoraAPI fournit les sources de lecture via
                 // /api/streams, pas un catalogue /api/catalog/items.
                 // Le catalogue anime vient directement d'Anime NexoraAPI.
-                const nodeItemsPromise = Promise.resolve([]);
+                const nodeCatalogParams = new URLSearchParams({
+                    type,
+                    limit: String(requestedLimit)
+                });
+                if (query) nodeCatalogParams.set("q", query);
+                if (movieLibrary) nodeCatalogParams.set("sort", state.movieSort);
+                const nodeItemsPromise = ["movie", "series"].includes(type) && legacyNodeApiEnabled()
+                    ? nodeCatalogApi(`/catalog/items?${nodeCatalogParams}`, { signal: abortController.signal }).catch(() => [])
+                    : Promise.resolve([]);
                 const [springItems, nodeItems, directItems] = await Promise.all([springItemsPromise, nodeItemsPromise, directAnimeItemsPromise]);
                 const orionFrenchItems = buildOrionFrenchCards(springItems, type);
                 return ["movie", "series"].includes(type)
