@@ -9,7 +9,7 @@ WorkingDirectory=/opt/nexora/node-api
 Environment=NODE_ENV=production
 Environment=PORT=3100
 Environment=PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-Environment=PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+Environment=PUPPETEER_EXECUTABLE_PATH=/snap/bin/chromium
 ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=5
