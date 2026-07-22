@@ -36,6 +36,7 @@ public class ConsumetContentService {
     private static final String FAMILY_ANIME = "anime";
     private static final String FAMILY_META = "meta";
     private static final String PROVIDER_ANILIST = "anilist";
+    private static final String PROVIDER_ANIME_NEXORA = "anime-nexora";
     private static final String TYPE_MOVIE = "movie";
     private static final String TYPE_SERIES = "series";
     private static final int DEFAULT_PAGE_SIZE = 24;
@@ -131,7 +132,7 @@ public class ConsumetContentService {
                 "id", "fr",
                 "name", "Francais / VF",
                 "types", types,
-                "source", "Consumet"
+                "source", animeNexoraMode() ? "Anime Nexora" : "Consumet"
         ));
     }
 
@@ -154,6 +155,10 @@ public class ConsumetContentService {
         if (normalizedType == null) {
             return List.of();
         }
+        if (animeNexoraMode() && TYPE_SERIES.equals(normalizedType)
+                && matchesCategory(categoryId, FAMILY_ANIME, normalizedType)) {
+            return animeNexoraItems(normalizedType, query, categoryId, requestedLimit, normalizedLanguage, sort);
+        }
         List<Map<String, Object>> result = new ArrayList<>();
         if (query != null && !query.isBlank()) {
             search(result, normalizedType, query, categoryId, requestedLimit, normalizedLanguage);
@@ -175,6 +180,9 @@ public class ConsumetContentService {
 
     public Map<String, Object> itemInfo(String publicItemId) {
         ConsumetItemId itemId = parseItemId(publicItemId);
+        if (isAnimeNexoraItem(itemId)) {
+            return animeNexoraInfo(itemId, publicItemId);
+        }
         if (TYPE_SERIES.equals(itemId.type()) && itemId.episodeId() == null) {
             return seriesInfo(publicItemId, null);
         }
@@ -193,6 +201,9 @@ public class ConsumetContentService {
 
     public Map<String, Object> seriesInfo(String publicItemId, String titleHint) {
         ConsumetItemId itemId = parseItemId(publicItemId);
+        if (isAnimeNexoraItem(itemId)) {
+            return animeNexoraSeriesInfo(itemId, publicItemId, titleHint);
+        }
         if (!TYPE_SERIES.equals(itemId.type())) {
             throw ApiException.validation("Cet element Consumet n'est pas une serie");
         }
@@ -247,6 +258,9 @@ public class ConsumetContentService {
 
     public StreamResolution selectStream(String publicItemId) {
         ConsumetItemId itemId = parseItemId(publicItemId);
+        if (isAnimeNexoraItem(itemId)) {
+            return animeNexoraStream(itemId);
+        }
         if (isAnilistItem(itemId)) {
             String episodeId = itemId.episodeId();
             if (episodeId == null || episodeId.isBlank()) {
@@ -319,6 +333,12 @@ public class ConsumetContentService {
         if (!isConsumetItem(publicItemId) || streamUrl == null || streamUrl.isBlank()) {
             return false;
         }
+        if (publicItemId.contains("~anime-nexora~")) {
+            // Anime Nexora expose les lecteurs Anime-Sama (pages player), pas
+            // une playlist HLS directement exploitable par le relais serveur.
+            validateStreamUrl(streamUrl);
+            return true;
+        }
         return hostMatches(streamUrl, embedPlayerUrl) || hostMatches(streamUrl, otherEmbedPlayerUrl);
     }
 
@@ -331,7 +351,7 @@ public class ConsumetContentService {
                 "id", category.id(),
                 "name", category.name(),
                 "type", type,
-                "source", "Consumet",
+                "source", animeNexoraMode() && FAMILY_ANIME.equals(family) ? "Anime Nexora" : "Consumet",
                 "metadataAvailable", true,
                 "streamAvailable", true,
                 "adult", false
@@ -346,6 +366,10 @@ public class ConsumetContentService {
             int requestedLimit,
             String language
     ) {
+        if (animeNexoraMode() && TYPE_SERIES.equals(type) && matchesCategory(categoryId, FAMILY_ANIME, type)) {
+            result.addAll(animeNexoraItems(type, query, categoryId, requestedLimit, language, null));
+            return;
+        }
         if (matchesCategory(categoryId, FAMILY_MOVIES, type)) {
             addItems(result, fetchItems(endpoint(
                     Map.of("page", "1"),
@@ -374,6 +398,10 @@ public class ConsumetContentService {
             int requestedLimit,
             String language
     ) {
+        if (animeNexoraMode() && TYPE_SERIES.equals(type) && matchesCategory(categoryId, FAMILY_ANIME, type)) {
+            result.addAll(animeNexoraItems(type, null, categoryId, requestedLimit, language, null));
+            return;
+        }
         if (TYPE_MOVIE.equals(type)) {
             if (matchesCategory(categoryId, FAMILY_MOVIES, TYPE_MOVIE)) {
                 addItems(result, fetchItems(endpoint(FAMILY_MOVIES, movieProvider, "recent-movies")),
@@ -511,6 +539,181 @@ public class ConsumetContentService {
             LOGGER.warn("Catalogue Consumet ignore pour {}: {}", uri, exception.getMessage());
             return List.of();
         }
+    }
+
+    private boolean animeNexoraMode() {
+        return isEnabled() && ("anime-nexora".equals(sourceMode) || "animesama".equals(sourceMode));
+    }
+
+    private boolean isAnimeNexoraItem(ConsumetItemId itemId) {
+        return itemId != null && FAMILY_ANIME.equals(itemId.family())
+                && PROVIDER_ANIME_NEXORA.equals(itemId.provider());
+    }
+
+    private List<Map<String, Object>> animeNexoraItems(
+            String type, String query, String categoryId, int requestedLimit, String language, String sort) {
+        JsonNode response = fetchJson(animeNexoraEndpoint(
+                query == null || query.isBlank() ? "api/v1/catalogues" : "api/v1/search",
+                query == null || query.isBlank()
+                        ? Map.of("limit", String.valueOf(Math.max(1, Math.min(100, requestedLimit <= 0 ? DEFAULT_PAGE_SIZE : requestedLimit))))
+                        : Map.of("q", query.strip())));
+        JsonNode values = response.path("data");
+        if (!values.isArray()) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        Category category = category(FAMILY_ANIME, type);
+        for (JsonNode item : values) {
+            String slug = animeSlug(text(item, "url"));
+            String title = text(item, "name");
+            if (slug == null || title == null || title.isBlank()) {
+                continue;
+            }
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", publicItemId(FAMILY_ANIME, PROVIDER_ANIME_NEXORA, TYPE_SERIES, slug, null));
+            payload.put("name", title);
+            payload.put("type", TYPE_SERIES);
+            payload.put("categoryId", category.id());
+            payload.put("categoryName", category.name());
+            payload.put("poster", text(item, "image_url"));
+            payload.put("logo", text(item, "image_url"));
+            payload.put("genres", stringList(item.path("genres")));
+            payload.put("source", "Anime Nexora");
+            payload.put("provider", PROVIDER_ANIME_NEXORA);
+            payload.put("metadataAvailable", true);
+            payload.put("streamAvailable", true);
+            payload.put("isSeries", true);
+            if ("fr".equals(language)) {
+                payload.put("language", "fr");
+                payload.put("languageName", "Francais / VF");
+                payload.put("audioLanguage", "fr");
+            }
+            images.rewrite(payload);
+            result.add(payload);
+        }
+        Comparator<Map<String, Object>> byName = Comparator.comparing(
+                item -> String.valueOf(item.get("name")), String.CASE_INSENSITIVE_ORDER);
+        if ("title-desc".equals(sort)) {
+            byName = byName.reversed();
+        }
+        result.sort(byName);
+        return result.size() > requestedLimit && requestedLimit > 0
+                ? List.copyOf(result.subList(0, requestedLimit)) : List.copyOf(result);
+    }
+
+    private Map<String, Object> animeNexoraInfo(ConsumetItemId itemId, String publicId) {
+        JsonNode info = animeNexoraDetail(itemId.mediaId());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", publicId);
+        payload.put("name", textOrDefault(info, itemId.mediaId(), "name"));
+        payload.put("type", TYPE_SERIES);
+        payload.put("categoryId", category(FAMILY_ANIME, TYPE_SERIES).id());
+        payload.put("categoryName", category(FAMILY_ANIME, TYPE_SERIES).name());
+        payload.put("poster", text(info, "image_url"));
+        payload.put("summary", text(info, "synopsis"));
+        payload.put("genres", stringList(info.path("genres")));
+        payload.put("source", "Anime Nexora");
+        payload.put("provider", PROVIDER_ANIME_NEXORA);
+        payload.put("metadataAvailable", true);
+        payload.put("streamAvailable", true);
+        payload.put("isSeries", true);
+        return payload;
+    }
+
+    private Map<String, Object> animeNexoraSeriesInfo(ConsumetItemId itemId, String publicId, String titleHint) {
+        JsonNode info = animeNexoraDetail(itemId.mediaId());
+        JsonNode seasons = fetchJson(animeNexoraEndpoint("api/v1/catalogue/" + encodePath(itemId.mediaId()) + "/seasons", Map.of())).path("data");
+        List<Map<String, Object>> seasonPayloads = new ArrayList<>();
+        int episodeCount = 0;
+        if (seasons.isArray()) {
+            for (JsonNode season : seasons) {
+                String seasonUrl = text(season, "url");
+                if (seasonUrl == null) continue;
+                String seasonSlug = animeSlug(seasonUrl);
+                JsonNode episodes = fetchJson(animeNexoraEndpoint(
+                        "api/v1/catalogue/" + encodePath(itemId.mediaId()) + "/seasons/" + encodePath(seasonSlug) + "/episodes", Map.of())).path("data");
+                List<Map<String, Object>> values = new ArrayList<>();
+                if (episodes.isArray()) {
+                    int index = 0;
+                    for (JsonNode episode : episodes) {
+                        index++;
+                        Map<String, Object> value = new LinkedHashMap<>();
+                        value.put("id", publicItemId(FAMILY_ANIME, PROVIDER_ANIME_NEXORA, TYPE_SERIES,
+                                itemId.mediaId(), seasonUrl + "|" + index));
+                        value.put("name", textOrDefault(episode, "Episode " + index, "name", "short_name", "long_name"));
+                        value.put("type", TYPE_SERIES);
+                        value.put("season", seasonNumber(text(season, "name")));
+                        value.put("episode", index);
+                        value.put("isEpisode", true);
+                        value.put("poster", text(info, "image_url"));
+                        value.put("streamAvailable", !episode.path("languages").isEmpty());
+                        values.add(value);
+                    }
+                }
+                episodeCount += values.size();
+                seasonPayloads.add(Map.of("season", seasonNumber(text(season, "name")), "name", textOrDefault(season, "Saison", "name"), "episodeCount", values.size(), "episodes", values));
+            }
+        }
+        Map<String, Object> payload = animeNexoraInfo(itemId, publicId);
+        payload.put("name", titleHint == null || titleHint.isBlank() ? payload.get("name") : titleHint);
+        payload.put("seasonCount", seasonPayloads.size());
+        payload.put("episodeCount", episodeCount);
+        payload.put("seasons", seasonPayloads);
+        return payload;
+    }
+
+    private StreamResolution animeNexoraStream(ConsumetItemId itemId) {
+        if (itemId.episodeId() == null) throw ApiException.streamUnavailable("Episode Anime Nexora invalide");
+        String[] token = itemId.episodeId().split("\\|", 2);
+        if (token.length != 2) throw ApiException.streamUnavailable("Episode Anime Nexora invalide");
+        String seasonSlug = animeSlug(token[0]);
+        int index = Integer.parseInt(token[1]);
+        JsonNode episodes = fetchJson(animeNexoraEndpoint(
+                "api/v1/catalogue/" + encodePath(itemId.mediaId()) + "/seasons/" + encodePath(seasonSlug) + "/episodes", Map.of())).path("data");
+        JsonNode episode = episodes.isArray() && index > 0 && index <= episodes.size() ? episodes.get(index - 1) : null;
+        if (episode == null) throw ApiException.streamUnavailable("Episode Anime Nexora introuvable");
+        JsonNode languages = episode.path("languages");
+        String stream = firstPlayer(languages, "vf", "fr", "vostfr", "vo");
+        validateStreamUrl(stream);
+        return new StreamResolution(stream, Map.of());
+    }
+
+    private String firstPlayer(JsonNode languages, String... names) {
+        for (String name : names) {
+            JsonNode values = languages.path(name);
+            if (values.isArray() && !values.isEmpty() && !values.get(0).asText().isBlank()) return values.get(0).asText();
+        }
+        if (languages.isObject()) {
+            var fields = languages.fields();
+            while (fields.hasNext()) {
+                JsonNode values = fields.next().getValue();
+                if (values.isArray() && !values.isEmpty()) return values.get(0).asText();
+            }
+        }
+        throw ApiException.streamUnavailable("Aucun lecteur Anime Nexora disponible");
+    }
+
+    private JsonNode animeNexoraDetail(String slug) {
+        return fetchJson(animeNexoraEndpoint("api/v1/catalogue/" + encodePath(slug), Map.of())).path("data");
+    }
+
+    private URI animeNexoraEndpoint(String path, Map<String, String> query) {
+        StringBuilder url = new StringBuilder(baseUrl).append('/').append(path);
+        appendQuery(url, query);
+        return URI.create(url.toString());
+    }
+
+    private String animeSlug(String value) {
+        if (value == null || value.isBlank()) return null;
+        String clean = value.replaceAll("/+$", "");
+        int index = clean.lastIndexOf('/');
+        return index < 0 ? clean : clean.substring(index + 1);
+    }
+
+    private int seasonNumber(String value) {
+        if (value == null) return 1;
+        var matcher = java.util.regex.Pattern.compile("\\d+").matcher(value);
+        return matcher.find() ? Integer.parseInt(matcher.group()) : 1;
     }
 
     private List<JsonNode> fetchPagedAnilist(String endpointName, Map<String, String> query, int requestedLimit) {
@@ -888,6 +1091,9 @@ public class ConsumetContentService {
         String normalizedFamily = normalizeFamily(family);
         String normalizedType = normalizeType(type);
         if (FAMILY_ANIME.equals(normalizedFamily)) {
+            if (animeNexoraMode()) {
+                return new Category("anime-nexora", "Anime");
+            }
             return TYPE_MOVIE.equals(normalizedType)
                     ? new Category("consumet-anime-movie-" + animeProvider, "Films anime")
                     : new Category("consumet-anime-" + animeProvider, "Anime");

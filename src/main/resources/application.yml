@@ -131,14 +131,14 @@ app:
       manifest-url: ${STREMIO_PORN_ADDON_URL:}
       allowed-stream-hosts: ${STREMIO_PORN_ALLOWED_STREAM_HOSTS:*}
   consumet:
-    enabled: ${CONSUMET_ENABLED:false}
-    base-url: ${CONSUMET_BASE_URL:}
+    enabled: ${ANIME_NEXORA_ENABLED:${CONSUMET_ENABLED:false}}
+    base-url: ${ANIME_NEXORA_BASE_URL:${CONSUMET_BASE_URL:}}
     movie-provider: ${CONSUMET_MOVIE_PROVIDER:flixhq}
     anime-provider: ${CONSUMET_ANIME_PROVIDER:hianime}
     movie-server: ${CONSUMET_MOVIE_SERVER:vidcloud}
     anime-server: ${CONSUMET_ANIME_SERVER:vidstreaming}
     anime-category: ${CONSUMET_ANIME_CATEGORY:dub}
-    source-mode: ${CONSUMET_SOURCE_MODE:auto}
+    source-mode: ${ANIME_SOURCE_MODE:${CONSUMET_SOURCE_MODE:anime-nexora}}
     meta-provider: ${CONSUMET_META_PROVIDER:zoro}
     embed-source: ${CONSUMET_EMBED_SOURCE:hd-2}
     embed-player-url: ${CONSUMET_EMBED_PLAYER_URL:}

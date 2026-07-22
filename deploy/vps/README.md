@@ -5,6 +5,7 @@ Cette configuration deploie deux services sur le meme VPS:
 - `nexora-api`: application Spring Boot, port local `8080`.
 - `nexora-drama`: API Python ReelShort/Drama, port local `5000`.
 - `node-fr` / frenchnexoraAPI: API Node des sources films FR, port local `3100`.
+- `nexora-anime`: API Python Anime-Sama, port local `5001`, exposee sous `/anime-api`.
 - `orion`: API legacy Orion/Aether, port local `3000`, utilisée en fallback.
 
 Nginx expose le site et l'API en HTTPS, puis Spring appelle l'API drama en interne avec:
@@ -42,6 +43,13 @@ cd /opt/nexora/app
 git clone https://github.com/ibrahimdinzambou/frenchnexoraAPI.git /opt/nexora/frenchnexoraAPI
 cd /opt/nexora/frenchnexoraAPI
 npm ci --omit=dev
+
+# Source du catalogue anime
+git clone https://github.com/ibrahimdinzambou/anime-nexoraAPI.git /opt/nexora/anime-nexoraAPI
+cd /opt/nexora/anime-nexoraAPI
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e ".[api]"
 ```
 
 Installer l'API Python:
@@ -73,6 +81,9 @@ DRAMA_API_TIMEOUT_SECONDS=20
 ORION_BASE_URL=http://127.0.0.1:3000
 ORION_TIMEOUT_SECONDS=30
 FRENCH_NEXORA_API_BASE_URL=https://api.nexoragabon.com/node-fr
+ANIME_NEXORA_ENABLED=true
+ANIME_NEXORA_BASE_URL=https://api.nexoragabon.com/anime-api
+ANIME_SOURCE_MODE=anime-nexora
 ```
 
 Si tu utilises PostgreSQL:
@@ -92,10 +103,12 @@ Copier les services:
 sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-api.service /etc/systemd/system/
 sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-drama.service /etc/systemd/system/
 sudo cp /opt/nexora/app/deploy/vps/systemd/frenchnexora-api.service /etc/systemd/system/
+sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-anime.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now nexora-drama
 sudo systemctl enable --now nexora-api
 sudo systemctl enable --now frenchnexora-api
+sudo systemctl enable --now nexora-anime
 ```
 
 Verifier:
@@ -107,6 +120,7 @@ curl http://127.0.0.1:5000/api/v1/reelshort/search?keywords=love
 curl http://127.0.0.1:8080/actuator/health
 curl http://127.0.0.1:8080/api/dramas/bookshelves?lang=fr
 curl http://127.0.0.1:3000/api/health
+curl http://127.0.0.1:5001/health
 ```
 
 ## 5. Installer Nginx
@@ -164,6 +178,7 @@ cd /opt/nexora/app/reelshort-api
 pip install -r requirements.txt
 sudo chown -R nexora:nexora /opt/nexora
 sudo systemctl restart nexora-drama nexora-api frenchnexora-api
+sudo systemctl restart nexora-anime
 ```
 
 VÃ©rifier ensuite le contrat et le nombre de providers exposÃ©s:

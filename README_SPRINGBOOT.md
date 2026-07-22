@@ -370,7 +370,23 @@ Au demarrage, Nexora installe et approuve automatiquement cet add-on en contenu
 doivent etre attribuees explicitement dans l'administration ou par une regle
 `ADDON`/`CATEGORY` adaptee.
 
-## Consumet
+## Anime Nexora et Consumet
+
+Anime Nexora est la source principale du catalogue anime. Le dépôt
+`ibrahimdinzambou/anime-nexoraAPI` expose la recherche, les fiches, les saisons,
+les épisodes et les lecteurs via `/api/v1/*`; Nexora adapte ce contrat à son
+catalogue interne et choisit le premier lecteur VF/VOSTFR disponible.
+
+```properties
+ANIME_NEXORA_ENABLED=true
+ANIME_NEXORA_BASE_URL=https://api.nexoragabon.com/anime-api
+ANIME_SOURCE_MODE=anime-nexora
+```
+
+Les routes consommées sont `/api/v1/search`, `/api/v1/catalogues`,
+`/api/v1/catalogue/{slug}`, `/seasons` et `/episodes`.
+
+Consumet reste une source legacy optionnelle pour les films et séries :
 
 Consumet peut etre utilise comme source de films, series et anime via une
 instance REST auto-hebergee. Une fois active, Nexora ajoute les categories
