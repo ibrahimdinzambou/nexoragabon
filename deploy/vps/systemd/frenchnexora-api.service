@@ -1,15 +1,16 @@
 [Unit]
-Description=Nexora French streaming providers API
+Description=Nexora French movie API (nexora-node-api)
 After=network.target
 
 [Service]
 Type=simple
-User=nexora
+User=codex
 WorkingDirectory=/opt/nexora/frenchnexoraAPI
 Environment=NODE_ENV=production
 Environment=PORT=3100
-Environment=API_PROVIDER_TIMEOUT_MS=55000
-ExecStart=/usr/bin/node server.js
+Environment=PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+Environment=PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

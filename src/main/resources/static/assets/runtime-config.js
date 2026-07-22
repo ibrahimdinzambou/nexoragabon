@@ -1,7 +1,8 @@
 (function () {
     const publicApiBase = "https://api.nexoragabon.com";
     const publicNodeApiBase = "https://api.nexoragabon.com/node-fr";
-    const publicLegacyNodeApiBase = "https://api.nexoragabon.com/orion";
+    // API Nexora Node dédiée aux films français (/api/sources/movie/:tmdbId).
+    const publicLegacyNodeApiBase = "https://api.nexoragabon.com/node-fr";
     const publicAetherApiBase = "https://api.nexoragabon.com";
     // API compatible avec ibrahimdinzambou/frenchnexoraAPI.
     // Peut être remplacée sans rebuild via window.NEXORA_FRENCH_NEXORA_API_BASE_URL.

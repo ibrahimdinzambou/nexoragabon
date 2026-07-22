@@ -4,7 +4,7 @@ Cette configuration deploie deux services sur le meme VPS:
 
 - `nexora-api`: application Spring Boot, port local `8080`.
 - `nexora-drama`: API Python ReelShort/Drama, port local `5000`.
-- `node-fr` / frenchnexoraAPI: API Node des sources films FR, port local `3100`.
+- `node-fr` / nexora-node-api: API Next.js des films FR, port local `3100`.
 - `nexora-anime`: API Python Anime-Sama, port local `5001`, exposee sous `/anime-api`.
 - `orion`: API legacy Orion/Aether, port local `3000`, utilisée en fallback.
 
@@ -39,10 +39,11 @@ git clone https://github.com/Dinzambou241/DramaAPI-nexora.git /opt/nexora/app
 cd /opt/nexora/app
 ./mvnw -DskipTests package
 
-# Source des films en français
-git clone https://github.com/ibrahimdinzambou/frenchnexoraAPI.git /opt/nexora/frenchnexoraAPI
+# API des films en français
+git clone https://github.com/Dinzambou241/nexora-node-api.git /opt/nexora/frenchnexoraAPI
 cd /opt/nexora/frenchnexoraAPI
 npm ci --omit=dev
+npm run build
 
 # Source du catalogue anime
 git clone https://github.com/ibrahimdinzambou/anime-nexoraAPI.git /opt/nexora/anime-nexoraAPI
