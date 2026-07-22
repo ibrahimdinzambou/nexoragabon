@@ -14,14 +14,18 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 @RestController
 public class CatalogController {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CatalogController.class);
     private final IptvCatalogService catalog;
     private final CommunityAddonService addons;
     private final ConsumetContentService consumet;
@@ -103,24 +107,25 @@ public class CatalogController {
             @RequestParam(required = false, defaultValue = "1") int page,
             @RequestParam(required = false) String addonFilter,
             @RequestParam(required = false, defaultValue = "1") int addonPages
-    ) {
+        ) {
         type = normalizeCatalogType(type);
+        final String requestedType = type;
         UserEntity user = currentUser();
         List<List<Map<String, Object>>> resultSets = new ArrayList<>();
         if (shouldIncludeNativeCatalog(user) && shouldQueryNativeCatalog(categoryId)) {
-            addResultSet(resultSets, nativeItems(user, type, q, categoryId, language, sort, limit));
+            addResultSetSafely(resultSets, "native", () -> nativeItems(user, requestedType, q, categoryId, language, sort, limit));
         }
         if (hasConsumet()) {
-            addResultSet(resultSets, consumet.items(type, q, categoryId, language, sort, limit));
+            addResultSetSafely(resultSets, "consumet", () -> consumet.items(requestedType, q, categoryId, language, sort, limit));
         }
         if (hasTmdb()) {
-            addResultSet(resultSets, tmdb.items(type, q, categoryId, language, sort, limit));
+            addResultSetSafely(resultSets, "tmdb", () -> tmdb.items(requestedType, q, categoryId, language, sort, limit));
         }
         if (hasEporner() && eporner.hasAccess(user)) {
-            addResultSet(resultSets, eporner.items(type, q, categoryId, language, sort, limit, page));
+            addResultSetSafely(resultSets, "eporner", () -> eporner.items(requestedType, q, categoryId, language, sort, limit, page));
         }
         if (resultSets.isEmpty() || shouldLoadAddons(q, categoryId, addonFilter)) {
-            addResultSet(resultSets, addons.items(type, q, categoryId, sort, limit, addonFilter, addonPages, user));
+            addResultSetSafely(resultSets, "addons", () -> addons.items(requestedType, q, categoryId, sort, limit, addonFilter, addonPages, user));
         }
         List<Map<String, Object>> values = mergeResultSets(
                 resultSets,
@@ -227,6 +232,18 @@ public class CatalogController {
     private void addResultSet(List<List<Map<String, Object>>> resultSets, List<Map<String, Object>> values) {
         if (values != null && !values.isEmpty()) {
             resultSets.add(values);
+        }
+    }
+
+    private void addResultSetSafely(
+            List<List<Map<String, Object>>> resultSets,
+            String provider,
+            Supplier<List<Map<String, Object>>> loader
+    ) {
+        try {
+            addResultSet(resultSets, loader.get());
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Catalogue {} indisponible, poursuite avec les autres sources: {}", provider, exception.getMessage());
         }
     }
 
