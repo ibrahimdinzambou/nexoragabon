@@ -22,10 +22,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 public class CatalogController {
     private static final Logger LOGGER = LoggerFactory.getLogger(CatalogController.class);
+    private static final Pattern LEGACY_ORION_SERIES_ID = Pattern.compile("^orion~series~(\\d+)$", Pattern.CASE_INSENSITIVE);
     private final IptvCatalogService catalog;
     private final CommunityAddonService addons;
     private final ConsumetContentService consumet;
@@ -173,11 +176,20 @@ public class CatalogController {
                 ? consumet.seriesInfo(seriesId, title)
                 : hasTmdb() && tmdb.isTmdbItem(seriesId)
                 ? tmdb.seriesInfo(seriesId, title)
+                : hasTmdb() && legacyOrionTmdbId(seriesId) != null
+                ? tmdb.seriesInfo(legacyOrionTmdbId(seriesId), title)
                 : nativeSeriesInfo(user, seriesId, title);
         if (!permits(user, series)) {
             throw ApiException.forbidden("Cette catégorie n'est pas autorisée pour votre compte");
         }
         return Responses.ok(series);
+    }
+
+    private String legacyOrionTmdbId(String seriesId) {
+        Matcher matcher = LEGACY_ORION_SERIES_ID.matcher(String.valueOf(seriesId));
+        return matcher.matches()
+                ? "tmdb~series~" + matcher.group(1)
+                : null;
     }
 
     @GetMapping("/api/catalog/items/{itemId}")
