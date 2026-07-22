@@ -1775,6 +1775,7 @@ function buildOrionFrenchCards(items, type) {
         return {
             ...item,
             id: `orion~${type}~${tmdbId}`,
+            catalogId: String(item.id),
             source: "Orion/Aether",
             sourceCode: "orion",
             provider: "orion",
@@ -5199,9 +5200,7 @@ async function openSeries(item) {
         const series = isAnimeNexoraItem(item)
             ? await animeNexoraSeriesInfo(item)
             : await api(
-                `/catalog/series/${encodeURIComponent(isFrenchSource(item) && tmdbIdFromItem(item)
-                    ? `tmdb~series~${tmdbIdFromItem(item)}`
-                    : item.id)}?title=${encodeURIComponent(item.name || "")}`
+                `/catalog/series/${encodeURIComponent(item.catalogId || item.id)}?title=${encodeURIComponent(item.name || "")}`
             );
         state.activeSeries = series;
         renderSeriesDetails(series, item.image);
