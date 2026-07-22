@@ -488,13 +488,49 @@ async function animeNexoraItems(type, query, limit) {
     const endpoint = query ? "/search" : "/catalogues";
     const body = await animeNexoraApi(`${endpoint}?${params}`);
     const values = Array.isArray(body.data) ? body.data : [];
-    return values.map((value) => mapAnimeNexoraItem(value, type)).filter(Boolean).slice(0, limit || values.length);
+    const items = values.map((value) => mapAnimeNexoraItem(value, type)).filter(Boolean);
+    if (type !== "series" || !query) {
+        return items.slice(0, limit || items.length);
+    }
+
+    // Une recherche comme "Baki" renvoie une fiche racine dont les saisons
+    // sont en realite des versions distinctes. Le front les expose comme
+    // cartes independantes pour permettre de choisir directement la version.
+    const versionCards = (await Promise.all(items.map(async (item) => {
+        try {
+            const body = await animeNexoraApi(
+                `/catalogue/${encodeURIComponent(item.animeNexoraSlug)}/seasons`
+            );
+            return (body.data || []).map((season, index) => {
+                const seasonSlug = animeNexoraSlug(season.url);
+                if (!seasonSlug) return null;
+                const versionName = season.name || `Version ${index + 1}`;
+                return {
+                    ...item,
+                    id: `anime-nexora~series~${encodeURIComponent(item.animeNexoraSlug)}~${encodeURIComponent(seasonSlug)}`,
+                    name: `${item.name} · ${versionName}`,
+                    categoryName: versionName,
+                    animeNexoraSeasonSlug: seasonSlug,
+                    animeNexoraVersionName: versionName,
+                    animeNexoraVersionOnly: true
+                };
+            }).filter(Boolean);
+        } catch {
+            return [item];
+        }
+    }))).flat();
+    return versionCards.slice(0, limit || versionCards.length);
 }
 
 async function animeNexoraSeriesInfo(item) {
     const slug = item.animeNexoraSlug || animeNexoraSlug(item.id.split("~").pop());
     const detail = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}`);
-    const seasonsBody = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}/seasons`);
+    const seasonsBody = item.animeNexoraSeasonSlug
+        ? { data: [{
+            name: item.animeNexoraVersionName || item.categoryName || "Version 1",
+            url: `https://anime-sama.to/catalogue/${encodeURIComponent(slug)}/${encodeURIComponent(item.animeNexoraSeasonSlug)}`
+        }] }
+        : await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}/seasons`);
     const seasons = [];
     for (const [seasonIndex, remoteSeason] of (seasonsBody.data || []).entries()) {
         const seasonSlug = animeNexoraSlug(remoteSeason.url);
@@ -532,7 +568,7 @@ async function animeNexoraSeriesInfo(item) {
     }
     return {
         ...item,
-        name: detail.data?.name || item.name,
+        name: item.animeNexoraVersionName || detail.data?.name || item.name,
         summary: detail.data?.synopsis || "",
         poster: detail.data?.image_url || item.image,
         seasons,
