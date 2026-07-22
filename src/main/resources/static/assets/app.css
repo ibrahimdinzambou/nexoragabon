@@ -1090,6 +1090,10 @@ button {
     border-color: rgba(235, 93, 93, 0.52);
 }
 
+.genre-chip.anime-nexora-category {
+    border-color: rgba(168, 129, 255, 0.62);
+}
+
 .addon-badge {
     display: inline-flex;
     align-items: center;
@@ -1121,6 +1125,13 @@ button {
     border-color: rgba(255, 255, 255, 0.78);
     background: linear-gradient(90deg, #3166f6 0 30%, #f7f8fb 30% 68%, #ec4054 68% 100%);
     box-shadow: 0 4px 16px rgba(236, 64, 84, 0.28), 0 0 0 1px rgba(49, 102, 246, 0.14);
+}
+
+.anime-nexora-badge {
+    color: #f8f3ff;
+    border-color: rgba(196, 164, 255, 0.78);
+    background: linear-gradient(135deg, #7d4dcc, #3b246b);
+    box-shadow: 0 4px 16px rgba(125, 77, 204, 0.34);
 }
 
 .adult-badge {

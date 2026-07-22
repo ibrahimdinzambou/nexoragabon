@@ -3830,6 +3830,7 @@ function isEpornerSource(value) {
 
 function sourceClass(value) {
     if (isAsaAddon(value)) return "asa-category";
+    if (isAnimeNexoraItem(value)) return "anime-nexora-category";
     if (isEpornerSource(value)) return "adult-category";
     if (isFrenchSource(value)) return "french-category";
     if (isTmdbSource(value)) return "tmdb-category";
@@ -3840,6 +3841,9 @@ function sourceBadge(value, placement = "inline") {
     const placementClass = placement === "card" ? "addon-badge-card" : "addon-badge-inline";
     if (isAsaAddon(value)) {
         return `<span class="addon-badge ${placementClass}" aria-label="Contenu provenant de l'add-on ASA">ASA</span>`;
+    }
+    if (isAnimeNexoraItem(value)) {
+        return `<span class="addon-badge anime-nexora-badge ${placementClass}" aria-label="Contenu fourni par Anime NexoraAPI">NEXORA</span>`;
     }
     if (isFrenchSource(value)) {
         return `<span class="addon-badge french-badge ${placementClass}" aria-label="Contenu français via l'API Node">FR</span>`;
