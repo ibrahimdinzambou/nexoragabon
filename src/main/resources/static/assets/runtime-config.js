@@ -6,6 +6,7 @@
     // Peut être remplacée sans rebuild via window.NEXORA_FRENCH_NEXORA_API_BASE_URL.
     const publicFrenchNexoraApiBase = "https://api.nexoragabon.com/node-fr";
     const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";
+    const publicAnimeNexoraApiBase = "https://api.nexoragabon.com/anime-api";
     const publicSiteUrl = "https://nexoragabon.com";
     const apiHost = "api.nexoragabon.com";
 
@@ -49,6 +50,11 @@
         return "";
     }
 
+    function configuredAnimeNexoraBase() {
+        const explicit = trimSlash(window.NEXORA_ANIME_API_BASE_URL || "");
+        return explicit || publicAnimeNexoraApiBase;
+    }
+
     const apiBaseUrl = configuredBase();
     const apiRoot = `${apiBaseUrl}/api`;
     const nodeApiBaseUrl = configuredNodeBase();
@@ -58,6 +64,8 @@
     const legacyNodeApiRoot = legacyNodeApiBaseUrl ? `${legacyNodeApiBaseUrl}/api` : "";
     const dramaApiBaseUrl = configuredDramaBase();
     const dramaApiRoot = dramaApiBaseUrl ? `${dramaApiBaseUrl}/api/v1/reelshort` : "";
+    const animeNexoraApiBaseUrl = configuredAnimeNexoraBase();
+    const animeNexoraApiRoot = `${animeNexoraApiBaseUrl}/api/v1`;
 
     function apiUrl(path) {
         const value = String(path || "");
@@ -101,6 +109,14 @@
         return `${dramaApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
     }
 
+    function animeNexoraApiUrl(path) {
+        const value = String(path || "");
+        if (/^https?:\/\//i.test(value)) return value;
+        if (value.startsWith("/api/v1/")) return `${animeNexoraApiBaseUrl}${value}`;
+        if (value.startsWith("api/v1/")) return `${animeNexoraApiBaseUrl}/${value}`;
+        return `${animeNexoraApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
+    }
+
     function legacyNodeApiUrl(path) {
         if (!legacyNodeApiBaseUrl) return "";
         const value = String(path || "");
@@ -128,6 +144,8 @@
         legacyNodeApiRoot,
         dramaApiBaseUrl,
         dramaApiRoot,
+        animeNexoraApiBaseUrl,
+        animeNexoraApiRoot,
         orionApiBaseUrl: nodeApiBaseUrl,
         publicSiteUrl,
         railwayApiBase: publicApiBase,
@@ -161,5 +179,11 @@
         root: function () { return dramaApiRoot; },
         enabled: function () { return Boolean(dramaApiBaseUrl); },
         url: dramaApiUrl
+    };
+    window.NexoraAnimeNexoraApi = {
+        baseUrl: animeNexoraApiBaseUrl,
+        root: function () { return animeNexoraApiRoot; },
+        enabled: function () { return Boolean(animeNexoraApiBaseUrl); },
+        url: animeNexoraApiUrl
     };
 }());

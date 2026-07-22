@@ -2,6 +2,7 @@ const API_ROOT = window.NexoraApi?.root?.() || "/api";
 const NODE_API_ROOT = window.NexoraNodeApi?.root?.() || "";
 const LEGACY_NODE_API_ROOT = window.NexoraLegacyNodeApi?.root?.() || "";
 const DRAMA_API_ROOT = window.NexoraDramaApi?.root?.() || "";
+const ANIME_NEXORA_API_ROOT = window.NexoraAnimeNexoraApi?.root?.() || "";
 const TOKEN_KEY = "nexora_access_token";
 const MOVIE_SORT_KEY = "nexora_movie_sort";
 const SETTINGS_KEY = "nexora_profile_settings";
@@ -417,6 +418,159 @@ async function api(path, options = {}) {
     }
 
     return body.data;
+}
+
+async function animeNexoraApi(path, options = {}) {
+    const url = window.NexoraAnimeNexoraApi?.url
+        ? window.NexoraAnimeNexoraApi.url(path)
+        : `${ANIME_NEXORA_API_ROOT}${path.startsWith("/") ? path : `/${path}`}`;
+    const headers = new Headers(options.headers || {});
+    headers.set("Accept", "application/json");
+    const response = await fetchWithRetry(url, { ...options, headers });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.success === false) {
+        const error = new Error(body.message || body.error || "Anime NexoraAPI indisponible.");
+        error.status = response.status;
+        throw error;
+    }
+    return body;
+}
+
+function animeNexoraApiEnabled() {
+    return Boolean(ANIME_NEXORA_API_ROOT);
+}
+
+function animeNexoraSlug(value) {
+    const clean = String(value || "").replace(/\/+$/, "");
+    return clean.split("/").pop() || "";
+}
+
+function animeNexoraIsFilm(value) {
+    return Array.isArray(value?.categories)
+        && value.categories.some((category) => /film/i.test(String(category)));
+}
+
+function mapAnimeNexoraItem(value, type) {
+    const slug = animeNexoraSlug(value?.url || value?.slug || value?.id);
+    if (!slug) return null;
+    const film = animeNexoraIsFilm(value);
+    const resolvedType = type || (film ? "movie" : "series");
+    if (resolvedType === "movie" && !film) return null;
+    if (resolvedType === "series" && film) return null;
+    return {
+        id: `anime-nexora~${resolvedType}~${encodeURIComponent(slug)}`,
+        name: value.name || slug,
+        type: resolvedType,
+        categoryId: `anime-nexora-${resolvedType}`,
+        categoryName: resolvedType === "movie" ? "Films anime" : "Anime",
+        poster: value.image_url || "",
+        image: value.image_url || "",
+        logo: value.image_url || "",
+        genres: value.genres || [],
+        source: "Anime Nexora",
+        sourceCode: "anime-nexora",
+        provider: "anime-nexora",
+        playbackProvider: "anime-nexora",
+        metadataAvailable: true,
+        streamAvailable: true,
+        animeNexoraSlug: slug,
+        language: "fr",
+        languageName: "Français / VF",
+        audioLanguage: "fr",
+        isSeries: resolvedType === "series"
+    };
+}
+
+async function animeNexoraItems(type, query, limit) {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    else params.set("limit", String(Math.min(100, Math.max(1, limit || 24))));
+    const endpoint = query ? "/search" : "/catalogues";
+    const body = await animeNexoraApi(`${endpoint}?${params}`);
+    const values = Array.isArray(body.data) ? body.data : [];
+    return values.map((value) => mapAnimeNexoraItem(value, type)).filter(Boolean).slice(0, limit || values.length);
+}
+
+async function animeNexoraSeriesInfo(item) {
+    const slug = item.animeNexoraSlug || animeNexoraSlug(item.id.split("~").pop());
+    const detail = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}`);
+    const seasonsBody = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}/seasons`);
+    const seasons = [];
+    for (const remoteSeason of (seasonsBody.data || [])) {
+        const seasonSlug = animeNexoraSlug(remoteSeason.url);
+        if (!seasonSlug) continue;
+        const episodesBody = await animeNexoraApi(
+            `/catalogue/${encodeURIComponent(slug)}/seasons/${encodeURIComponent(seasonSlug)}/episodes`
+        );
+        const episodes = (episodesBody.data || []).map((episode, index) => ({
+            id: `anime-nexora~series~${encodeURIComponent(slug)}~${encodeURIComponent(seasonSlug)}~${index + 1}`,
+            name: episode.name || `Episode ${index + 1}`,
+            type: "series",
+            isEpisode: true,
+            season: Number(String(remoteSeason.name || "").match(/\d+/)?.[0] || 1),
+            episode: Number(episode.index || index + 1),
+            poster: detail.data?.image_url || item.image,
+            source: "Anime Nexora",
+            sourceCode: "anime-nexora",
+            provider: "anime-nexora",
+            playbackProvider: "anime-nexora",
+            streamAvailable: Boolean(episode.languages && Object.keys(episode.languages).length),
+            animeNexoraSlug: slug,
+            animeNexoraSeasonSlug: seasonSlug,
+            animeNexoraEpisode: Number(episode.index || index + 1)
+        }));
+        seasons.push({
+            season: Number(String(remoteSeason.name || "").match(/\d+/)?.[0] || 1),
+            name: remoteSeason.name || "Saison 1",
+            episodeCount: episodes.length,
+            episodes
+        });
+    }
+    return {
+        ...item,
+        name: detail.data?.name || item.name,
+        summary: detail.data?.synopsis || "",
+        poster: detail.data?.image_url || item.image,
+        seasons,
+        seasonCount: seasons.length,
+        episodeCount: seasons.reduce((count, season) => count + season.episodes.length, 0),
+        streamAvailable: seasons.some((season) => season.episodes.length > 0)
+    };
+}
+
+async function animeNexoraInfo(item) {
+    const slug = item.animeNexoraSlug || animeNexoraSlug(item.id.split("~").pop());
+    const body = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}`);
+    return {
+        ...item,
+        name: body.data?.name || item.name,
+        summary: body.data?.synopsis || "",
+        poster: body.data?.image_url || item.image,
+        genres: body.data?.genres || item.genres || [],
+        streamAvailable: true
+    };
+}
+
+async function directAnimeNexoraStream(item) {
+    const slug = item.animeNexoraSlug;
+    let seasonSlug = item.animeNexoraSeasonSlug;
+    const episodeNumber = Number(item.animeNexoraEpisode || 1);
+    if (!seasonSlug) {
+        const seasonsBody = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}/seasons`);
+        seasonSlug = animeNexoraSlug(seasonsBody.data?.[0]?.url);
+    }
+    if (!seasonSlug) throw new Error("Aucun lecteur Anime Nexora disponible.");
+    const body = await animeNexoraApi(
+        `/catalogue/${encodeURIComponent(slug)}/seasons/${encodeURIComponent(seasonSlug)}/episodes`
+    );
+    const languages = body.data?.[episodeNumber - 1]?.languages || {};
+    const entries = Object.entries(languages);
+    const preference = ["vf", "fr", "vostfr", "vjstfr", "vastfr", "vo"];
+    const selected = preference.map((key) => entries.find(([name]) => name.toLowerCase() === key))
+        .find((entry) => entry?.[1]?.[0]) || entries.find((entry) => entry?.[1]?.[0]);
+    const streamUrl = selected?.[1]?.[0];
+    if (!streamUrl) throw new Error("Aucun flux vidéo Anime Nexora disponible.");
+    return streamUrl;
 }
 
 function apiUrl(path) {
@@ -1610,7 +1764,11 @@ async function loadCatalog() {
                 api("/catalog/languages", { signal: abortController.signal })
             ]);
             if (requestId !== state.catalogRequestId) return;
-            state.categories = categories || [];
+            const directAnimeCategories = animeNexoraApiEnabled() ? [
+                { id: "anime-nexora-movie", name: "Films anime", type: "movie", source: "Anime Nexora", sourceCode: "anime-nexora", metadataAvailable: true, streamAvailable: true },
+                { id: "anime-nexora-series", name: "Anime", type: "series", source: "Anime Nexora", sourceCode: "anime-nexora", metadataAvailable: true, streamAvailable: true }
+            ] : [];
+            state.categories = [...(categories || []).filter((entry) => !String(entry?.sourceCode || entry?.source || "").toLowerCase().includes("anime-nexora")), ...directAnimeCategories];
             state.languages = languages || [];
             state.catalogMetaLoaded = true;
             renderCategories();
@@ -1656,15 +1814,19 @@ async function loadCatalog() {
                 params.set("addonPages", query ? "3" : String(state.addonPages));
                 if (!query && state.activeLanguage) params.set("language", state.activeLanguage);
                 if (movieLibrary) params.set("sort", state.movieSort);
-                const springItemsPromise = api(`/catalog/items?${params}`, { signal: abortController.signal })
-                    .catch(() => []);
+                const directAnimeItemsPromise = animeNexoraApiEnabled() && ["movie", "series"].includes(type)
+                    ? animeNexoraItems(type, query, requestedLimit).catch(() => [])
+                    : Promise.resolve([]);
+                const springItemsPromise = animeNexoraApiEnabled() && ["movie", "series"].includes(type)
+                    ? Promise.resolve([])
+                    : api(`/catalog/items?${params}`, { signal: abortController.signal }).catch(() => []);
                 const nodeItemsPromise = nodeApiEnabled() && ["movie", "series"].includes(type)
                     ? nodeCatalogApi(`/catalog/items?${params}`, { signal: abortController.signal })
                         .catch(() => [])
                     : Promise.resolve([]);
-                const [springItems, nodeItems] = await Promise.all([springItemsPromise, nodeItemsPromise]);
+                const [springItems, nodeItems, directItems] = await Promise.all([springItemsPromise, nodeItemsPromise, directAnimeItemsPromise]);
                 return ["movie", "series"].includes(type)
-                    ? [...(nodeItems || []), ...(springItems || [])]
+                    ? [...(directItems || []), ...(nodeItems || []), ...(springItems || [])]
                     : [...(springItems || []), ...(nodeItems || [])];
             })
         );
@@ -4807,7 +4969,9 @@ async function openMovieDetails(item) {
     }
 
     try {
-        const details = await api(`/catalog/items/${encodeURIComponent(item.id)}`);
+        const details = isAnimeNexoraItem(item)
+            ? await animeNexoraInfo(item)
+            : await api(`/catalog/items/${encodeURIComponent(item.id)}`);
         state.activeDetail = {
             ...item,
             ...details,
@@ -4909,7 +5073,9 @@ async function openSeries(item) {
 
     try {
         const nodeSeries = (item.externalPlayback || isFrenchSource(item)) && tmdbIdFromItem(item);
-        const series = nodeSeries
+        const series = isAnimeNexoraItem(item)
+            ? await animeNexoraSeriesInfo(item)
+            : nodeSeries
             ? await nodeApi(`/catalog/series/${encodeURIComponent(nodeSeries)}`)
             : await api(
                 `/catalog/series/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.name || "")}`
@@ -5113,6 +5279,17 @@ async function playItem(item, options = {}) {
     try {
         if (state.activeSessionToken) {
             await stopPlayer();
+        }
+        if (isAnimeNexoraItem(item)) {
+            state.activeSessionToken = null;
+            state.activeCanFailover = false;
+            state.activePlaybackQuality = "auto";
+            stopHeartbeat();
+            setPlayerLoading("Ouverture du lecteur Anime Nexora...", "Connexion directe à Anime NexoraAPI.");
+            const streamUrl = await directAnimeNexoraStream(item);
+            await startStreamPlayback(item, streamUrl, "embed");
+            elements.playerMessage.textContent = "Lecture directe via Anime NexoraAPI.";
+            return;
         }
         if (shouldUseNodeFrenchPlayback(item)) {
             try {
