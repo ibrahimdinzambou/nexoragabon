@@ -156,7 +156,7 @@ public class ConsumetContentService {
             return List.of();
         }
         if (animeNexoraMode() && TYPE_SERIES.equals(normalizedType)
-                && matchesCategory(categoryId, FAMILY_ANIME, normalizedType)) {
+                && matchesAnimeNexoraCategory(categoryId, normalizedType)) {
             return animeNexoraItems(normalizedType, query, categoryId, requestedLimit, normalizedLanguage, sort);
         }
         List<Map<String, Object>> result = new ArrayList<>();
@@ -366,7 +366,7 @@ public class ConsumetContentService {
             int requestedLimit,
             String language
     ) {
-        if (animeNexoraMode() && TYPE_SERIES.equals(type) && matchesCategory(categoryId, FAMILY_ANIME, type)) {
+        if (animeNexoraMode() && TYPE_SERIES.equals(type) && matchesAnimeNexoraCategory(categoryId, type)) {
             result.addAll(animeNexoraItems(type, query, categoryId, requestedLimit, language, null));
             return;
         }
@@ -398,7 +398,7 @@ public class ConsumetContentService {
             int requestedLimit,
             String language
     ) {
-        if (animeNexoraMode() && TYPE_SERIES.equals(type) && matchesCategory(categoryId, FAMILY_ANIME, type)) {
+        if (animeNexoraMode() && TYPE_SERIES.equals(type) && matchesAnimeNexoraCategory(categoryId, type)) {
             result.addAll(animeNexoraItems(type, null, categoryId, requestedLimit, language, null));
             return;
         }
@@ -1087,12 +1087,24 @@ public class ConsumetContentService {
                 || requestedCategoryId.equals(category(family, type).id());
     }
 
+    private boolean matchesAnimeNexoraCategory(String requestedCategoryId, String type) {
+        if (requestedCategoryId == null || requestedCategoryId.isBlank()) {
+            return true;
+        }
+        String normalized = requestedCategoryId.strip().toLowerCase(Locale.ROOT);
+        return normalized.equals("anime-nexora")
+                || normalized.equals("anime-nexora-" + type)
+                || normalized.startsWith("consumet-anime-");
+    }
+
     private Category category(String family, String type) {
         String normalizedFamily = normalizeFamily(family);
         String normalizedType = normalizeType(type);
         if (FAMILY_ANIME.equals(normalizedFamily)) {
             if (animeNexoraMode()) {
-                return new Category("anime-nexora", "Anime");
+                return TYPE_MOVIE.equals(normalizedType)
+                        ? new Category("anime-nexora-movie", "Films anime")
+                        : new Category("anime-nexora", "Anime");
             }
             return TYPE_MOVIE.equals(normalizedType)
                     ? new Category("consumet-anime-movie-" + animeProvider, "Films anime")
