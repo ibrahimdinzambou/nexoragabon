@@ -696,6 +696,25 @@ async function legacyNodeApi(path, options = {}) {
     return body;
 }
 
+function aetherApiEnabled() {
+    return Boolean(window.NexoraAetherApi?.enabled?.());
+}
+
+async function aetherApi(path, options = {}) {
+    const url = window.NexoraAetherApi?.url?.(path);
+    if (!url) throw new Error("API Aether non configuree.");
+    const headers = new Headers(options.headers || {});
+    headers.set("Accept", "application/json");
+    const response = await fetchWithRetry(url, { ...options, headers });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.ok === false || body.success === false) {
+        const error = new Error(body.erreur || body.message || "API Aether indisponible.");
+        error.status = response.status;
+        throw error;
+    }
+    return body.data || body;
+}
+
 async function nodeApi(path, options = {}) {
     const url = nodeApiUrl(path);
     if (!url) {
@@ -5888,6 +5907,20 @@ async function resolveNodeFrenchSource(item, frenchEndpoint, options = {}) {
             }
         } catch {
             // TMDB Easy sera utilisé par l'appelant; FrenchNexora continue en arrière-plan.
+        }
+    }
+
+    if (legacyEndpoint && aetherApiEnabled()) {
+        try {
+            const source = await aetherApi(legacyEndpoint);
+            if (hasUsableNodeFrenchSource(source)) {
+                frenchPromise
+                    .then((resolved) => publishBackgroundFrenchSource(item, resolved))
+                    .catch(() => {});
+                return { source, providerLabel: "Aether", isFrenchNexora: false };
+            }
+        } catch {
+            // TMDB Easy sera utilisé si Orion et Aether sont indisponibles.
         }
     }
 

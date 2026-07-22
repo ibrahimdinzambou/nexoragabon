@@ -2,6 +2,7 @@
     const publicApiBase = "https://api.nexoragabon.com";
     const publicNodeApiBase = "https://api.nexoragabon.com/node-fr";
     const publicLegacyNodeApiBase = "https://api.nexoragabon.com/orion";
+    const publicAetherApiBase = "https://api.nexoragabon.com";
     // API compatible avec ibrahimdinzambou/frenchnexoraAPI.
     // Peut être remplacée sans rebuild via window.NEXORA_FRENCH_NEXORA_API_BASE_URL.
     const publicFrenchNexoraApiBase = "https://api.nexoragabon.com/node-fr";
@@ -62,6 +63,8 @@
     const frenchNexoraApiBaseUrl = configuredFrenchNexoraBase();
     const legacyNodeApiBaseUrl = configuredLegacyNodeBase();
     const legacyNodeApiRoot = legacyNodeApiBaseUrl ? `${legacyNodeApiBaseUrl}/api` : "";
+    const aetherApiBaseUrl = publicAetherApiBase;
+    const aetherApiRoot = `${aetherApiBaseUrl}/api`;
     const dramaApiBaseUrl = configuredDramaBase();
     const dramaApiRoot = dramaApiBaseUrl ? `${dramaApiBaseUrl}/api/v1/reelshort` : "";
     const animeNexoraApiBaseUrl = configuredAnimeNexoraBase();
@@ -142,6 +145,8 @@
         frenchNexoraApiBaseUrl,
         legacyNodeApiBaseUrl,
         legacyNodeApiRoot,
+        aetherApiBaseUrl,
+        aetherApiRoot,
         dramaApiBaseUrl,
         dramaApiRoot,
         animeNexoraApiBaseUrl,
@@ -173,6 +178,18 @@
         enabled: function () { return Boolean(legacyNodeApiBaseUrl); },
         url: legacyNodeApiUrl,
         resolve: resolveLegacyNodeUrl
+    };
+    window.NexoraAetherApi = {
+        baseUrl: aetherApiBaseUrl,
+        root: function () { return aetherApiRoot; },
+        enabled: function () { return Boolean(aetherApiBaseUrl); },
+        url: function (path) {
+            const value = String(path || "");
+            if (/^https?:\/\//i.test(value)) return value;
+            if (value.startsWith("/api/")) return `${aetherApiBaseUrl}${value}`;
+            if (value.startsWith("api/")) return `${aetherApiBaseUrl}/${value}`;
+            return `${aetherApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
+        }
     };
     window.NexoraDramaApi = {
         baseUrl: dramaApiBaseUrl,
