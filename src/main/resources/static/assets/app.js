@@ -489,6 +489,9 @@ async function animeNexoraItems(type, query, limit) {
     const body = await animeNexoraApi(`${endpoint}?${params}`);
     const values = Array.isArray(body.data) ? body.data : [];
     const items = values.map((value) => mapAnimeNexoraItem(value, type)).filter(Boolean);
+    if (type === "movie") {
+        return enrichAnimeNexoraPosters(items.slice(0, limit || items.length));
+    }
     if (type !== "series" || !query) {
         return items.slice(0, limit || items.length);
     }
@@ -505,13 +508,19 @@ async function animeNexoraItems(type, query, limit) {
                 const seasonSlug = animeNexoraSlug(season.url);
                 if (!seasonSlug) return null;
                 const versionName = season.name || `Version ${index + 1}`;
+                const versionImage = season.image_url || season.image || season.poster
+                    || generatedPosterDataUrl(`${item.name} - ${versionName}`);
                 return {
                     ...item,
                     id: `anime-nexora~series~${encodeURIComponent(item.animeNexoraSlug)}~${encodeURIComponent(seasonSlug)}`,
                     name: `${item.name} · ${versionName}`,
                     categoryName: versionName,
+                    image: versionImage,
+                    poster: versionImage,
+                    backdrop: versionImage,
                     animeNexoraSeasonSlug: seasonSlug,
                     animeNexoraVersionName: versionName,
+                    animeNexoraVersionImage: versionImage,
                     animeNexoraVersionOnly: true
                 };
             }).filter(Boolean);
@@ -519,7 +528,27 @@ async function animeNexoraItems(type, query, limit) {
             return [item];
         }
     }))).flat();
-    return versionCards.slice(0, limit || versionCards.length);
+    return enrichAnimeNexoraPosters(versionCards.slice(0, limit || versionCards.length));
+}
+
+async function enrichAnimeNexoraPosters(items) {
+    const posterCache = new Map();
+    return Promise.all(items.map(async (item) => {
+        const title = item.animeNexoraVersionName || item.name || "";
+        if (!title) return item;
+        if (!posterCache.has(title)) {
+            posterCache.set(title, api(`/catalog/items?${new URLSearchParams({
+                type: item.type,
+                q: title,
+                limit: "12"
+            })}`).then((values) => {
+                const tmdb = (values || []).find((value) => isTmdbSource(value));
+                return tmdb?.poster || tmdb?.image || tmdb?.backdrop || "";
+            }).catch(() => ""));
+        }
+        const poster = await posterCache.get(title);
+        return poster ? { ...item, image: poster, poster, backdrop: poster, animeNexoraVersionImage: poster } : item;
+    }));
 }
 
 async function animeNexoraSeriesInfo(item) {
@@ -570,7 +599,7 @@ async function animeNexoraSeriesInfo(item) {
         ...item,
         name: item.animeNexoraVersionName || detail.data?.name || item.name,
         summary: detail.data?.synopsis || "",
-        poster: detail.data?.image_url || item.image,
+        poster: item.animeNexoraVersionImage || detail.data?.image_url || item.image,
         seasons,
         seasonCount: seasons.length,
         episodeCount: seasons.reduce((count, season) => count + season.episodes.length, 0),
@@ -1860,10 +1889,10 @@ async function loadCatalog() {
                 const springItemsPromise = animeNexoraApiEnabled() && ["movie", "series"].includes(type)
                     ? Promise.resolve([])
                     : api(`/catalog/items?${params}`, { signal: abortController.signal }).catch(() => []);
-                const nodeItemsPromise = nodeApiEnabled() && ["movie", "series"].includes(type)
-                    ? nodeCatalogApi(`/catalog/items?${params}`, { signal: abortController.signal })
-                        .catch(() => [])
-                    : Promise.resolve([]);
+                // FrenchNexoraAPI fournit les sources de lecture via
+                // /api/streams, pas un catalogue /api/catalog/items.
+                // Le catalogue anime vient directement d'Anime NexoraAPI.
+                const nodeItemsPromise = Promise.resolve([]);
                 const [springItems, nodeItems, directItems] = await Promise.all([springItemsPromise, nodeItemsPromise, directAnimeItemsPromise]);
                 return ["movie", "series"].includes(type)
                     ? [...(directItems || []), ...(nodeItems || []), ...(springItems || [])]
@@ -5116,11 +5145,8 @@ async function openSeries(item) {
     openModal("seriesModal");
 
     try {
-        const nodeSeries = (item.externalPlayback || isFrenchSource(item)) && tmdbIdFromItem(item);
         const series = isAnimeNexoraItem(item)
             ? await animeNexoraSeriesInfo(item)
-            : nodeSeries
-            ? await nodeApi(`/catalog/series/${encodeURIComponent(nodeSeries)}`)
             : await api(
                 `/catalog/series/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.name || "")}`
             );
