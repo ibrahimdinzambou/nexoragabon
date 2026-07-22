@@ -42,7 +42,7 @@ cd /opt/nexora/app
 # API des films en français
 git clone https://github.com/Dinzambou241/nexora-node-api.git /opt/nexora/frenchnexoraAPI
 cd /opt/nexora/frenchnexoraAPI
-npm ci --omit=dev
+npm ci
 npm run build
 
 # Source du catalogue anime
