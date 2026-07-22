@@ -113,8 +113,13 @@ public class ConsumetContentService {
             return List.of();
         }
         List<Map<String, Object>> categories = new ArrayList<>();
-        addCategory(categories, type, FAMILY_MOVIES, TYPE_MOVIE);
-        addCategory(categories, type, FAMILY_MOVIES, TYPE_SERIES);
+        // Anime Nexora fournit le catalogue anime (films compris). Ne publions
+        // pas les categories Consumet lorsque cette source est selectionnee :
+        // elles appelleraient des routes /movies qui n'existent pas sur Nexora.
+        if (!animeNexoraMode()) {
+            addCategory(categories, type, FAMILY_MOVIES, TYPE_MOVIE);
+            addCategory(categories, type, FAMILY_MOVIES, TYPE_SERIES);
+        }
         addCategory(categories, type, FAMILY_ANIME, TYPE_MOVIE);
         addCategory(categories, type, FAMILY_ANIME, TYPE_SERIES);
         return List.copyOf(categories);
@@ -712,8 +717,11 @@ public class ConsumetContentService {
 
     private String firstPlayer(JsonNode languages, String... names) {
         for (String name : names) {
-            JsonNode values = languages.path(name);
-            if (values.isArray() && !values.isEmpty() && !values.get(0).asText().isBlank()) return values.get(0).asText();
+            JsonNode values = languageValues(languages, name);
+            if (values != null && values.isArray() && !values.isEmpty()
+                    && !values.get(0).asText().isBlank()) {
+                return values.get(0).asText();
+            }
         }
         if (languages.isObject()) {
             var fields = languages.fields();
@@ -723,6 +731,25 @@ public class ConsumetContentService {
             }
         }
         throw ApiException.streamUnavailable("Aucun lecteur Anime Nexora disponible");
+    }
+
+    private JsonNode languageValues(JsonNode languages, String requested) {
+        if (languages == null || !languages.isObject()) {
+            return null;
+        }
+        var fields = languages.fields();
+        while (fields.hasNext()) {
+            var field = fields.next();
+            if (field.getKey().equalsIgnoreCase(requested)
+                    || normalizeLanguageKey(field.getKey()).equals(normalizeLanguageKey(requested))) {
+                return field.getValue();
+            }
+        }
+        return null;
+    }
+
+    private String normalizeLanguageKey(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
     }
 
     private boolean animeFilm(JsonNode item) {
