@@ -649,6 +649,100 @@ async function directAnimeNexoraStream(item) {
     return streamUrl;
 }
 
+function animeNexoraPlaybackMode(streamUrl) {
+    const kind = classifyPlayableUrl(streamUrl);
+    return kind === "none" ? "embed" : kind;
+}
+
+function animeNexoraSearchTitle(item) {
+    return consumetAnimeSearchTitle(item)
+        .replace(/\s*[Â·â€¢|:-]\s*(?:saison|season)\s*\d+.*$/i, "")
+        .trim();
+}
+
+function animeNexoraTitleScore(value, query) {
+    const names = [value?.name, ...(Array.isArray(value?.alternative_names) ? value.alternative_names : [])]
+        .filter(Boolean);
+    return Math.max(...names.map((name) => consumetAnimeTitleScore({ name }, query)), 0);
+}
+
+function selectAnimeNexoraLanguage(languages) {
+    const entries = Object.entries(languages || {});
+    const preference = ["vf", "fr", "vostfr", "vjstfr", "vastfr", "vo"];
+    return preference
+        .map((key) => entries.find(([name]) => String(name).toLowerCase() === key))
+        .find((entry) => Array.isArray(entry?.[1]) && entry[1].some(Boolean))
+        || entries.find((entry) => Array.isArray(entry[1]) && entry[1].some(Boolean));
+}
+
+async function findAnimeNexoraEpisode(item) {
+    if (isAnimeNexoraItem(item) && item.animeNexoraSlug) {
+        const streamUrl = await directAnimeNexoraStream(item);
+        return { streamUrl, playbackMode: animeNexoraPlaybackMode(streamUrl), providerLabel: "Anime NexoraAPI" };
+    }
+    const query = animeNexoraSearchTitle(item);
+    if (!query) throw new Error("Titre anime/manga manquant pour Anime NexoraAPI.");
+
+    const searchBody = await animeNexoraApi(`/search?${new URLSearchParams({ q: query, limit: "8" })}`);
+    const candidates = (Array.isArray(searchBody.data) ? searchBody.data : [])
+        .map((value, index) => ({ value, score: animeNexoraTitleScore(value, query) - index / 100 }))
+        .filter((candidate) => candidate.score > 0)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 5);
+    if (!candidates.length) throw new Error(`Anime/manga introuvable dans Anime NexoraAPI : ${query}`);
+
+    const requestedSeason = positiveInteger(item?.season) || 1;
+    const requestedEpisode = positiveInteger(item?.episode) || 1;
+    for (const candidate of candidates) {
+        const slug = animeNexoraSlug(candidate.value?.url || candidate.value?.slug || candidate.value?.id);
+        if (!slug) continue;
+        try {
+            const seasonsBody = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}/seasons`);
+            const seasons = Array.isArray(seasonsBody.data) ? seasonsBody.data : [];
+            const remoteSeason = seasons[requestedSeason - 1] || seasons[0];
+            const seasonSlug = animeNexoraSlug(remoteSeason?.url);
+            if (!seasonSlug) continue;
+            const episodesBody = await animeNexoraApi(
+                `/catalogue/${encodeURIComponent(slug)}/seasons/${encodeURIComponent(seasonSlug)}/episodes`
+            );
+            const episode = (episodesBody.data || []).find((value) => (
+                Number(value.index) === requestedEpisode
+            )) || (episodesBody.data || [])[requestedEpisode - 1];
+            const selected = selectAnimeNexoraLanguage(episode?.languages);
+            const streamUrl = selected?.[1]?.find?.(Boolean);
+            if (streamUrl) {
+                return {
+                    streamUrl,
+                    playbackMode: animeNexoraPlaybackMode(streamUrl),
+                    providerLabel: `Anime NexoraAPI - ${candidate.value.name || query}`
+                };
+            }
+        } catch {
+            // Tester le candidat suivant : une fiche manga peut ne pas fournir
+            // d'épisodes vidéo ou une saison peut être momentanément indisponible.
+        }
+    }
+    throw new Error(`Aucun flux VF/VOSTFR disponible dans Anime NexoraAPI pour ${query}.`);
+}
+
+async function playMatchedAnimeNexora(item) {
+    setPlayerLoading("Ouverture via Anime Nexora...", "Recherche d'une source VF/VOSTFR lisible.");
+    const resolved = await findAnimeNexoraEpisode(item);
+    const activeItem = {
+        ...item,
+        playbackProvider: "anime-nexora",
+        playbackProviderName: resolved.providerLabel
+    };
+    state.activePlayerItem = activeItem;
+    await startStreamPlayback(
+        activeItem,
+        resolved.streamUrl,
+        resolved.playbackMode,
+        { visualWatch: resolved.playbackMode !== "embed" }
+    );
+    elements.playerMessage.textContent = `Lecture via ${resolved.providerLabel}.`;
+}
+
 function apiUrl(path) {
     return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
 }
@@ -5419,9 +5513,19 @@ async function playItem(item, options = {}) {
             stopHeartbeat();
             setPlayerLoading("Ouverture du lecteur Anime Nexora...", "Connexion directe à Anime NexoraAPI.");
             const streamUrl = await directAnimeNexoraStream(item);
-            await startStreamPlayback(item, streamUrl, "embed");
+            await startStreamPlayback(item, streamUrl, animeNexoraPlaybackMode(streamUrl));
             elements.playerMessage.textContent = "Lecture directe via Anime NexoraAPI.";
             return;
+        }
+        if (isAnimeItem(item) && animeNexoraApiEnabled()) {
+            try {
+                // Essayer Anime NexoraAPI aussi pour les fiches anime/manga
+                // provenant de Spring, TMDB ou d'un autre catalogue.
+                await playMatchedAnimeNexora(item);
+                return;
+            } catch {
+                // Continuer vers Node/FrenchNexora puis Consumet si nécessaire.
+            }
         }
         if (shouldUseNodeFrenchPlayback(item)) {
             try {
@@ -5449,6 +5553,12 @@ async function playItem(item, options = {}) {
                 }
                 return;
             }
+        }
+        if (isAnimeItem(item)) {
+            const opened = await switchToConsumetAnimeFallback(
+                "Anime NexoraAPI et les sources FR directes ne proposent pas de flux lisible."
+            );
+            if (opened) return;
         }
         const stream = await api("/stream/open", {
             method: "POST",
@@ -5576,6 +5686,69 @@ function nodeFrenchEndpointForItem(item) {
     return `/streams?${params}`;
 }
 
+function classifyPlayableUrl(value, metadata = {}) {
+    const raw = String(value || "").trim();
+    if (!raw) return "none";
+    const normalized = raw.toLowerCase();
+    const declaredType = String(metadata.type || metadata.contentType || "").toLowerCase();
+    if (normalized.includes("/proxy/m3u8")
+        || /\.m3u8(?:$|[?#])/.test(normalized)
+        || declaredType.includes("mpegurl")
+        || declaredType.includes("m3u8")) {
+        return "hls";
+    }
+    if (normalized.includes("/proxy/ts")
+        || /\.(?:mp4|mkv|webm|mov|m4v|ts)(?:$|[?#])/.test(normalized)
+        || declaredType.includes("video/")) {
+        return "direct";
+    }
+    if (/\/(?:embed|player|playlist)(?:[/?#]|$)/.test(normalized)
+        || /(?:shell|embed)\.php(?:[?#]|$)/.test(normalized)
+        || normalized.includes("/embed-")) {
+        return "embed";
+    }
+    // Les URLs externes sans extension sont généralement des pages de lecteur.
+    // Les considérer comme embed évite d'envoyer du HTML au moteur HLS/native.
+    return "embed";
+}
+
+function playableUrlRank(kind) {
+    return kind === "hls" ? 300 : kind === "direct" ? 200 : kind === "embed" ? 100 : 0;
+}
+
+function sourceLanguageRank(value) {
+    const language = String(value || "").toLowerCase();
+    if (/truefrench|vf|français|francais|^fr$/.test(language)) return 30;
+    if (/vostfr|vjstfr|vastfr|fr/.test(language)) return 15;
+    if (/vo|en|english/.test(language)) return 0;
+    return 5;
+}
+
+function hosterPlayableKind(hoster) {
+    if (!hoster) return "none";
+    if (hoster.proxyM3U8 || hoster.proxyM3u8 || hoster.m3u8) return "hls";
+    if (hoster.directUrl || hoster.videoUrl) {
+        return classifyPlayableUrl(hoster.directUrl || hoster.videoUrl, hoster);
+    }
+    if (hoster.embedUrl) return "embed";
+    return "none";
+}
+
+function hosterScore(hoster) {
+    const kind = hosterPlayableKind(hoster);
+    const language = [
+        hoster.lang,
+        hoster.language,
+        hoster.languageName,
+        hoster.nom
+    ].filter(Boolean).join(" ");
+    const quality = String(hoster.quality || "").toLowerCase();
+    const qualityRank = /2160|4k/.test(quality) ? 4 : /1080/.test(quality) ? 3 : /720/.test(quality) ? 2 : 1;
+    // La langue française reste prioritaire ; le format ne départage ensuite
+    // que les sources de même langue (HLS > fichier > embed).
+    return sourceLanguageRank(language) * 100 + playableUrlRank(kind) + qualityRank;
+}
+
 function nodeTmdbEmbedFallbackEndpointForItem(item) {
     const tmdbId = tmdbIdFromItem(item);
     if (!tmdbId) return "";
@@ -5593,34 +5766,39 @@ function nodeTmdbEmbedFallbackEndpointForItem(item) {
 
 function bestNodeFrenchHoster(hosters) {
     if (!Array.isArray(hosters)) return null;
-    const usable = hosters.filter((hoster) => (
-        hoster?.proxyM3U8 || hoster?.proxyM3u8 || hoster?.m3u8 || hoster?.directUrl || hoster?.embedUrl
-    ));
-    return usable.find((hoster) => (
-        /truefrench|vf|fr/i.test(`${hoster.lang || ""} ${hoster.nom || ""}`)
-    )) || usable[0] || null;
+    return hosters
+        .filter((hoster) => hosterPlayableKind(hoster) !== "none")
+        .sort((left, right) => hosterScore(right) - hosterScore(left))[0] || null;
 }
 
 function nodeFrenchStreamFromSource(source) {
     // Contrat de frenchnexoraAPI: { streams: [{ url, language, ... }] }.
     if (Array.isArray(source?.streams)) {
-        const streams = source.streams.filter((stream) => stream?.url);
-        const hoster = streams.find((stream) => /^(fr|vf|truefrench)/i.test(String(stream.language || "")))
-            || streams.find((stream) => /fr|vf|truefrench/i.test(`${stream.title || ""} ${stream.providerName || ""} ${stream.language || ""}`))
-            || streams[0];
+        const streams = source.streams
+            .filter((stream) => stream?.url)
+            .sort((left, right) => {
+                const leftKind = classifyPlayableUrl(left.url, left);
+                const rightKind = classifyPlayableUrl(right.url, right);
+                const leftLanguage = sourceLanguageRank(`${left.language || ""} ${left.title || ""} ${left.providerName || ""}`);
+                const rightLanguage = sourceLanguageRank(`${right.language || ""} ${right.title || ""} ${right.providerName || ""}`);
+                return (rightLanguage * 100 + playableUrlRank(rightKind))
+                    - (leftLanguage * 100 + playableUrlRank(leftKind));
+            });
+        const hoster = streams[0];
         if (!hoster) {
             throw new Error("Aucune source FR exploitable.");
         }
         const rawUrl = String(hoster.url);
-        const isHls = /\.m3u8(?:$|[?#])/i.test(rawUrl) || /mpegurl/i.test(String(hoster.type || ""));
+        const kind = classifyPlayableUrl(rawUrl, hoster);
+        const isHls = kind === "hls";
         const headers = hoster.headers && typeof hoster.headers === "object" ? hoster.headers : {};
         const proxyParams = new URLSearchParams({ url: rawUrl });
         if (Object.keys(headers).length) proxyParams.set("headers", JSON.stringify(headers));
         const proxyUrl = `/proxy?${proxyParams}`;
         return {
             proxyUrl: isHls ? resolveNodeApiResourceUrl(proxyUrl) : rawUrl,
-            playbackMode: isHls ? "hls" : "direct",
-            embedUrl: "",
+            playbackMode: kind === "none" ? "embed" : kind,
+            embedUrl: kind === "embed" ? rawUrl : "",
             preferredAudioLanguage: /^fr|vf/i.test(String(hoster.language || "")) ? "fr" : "",
             preferredSubtitleLanguage: "",
             hoster: {
@@ -5643,13 +5821,22 @@ function nodeFrenchStreamFromSource(source) {
         if (embedUrl) params.set("referer", embedUrl);
         hlsUrl = `/api/proxy/m3u8?${params}`;
     }
-    const selectedUrl = hlsUrl || directUrl || embedUrl;
+    const selectedKind = hlsUrl
+        ? "hls"
+        : directUrl
+            ? classifyPlayableUrl(directUrl, hoster)
+            : embedUrl
+                ? "embed"
+                : "none";
+    // Une URL /playlist ou une URL sans extension est une page de lecteur,
+    // jamais un flux direct pour la balise video.
+    const selectedUrl = hlsUrl || (selectedKind === "direct" ? directUrl : embedUrl || directUrl);
     if (!selectedUrl) {
         throw new Error("La source FR ne fournit pas d'URL de lecture.");
     }
     return {
-        proxyUrl: hlsUrl ? resolveNodeApiResourceUrl(hlsUrl) : directUrl || embedUrl,
-        playbackMode: hlsUrl ? "hls" : directUrl ? "direct" : "embed",
+        proxyUrl: hlsUrl ? resolveNodeApiResourceUrl(hlsUrl) : selectedUrl,
+        playbackMode: hlsUrl ? "hls" : selectedKind === "direct" ? "direct" : "embed",
         embedUrl: embedUrl ? resolveNodeApiResourceUrl(embedUrl) : "",
         preferredAudioLanguage: hoster.preferredAudioLanguage || (hoster.canSelectFrenchAudio ? "fr" : ""),
         preferredSubtitleLanguage: hoster.preferredSubtitleLanguage || (hoster.canSelectFrenchSubtitles ? "fr" : ""),
@@ -5657,15 +5844,37 @@ function nodeFrenchStreamFromSource(source) {
     };
 }
 
- function nodeFrenchSourceHosters(source, resolver, label) {
+function normalizeProviderProxyUrl(value, resolver) {
+    const raw = String(value || "");
+    if (!raw || !resolver) return raw;
+    if (!/^https?:\/\//i.test(raw)) return resolver(raw);
+    try {
+        const parsed = new URL(raw);
+        const configuredApiHost = String(window.location.hostname || "").toLowerCase();
+        const isLocalApiProxy = parsed.hostname.toLowerCase() === configuredApiHost
+            || parsed.hostname.toLowerCase() === "api.nexoragabon.com";
+        if (isLocalApiProxy && /^\/api\/proxy(?:\/|$)/i.test(parsed.pathname)) {
+            const target = parsed.searchParams.get("url") || "";
+            const endpoint = /^\/api\/proxy\/?$/i.test(parsed.pathname)
+                ? (/\.m3u8(?:$|[?#])/i.test(target) ? "/api/proxy/m3u8" : "/api/proxy/ts")
+                : parsed.pathname;
+            return resolver(`${endpoint}${parsed.search}`);
+        }
+    } catch {
+        return raw;
+    }
+    return raw;
+}
+
+function nodeFrenchSourceHosters(source, resolver, label) {
      const hosters = [];
      if (Array.isArray(source?.hosters)) {
          source.hosters.forEach((hoster) => {
              if (!hoster) return;
              const copy = { ...hoster };
              const proxy = copy.proxyM3U8 || copy.proxyM3u8 || "";
-             if (proxy && resolver && !/^https?:\/\//i.test(proxy)) {
-                 copy.proxyM3U8 = resolver(proxy);
+             if (proxy && resolver) {
+                 copy.proxyM3U8 = normalizeProviderProxyUrl(proxy, resolver);
                  delete copy.proxyM3u8;
              }
              copy.nom = copy.nom || label || copy.provider || copy.source || "Source FR";

@@ -22,8 +22,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,6 +38,7 @@ import java.util.regex.Pattern;
 @Service
 public class StreamRelayService {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamRelayService.class);
+    private static final int MAX_UPSTREAM_REDIRECTS = 5;
     private static final int MATROSKA_PROBE_BYTES = 4096;
     private static final int MATROSKA_PREFETCH_CHUNKS = 4;
     private static final int MATROSKA_PREFETCH_CHUNK_BYTES = 65_536;
@@ -373,9 +376,12 @@ public class StreamRelayService {
         HttpRequest httpRequest = request.GET().build();
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
-                HttpResponse<InputStream> response = client.send(
+                HttpResponse<InputStream> response = sendFollowingRedirects(
+                        client,
                         httpRequest,
-                        HttpResponse.BodyHandlers.ofInputStream()
+                        uri,
+                        upstreamRange,
+                        headers
                 );
                 if (response.statusCode() != 200 && response.statusCode() != 206) {
                     int status = response.statusCode();
@@ -432,6 +438,61 @@ public class StreamRelayService {
         throw ApiException.providerUnavailable("Impossible de joindre le flux video");
     }
 
+    private HttpResponse<InputStream> sendFollowingRedirects(
+            HttpClient client,
+            HttpRequest initialRequest,
+            URI initialUri,
+            String range,
+            Map<String, String> requestHeaders
+    ) throws IOException, InterruptedException {
+        HttpRequest currentRequest = initialRequest;
+        URI currentUri = initialUri;
+        Set<URI> visited = new HashSet<>();
+
+        for (int redirect = 0; redirect <= MAX_UPSTREAM_REDIRECTS; redirect++) {
+            if (!visited.add(currentUri)) {
+                throw new IOException("Boucle de redirection du fournisseur IPTV");
+            }
+            HttpResponse<InputStream> response = client.send(
+                    currentRequest,
+                    HttpResponse.BodyHandlers.ofInputStream()
+            );
+            int status = response.statusCode();
+            if (status < 300 || status >= 400) {
+                return response;
+            }
+
+            String location = response.headers().firstValue("Location").orElse(null);
+            response.body().close();
+            if (location == null || location.isBlank() || redirect == MAX_UPSTREAM_REDIRECTS) {
+                throw new IOException("Trop de redirections du fournisseur IPTV");
+            }
+            try {
+                currentUri = currentUri.resolve(location);
+                String scheme = currentUri.getScheme() == null
+                        ? ""
+                        : currentUri.getScheme().toLowerCase(Locale.ROOT);
+                if (!("http".equals(scheme) || "https".equals(scheme)) || currentUri.getHost() == null) {
+                    throw new IllegalArgumentException();
+                }
+            } catch (IllegalArgumentException exception) {
+                throw new IOException("Redirection du fournisseur IPTV invalide");
+            }
+
+            HttpRequest.Builder redirected = HttpRequest.newBuilder(currentUri)
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .timeout(requestTimeout)
+                    .setHeader("Accept", "*/*")
+                    .setHeader("User-Agent", "VLC/3.0 Nexora-IPTV");
+            StreamRequestHeaders.sanitize(requestHeaders).forEach(redirected::setHeader);
+            if (range != null) {
+                redirected.setHeader("Range", range);
+            }
+            currentRequest = redirected.GET().build();
+        }
+        throw new IOException("Trop de redirections du fournisseur IPTV");
+    }
+
     private ApiException upstreamFailure(int status) {
         if (status == 404 || status == 410) {
             return ApiException.streamUnavailable("Ce flux n'est pas disponible chez ce fournisseur (HTTP " + status + ")");
@@ -466,7 +527,7 @@ public class StreamRelayService {
         return HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(connectTimeout)
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
     }
 

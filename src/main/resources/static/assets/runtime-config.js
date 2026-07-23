@@ -88,6 +88,25 @@
         return new URL(raw, window.location.origin).href;
     }
 
+    function normalizeNodeProxyUrl(value) {
+        const raw = String(value || "");
+        if (!/^https?:\/\//i.test(raw)) return raw;
+        try {
+            const parsed = new URL(raw);
+            if (parsed.hostname.toLowerCase() !== apiHost
+                || !/^\/api\/proxy\/?$/i.test(parsed.pathname)) {
+                return raw;
+            }
+            const target = parsed.searchParams.get("url") || "";
+            const endpoint = /\.m3u8(?:$|[?#])/i.test(target)
+                ? "/api/proxy/m3u8"
+                : "/api/proxy/ts";
+            return `${nodeApiBaseUrl}${endpoint}${parsed.search}`;
+        } catch {
+            return raw;
+        }
+    }
+
     function nodeApiUrl(path) {
         if (!nodeApiBaseUrl) return "";
         const value = String(path || "");
@@ -100,6 +119,8 @@
     function resolveNodeUrl(value) {
         const raw = String(value || "");
         if (!raw) return raw;
+        const normalizedProxy = normalizeNodeProxyUrl(raw);
+        if (normalizedProxy !== raw) return normalizedProxy;
         if (/^https?:\/\//i.test(raw)) return raw;
         if (raw.startsWith("/api/") || raw.startsWith("api/")) return nodeApiUrl(raw);
         return new URL(raw, nodeApiBaseUrl || window.location.origin).href;
