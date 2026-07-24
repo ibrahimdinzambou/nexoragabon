@@ -783,17 +783,7 @@ function resolveApiResourceUrl(value) {
         : new URL(value, window.location.origin).href;
 }
 
-// Les anciens connecteurs Node/FrenchNexora sont volontairement desactives.
 // Les films et series passent exclusivement par Content-Nexora.
-function resolveNodeApiResourceUrl(value) { return resolveApiResourceUrl(value); }
-function nodeApiUrl() { return ""; }
-function legacyNodeApiUrl() { return ""; }
-function nodeApiEnabled() { return false; }
-function legacyNodeApiEnabled() { return false; }
-function aetherApiEnabled() { return false; }
-async function nodeApi() { throw new Error("Le connecteur Node FR est desactive."); }
-async function legacyNodeApi() { throw new Error("Le connecteur FrenchNexora est desactive."); }
-async function aetherApi() { throw new Error("Le connecteur Aether est desactive."); }
 
 function dramaApiUrl(path) {
     return window.NexoraDramaApi?.url ? window.NexoraDramaApi.url(path) : "";
@@ -1814,30 +1804,6 @@ function normalizeItem(item, type, index) {
     };
 }
 
-function buildOrionFrenchCards(items, type) {
-    if (!Array.isArray(items) || !["movie", "series"].includes(type)) return [];
-    return items.filter((item) => isTmdbSource(item) && tmdbIdFromItem(item)).map((item) => {
-        const tmdbId = tmdbIdFromItem(item);
-        return {
-            ...item,
-            id: `orion~${type}~${tmdbId}`,
-            catalogId: String(item.id),
-            source: "Orion/Aether",
-            sourceCode: "orion",
-            provider: "orion",
-            playbackProvider: "orion",
-            playbackProviderName: "Orion/Aether",
-            categoryId: `orion-french-${type}`,
-            categoryName: type === "movie" ? "Films français" : "Séries françaises",
-            language: "fr",
-            languageName: "Français / VF",
-            audioLanguage: "fr",
-            streamAvailable: true,
-            externalPlayback: true,
-            tmdbId
-        };
-    });
-}
 
 function mergeCatalogCategories(items) {
     const known = new Set(state.categories.map((category) => String(category.id)));
@@ -5537,9 +5503,6 @@ function requestedPlaybackQuality(item, options = {}) {
     return item?.type === "live" ? savedQuality : "auto";
 }
 
-function shouldUseNodeFrenchPlayback(item) {
-    return false;
-}
 
 function isContentNexoraPlayerItem(item = state.activePlayerItem) {
     return item?.playbackProvider === "content-nexora";
@@ -5652,28 +5615,7 @@ async function playContentNexoraItem(item) {
     }
 }
 
-function isNodeFrenchPlayerItem(item = state.activePlayerItem) {
-    return false;
-}
 
-function nodeFrenchEndpointForItem(item) {
-    const tmdbId = tmdbIdFromItem(item);
-    if (!tmdbId) return "";
-
-    const params = new URLSearchParams({
-        tmdbId: String(tmdbId),
-        mediaType: item.type === "movie" ? "movie" : "tv",
-        provider: "all"
-    });
-    if (item.type === "series") {
-        const season = positiveInteger(item.season);
-        const episode = positiveInteger(item.episode);
-        if (!season || !episode) return "";
-        params.set("season", String(season));
-        params.set("episode", String(episode));
-    }
-    return `/streams?${params}`;
-}
 
 function classifyPlayableUrl(value, metadata = {}) {
     const raw = String(value || "").trim();
@@ -5738,456 +5680,23 @@ function hosterScore(hoster) {
     return sourceLanguageRank(language) * 100 + playableUrlRank(kind) + qualityRank;
 }
 
-function nodeTmdbEmbedFallbackEndpointForItem(item) {
-    const tmdbId = tmdbIdFromItem(item);
-    if (!tmdbId) return "";
-    if (item.type === "movie") {
-        return `/sources/movie/${tmdbId}?provider=tmdbembed&allowNonFrench=1`;
-    }
-    if (item.type === "series") {
-        const season = positiveInteger(item.season);
-        const episode = positiveInteger(item.episode);
-        if (!season || !episode) return "";
-        return `/sources/series/${tmdbId}/${season}/${episode}?provider=tmdbembed&allowNonFrench=1`;
-    }
-    return "";
+
+
+
+
+
+
+
+
+
+
+
+function renderFrenchSourcePanel() {
+    if (elements.playerSourcePanel) elements.playerSourcePanel.hidden = true;
 }
 
-function bestNodeFrenchHoster(hosters) {
-    if (!Array.isArray(hosters)) return null;
-    return hosters
-        .filter((hoster) => hosterPlayableKind(hoster) !== "none")
-        .sort((left, right) => hosterScore(right) - hosterScore(left))[0] || null;
-}
 
-function nodeFrenchStreamFromSource(source) {
-    // Contrat de frenchnexoraAPI: { streams: [{ url, language, ... }] }.
-    if (Array.isArray(source?.streams)) {
-        const streams = source.streams
-            .filter((stream) => stream?.url)
-            .sort((left, right) => {
-                const leftKind = classifyPlayableUrl(left.url, left);
-                const rightKind = classifyPlayableUrl(right.url, right);
-                const leftLanguage = sourceLanguageRank(`${left.language || ""} ${left.title || ""} ${left.providerName || ""}`);
-                const rightLanguage = sourceLanguageRank(`${right.language || ""} ${right.title || ""} ${right.providerName || ""}`);
-                return (rightLanguage * 100 + playableUrlRank(rightKind))
-                    - (leftLanguage * 100 + playableUrlRank(leftKind));
-            });
-        const hoster = streams[0];
-        if (!hoster) {
-            throw new Error("Aucune source FR exploitable.");
-        }
-        const rawUrl = String(hoster.url);
-        const kind = classifyPlayableUrl(rawUrl, hoster);
-        const isHls = kind === "hls";
-        const headers = hoster.headers && typeof hoster.headers === "object" ? hoster.headers : {};
-        const proxyParams = new URLSearchParams({ url: rawUrl });
-        if (Object.keys(headers).length) proxyParams.set("headers", JSON.stringify(headers));
-        const proxyUrl = `/proxy?${proxyParams}`;
-        return {
-            proxyUrl: isHls ? resolveNodeApiResourceUrl(proxyUrl) : rawUrl,
-            playbackMode: kind === "none" ? "embed" : kind,
-            embedUrl: kind === "embed" ? rawUrl : "",
-            preferredAudioLanguage: /^fr|vf/i.test(String(hoster.language || "")) ? "fr" : "",
-            preferredSubtitleLanguage: "",
-            hoster: {
-                ...hoster,
-                nom: hoster.providerName || hoster.provider || "Source FR",
-                lang: hoster.language || "fr"
-            }
-        };
-    }
 
-    const hoster = bestNodeFrenchHoster(source?.hosters);
-    if (!hoster) {
-        throw new Error(source?.erreur || "Aucune source FR exploitable.");
-    }
-    const embedUrl = hoster.embedUrl || "";
-    const directUrl = hoster.directUrl || hoster.videoUrl || "";
-    let hlsUrl = hoster.proxyM3U8 || hoster.proxyM3u8 || "";
-    if (!hlsUrl && hoster.m3u8) {
-        const params = new URLSearchParams({ url: hoster.m3u8 });
-        if (embedUrl) params.set("referer", embedUrl);
-        hlsUrl = `/api/proxy/m3u8?${params}`;
-    }
-    const selectedKind = hlsUrl
-        ? "hls"
-        : directUrl
-            ? classifyPlayableUrl(directUrl, hoster)
-            : embedUrl
-                ? "embed"
-                : "none";
-    // Une URL /playlist ou une URL sans extension est une page de lecteur,
-    // jamais un flux direct pour la balise video.
-    const selectedUrl = hlsUrl || (selectedKind === "direct" ? directUrl : embedUrl || directUrl);
-    if (!selectedUrl) {
-        throw new Error("La source FR ne fournit pas d'URL de lecture.");
-    }
-    return {
-        proxyUrl: hlsUrl ? resolveNodeApiResourceUrl(hlsUrl) : selectedUrl,
-        playbackMode: hlsUrl ? "hls" : selectedKind === "direct" ? "direct" : "embed",
-        embedUrl: embedUrl ? resolveNodeApiResourceUrl(embedUrl) : "",
-        preferredAudioLanguage: hoster.preferredAudioLanguage || (hoster.canSelectFrenchAudio ? "fr" : ""),
-        preferredSubtitleLanguage: hoster.preferredSubtitleLanguage || (hoster.canSelectFrenchSubtitles ? "fr" : ""),
-        hoster
-    };
-}
-
-function normalizeProviderProxyUrl(value, resolver) {
-    const raw = String(value || "");
-    if (!raw || !resolver) return raw;
-    if (!/^https?:\/\//i.test(raw)) return resolver(raw);
-    try {
-        const parsed = new URL(raw);
-        const configuredApiHost = String(window.location.hostname || "").toLowerCase();
-        const isLocalApiProxy = parsed.hostname.toLowerCase() === configuredApiHost
-            || parsed.hostname.toLowerCase() === "api.nexoragabon.com";
-        if (isLocalApiProxy && /^\/api\/proxy(?:\/|$)/i.test(parsed.pathname)) {
-            const target = parsed.searchParams.get("url") || "";
-            const endpoint = /^\/api\/proxy\/?$/i.test(parsed.pathname)
-                ? (/\.m3u8(?:$|[?#])/i.test(target) ? "/api/proxy/m3u8" : "/api/proxy/ts")
-                : parsed.pathname;
-            return resolver(`${endpoint}${parsed.search}`);
-        }
-    } catch {
-        return raw;
-    }
-    return raw;
-}
-
-function nodeFrenchSourceHosters(source, resolver, label) {
-     const hosters = [];
-     if (Array.isArray(source?.hosters)) {
-         source.hosters.forEach((hoster) => {
-             if (!hoster) return;
-             const copy = { ...hoster };
-             const proxy = copy.proxyM3U8 || copy.proxyM3u8 || "";
-             if (proxy && resolver) {
-                 copy.proxyM3U8 = normalizeProviderProxyUrl(proxy, resolver);
-                 delete copy.proxyM3u8;
-             }
-             copy.nom = copy.nom || label || copy.provider || copy.source || "Source FR";
-             hosters.push(copy);
-         });
-     }
-     if (Array.isArray(source?.streams)) {
-         source.streams.filter((stream) => stream?.url).forEach((stream) => {
-             const rawUrl = String(stream.url);
-             const hls = /\.m3u8(?:$|[?#])/i.test(rawUrl) || /mpegurl/i.test(String(stream.type || ""));
-             const headers = stream.headers && typeof stream.headers === "object" ? stream.headers : {};
-             const copy = {
-                 nom: stream.providerName || stream.provider || stream.title || label || "Source FR",
-                 lang: stream.language || "FR",
-                 quality: stream.quality || stream.type || "Auto"
-             };
-             if (hls && resolver) {
-                 const params = new URLSearchParams({ url: rawUrl });
-                 if (Object.keys(headers).length) params.set("headers", JSON.stringify(headers));
-                 copy.proxyM3U8 = resolver(`/proxy?${params}`);
-                 copy.m3u8 = rawUrl;
-             } else {
-                 copy.directUrl = rawUrl;
-             }
-             hosters.push(copy);
-         });
-     }
-     return hosters;
- }
-
- function mergeNodeFrenchSources(first, second) {
-     const hosters = [
-         ...nodeFrenchSourceHosters(first, legacyNodeApiUrl, "node-fr"),
-         ...nodeFrenchSourceHosters(second, nodeApiUrl, "frenchnexoraAPI")
-     ];
-     return hosters.length ? { ...(first || {}), hosters } : (first || second || null);
- }
-
-function nodeFrenchSourceEntries(source) {
-    if (Array.isArray(source?.streams)) {
-        return source.streams.filter((stream) => stream?.url).map((stream, index) => ({
-            index,
-            name: stream.providerName || stream.provider || stream.title || `Source ${index + 1}`,
-            language: stream.language || "FR",
-            quality: stream.quality || stream.type || "Auto",
-            usable: true
-        }));
-    }
-    if (Array.isArray(source?.hosters)) {
-        return source.hosters.filter((hoster) => (
-            hoster?.proxyM3U8 || hoster?.proxyM3u8 || hoster?.m3u8
-            || hoster?.directUrl || hoster?.videoUrl || hoster?.embedUrl
-        )).map((hoster, index) => ({
-            index,
-            name: hoster.nom || hoster.provider || hoster.source || `Source ${index + 1}`,
-            language: hoster.lang || "FR",
-            quality: hoster.quality || (hoster.m3u8 || hoster.proxyM3U8 ? "HLS" : "Auto"),
-            usable: true
-        }));
-    }
-    return [];
-}
-
-function hasUsableNodeFrenchSource(source) {
-    return nodeFrenchSourceEntries(source).length > 0;
-}
-
-function nodeFrenchSourcePayload(source, index) {
-    if (Array.isArray(source?.streams)) {
-        const stream = source.streams.filter((candidate) => candidate?.url)[index];
-        return stream ? { ...source, streams: [stream] } : null;
-    }
-    if (Array.isArray(source?.hosters)) {
-        const hoster = source.hosters.filter((candidate) => (
-            candidate?.proxyM3U8 || candidate?.proxyM3u8 || candidate?.m3u8
-            || candidate?.directUrl || candidate?.videoUrl || candidate?.embedUrl
-        ))[index];
-        return hoster ? { ...source, hosters: [hoster] } : null;
-    }
-    return null;
-}
-
-function nodeFrenchDefaultSourceIndex(source) {
-    const entries = nodeFrenchSourceEntries(source);
-    const frenchIndex = entries.findIndex((entry) => /truefrench|vf|fr/i.test(`${entry.language} ${entry.name}`));
-    return frenchIndex >= 0 ? frenchIndex : 0;
-}
-
-function publishBackgroundFrenchSource(item, resolved) {
-    if (!resolved?.source || state.activePlayerItem?.id !== item?.id) return;
-    state.activeFrenchSourcePayload = mergeNodeFrenchSources(
-        state.activeFrenchSourcePayload,
-        resolved.source
-    );
-    state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(state.activeFrenchSourcePayload);
-    renderFrenchSourcePanel(state.activeFrenchSourcePayload, state.activeFrenchSourceIndex);
-}
-
-function renderFrenchSourcePanel(source, activeIndex = 0) {
-    if (!elements.playerSourcePanel || !elements.playerSourceList) return;
-    const entries = nodeFrenchSourceEntries(source);
-    elements.playerSourceList.innerHTML = "";
-    if (!entries.length) {
-        elements.playerSourcePanel.hidden = true;
-        return;
-    }
-    elements.playerSourcePanel.hidden = false;
-    elements.playerSourceCount.textContent = `${entries.length} source${entries.length > 1 ? "s" : ""}`;
-    const autoButton = document.createElement("button");
-    autoButton.type = "button";
-    autoButton.className = `player-source-option ${activeIndex === nodeFrenchDefaultSourceIndex(source) ? "active" : ""}`;
-    autoButton.dataset.sourceIndex = String(nodeFrenchDefaultSourceIndex(source));
-    autoButton.disabled = state.playerOpening || state.activePlaybackMode === "embed";
-    autoButton.dataset.sourceAuto = "true";
-    autoButton.setAttribute("role", "option");
-    autoButton.setAttribute("aria-selected", String(activeIndex === nodeFrenchDefaultSourceIndex(source)));
-    autoButton.innerHTML = '<span class="player-source-dot"></span><span><strong>AUTO</strong><small>Source FR recommandée</small></span>';
-    elements.playerSourceList.append(autoButton);
-    entries.forEach((entry) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `player-source-option ${entry.index === activeIndex ? "active" : ""}`;
-        button.dataset.sourceIndex = String(entry.index);
-        button.disabled = state.playerOpening || state.activePlaybackMode === "embed";
-        button.setAttribute("role", "option");
-        button.setAttribute("aria-selected", String(entry.index === activeIndex));
-        button.innerHTML = `<span class="player-source-dot"></span><span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.language)} · ${escapeHtml(entry.quality)}</small></span>`;
-        elements.playerSourceList.append(button);
-    });
-}
-
-async function switchToFrenchSource(index) {
-    const source = state.activeFrenchSourcePayload;
-    const item = state.activePlayerItem;
-    if (!source || !item || state.playerOpening) return;
-    const entries = nodeFrenchSourceEntries(source);
-    if (!entries[index]) return;
-    state.playerOpening = true;
-    setPlayerControlsBusy(true);
-    state.playerErrorShown = false;
-    const resumeTime = snapshotPlaybackResumeTime();
-    try {
-        setPlayerLoading("Changement de source...", `Ouverture de ${entries[index].name}.`);
-        detachPlayerMedia();
-        await settleDetachedPlayer();
-        const selectedSource = nodeFrenchSourcePayload(source, index);
-        const stream = nodeFrenchStreamFromSource(selectedSource);
-        const sourceLabel = [entries[index].name, entries[index].language].filter(Boolean).join(" · ");
-        state.activeFrenchSourceIndex = index;
-        state.activePlayerItem = { ...item, playbackProviderName: sourceLabel };
-        renderFrenchSourcePanel(source, index);
-        await startStreamPlayback(state.activePlayerItem, stream.proxyUrl, stream.playbackMode, {
-            startTime: resumeTime,
-            embedFallbackUrl: stream.playbackMode === "hls" ? stream.embedUrl : "",
-            embedFallbackLabel: sourceLabel,
-            preferredAudioLanguage: stream.preferredAudioLanguage,
-            preferredSubtitleLanguage: stream.preferredSubtitleLanguage,
-            visualWatch: true
-        });
-        elements.playerMessage.textContent = `Source active : ${sourceLabel}.`;
-    } catch (error) {
-        showPlayerError(error.message || "Impossible d'ouvrir cette source.");
-    } finally {
-        state.playerOpening = false;
-        setPlayerControlsBusy(false);
-    }
-}
-
-async function playNodeFrenchItem(item) {
-    if (!nodeApiEnabled()) {
-        throw new Error("API Node FR non configurée.");
-    }
-    const endpoint = nodeFrenchEndpointForItem(item);
-    if (!endpoint) {
-        throw new Error("Identifiant TMDB FR incomplet.");
-    }
-
-    state.activeSessionToken = null;
-    state.activeCanFailover = false;
-    state.activePlaybackQuality = "auto";
-    elements.playerQuality.value = "auto";
-    stopHeartbeat();
-    elements.playerBadge.textContent = "FR";
-    const anime = isAnimeItem(item);
-    setPlayerLoading(
-        "Ouverture de la source principale...",
-        anime
-            ? "Providers frenchnexoraAPI, puis Consumet pour les animés."
-            : "Connexion à Orion/Aether."
-    );
-
-    const resolved = await resolveNodeFrenchSource(item, endpoint, { anime });
-    const source = resolved.source;
-    const sourceForPlayback = resolved.isFrenchNexora
-        ? source
-        : mergeNodeFrenchSources(source, null);
-    elements.playerBadge.textContent = resolved.isFrenchNexora
-        ? (source.requiresLanguageConfirmation ? "VO" : "FR")
-        : "FR";
-    state.activeFrenchSourcePayload = sourceForPlayback;
-    state.activeFrenchSourceIndex = nodeFrenchDefaultSourceIndex(sourceForPlayback);
-    renderFrenchSourcePanel(sourceForPlayback, state.activeFrenchSourceIndex);
-    const stream = nodeFrenchStreamFromSource(
-        nodeFrenchSourcePayload(sourceForPlayback, state.activeFrenchSourceIndex) || sourceForPlayback
-    );
-    const sourceLabel = [
-        stream.hoster.nom || resolved.providerLabel,
-        stream.hoster.lang || ""
-    ].filter(Boolean).join(" - ");
-
-    setPlayerLoading(
-        "Ouverture de la source FR...",
-        sourceLabel || (resolved.isFrenchNexora ? "Lecture via FrenchNexoraAPI." : "Lecture via Orion/Aether.")
-    );
-    await startStreamPlayback(
-        { ...item, playbackProvider: "node-fr", playbackProviderName: sourceLabel },
-        stream.proxyUrl,
-        stream.playbackMode,
-        {
-            embedFallbackUrl: stream.playbackMode === "hls" ? stream.embedUrl : "",
-            embedFallbackLabel: sourceLabel,
-            preferredAudioLanguage: stream.preferredAudioLanguage,
-            preferredSubtitleLanguage: stream.preferredSubtitleLanguage,
-            visualWatch: true
-        }
-    );
-    if (stream.playbackMode === "embed") {
-        elements.playerMessage.textContent = `Lecteur ouvert via ${resolved.providerLabel}.`;
-    } else {
-        elements.playerMessage.textContent = `Lecture ouverte via ${resolved.providerLabel}.`;
-    }
-}
-
-async function resolveNodeFrenchSourceLegacy(item, frenchEndpoint, options = {}) {
-    const failures = [];
-    const frenchPromise = nodeApi(frenchEndpoint).then((source) => {
-        if (!hasUsableNodeFrenchSource(source)) {
-            throw new Error("Les providers frenchnexoraAPI ne proposent aucune source exploitable.");
-        }
-        return { source, providerLabel: "frenchnexoraAPI", isFrenchNexora: true };
-    });
-
-    if (options.anime) {
-        throw unavailableSourceError(
-            "Aucun provider frenchnexoraAPI ne propose cet animé.",
-            failures
-        );
-    }
-
-    const legacyEndpoint = legacyNodeFrenchEndpointForItem(item);
-    if (!legacyEndpoint || !legacyNodeApiEnabled()) {
-        throw unavailableSourceError(
-            "Aucune source FrenchNexora disponible et Orion/Aether n'est pas configuré.",
-            failures
-        );
-    }
-
-    try {
-        const source = await legacyNodeApi(legacyEndpoint);
-        if (hasUsableNodeFrenchSource(source)) {
-            return { source, providerLabel: "Orion/Aether" };
-        }
-        failures.push(new Error("Orion/Aether ne propose aucune source exploitable."));
-    } catch (error) {
-        failures.push(error);
-    }
-
-    throw unavailableSourceError(
-        "Aucune source disponible chez FrenchNexora ni Orion/Aether.",
-        failures
-    );
-}
-
-async function resolveNodeFrenchSource(item, frenchEndpoint, options = {}) {
-    const frenchPromise = nodeApi(frenchEndpoint).then((source) => {
-        if (!hasUsableNodeFrenchSource(source)) {
-            throw new Error("Les providers FrenchNexora ne proposent aucune source exploitable.");
-        }
-        return { source, providerLabel: "frenchnexoraAPI", isFrenchNexora: true };
-    });
-
-    if (options.anime) {
-        try {
-            return await frenchPromise;
-        } catch (error) {
-            throw unavailableSourceError("Aucun provider FrenchNexora ne propose cet anime.", [error]);
-        }
-    }
-
-    const legacyEndpoint = legacyNodeFrenchEndpointForItem(item);
-    if (legacyEndpoint && legacyNodeApiEnabled()) {
-        try {
-            const source = await legacyNodeApi(legacyEndpoint);
-            if (hasUsableNodeFrenchSource(source)) {
-                frenchPromise
-                    .then((resolved) => publishBackgroundFrenchSource(item, resolved))
-                    .catch(() => {});
-                return { source, providerLabel: "Orion/Aether", isFrenchNexora: false };
-            }
-        } catch {
-            // TMDB Easy sera utilisé par l'appelant; FrenchNexora continue en arrière-plan.
-        }
-    }
-
-    if (legacyEndpoint && aetherApiEnabled()) {
-        try {
-            const source = await aetherApi(legacyEndpoint);
-            if (hasUsableNodeFrenchSource(source)) {
-                frenchPromise
-                    .then((resolved) => publishBackgroundFrenchSource(item, resolved))
-                    .catch(() => {});
-                return { source, providerLabel: "Aether", isFrenchNexora: false };
-            }
-        } catch {
-            // TMDB Easy sera utilisé si Orion et Aether sont indisponibles.
-        }
-    }
-
-    try {
-        return await frenchPromise;
-    } catch (error) {
-        throw unavailableSourceError("Aucun provider FR disponible chez node-api ou frenchnexoraAPI.", [error]);
-    }
-}
 
 function unavailableSourceError(message, failures = []) {
     const error = new Error(message);
@@ -6401,7 +5910,7 @@ function isTmdbPlayable(value) {
 function tmdbIdFromItem(value) {
     const directId = positiveInteger(value?.tmdbId);
     if (directId) return directId;
-    const match = String(value?.id || "").match(/^(?:tmdb|orion)~(?:movie|series)~(\d+)/);
+    const match = String(value?.id || "").match(/^tmdb~(?:movie|series)~(\d+)/);
     return match ? positiveInteger(match[1]) : 0;
 }
 
@@ -6423,20 +5932,6 @@ async function restartActiveSessionWithQuality(item, requestedQuality, options =
     await startStreamFromPayload(item, stream, requestedQuality, options);
 }
 
-function legacyNodeFrenchEndpointForItem(item) {
-    const tmdbId = tmdbIdFromItem(item);
-    if (!tmdbId) return "";
-    if (item.type === "movie") {
-        return `/sources/movie/${tmdbId}?provider=auto`;
-    }
-    if (item.type === "series") {
-        const season = positiveInteger(item.season);
-        const episode = positiveInteger(item.episode);
-        if (!season || !episode) return "";
-        return `/sources/series/${tmdbId}/${season}/${episode}`;
-    }
-    return "";
-}
 
 async function fallbackActiveSessionToAuto(message) {
     if (!state.activePlayerItem || !state.activeSessionToken) {
@@ -7033,7 +6528,6 @@ function shouldGateEmbedLaunch(item) {
     return isMobileEmbedEnvironment()
         && (isTmdbPlayable(item)
             || isEpornerSource(item)
-            || isNodeFrenchPlayerItem(item)
             || isContentNexoraPlayerItem(item));
 }
 
@@ -7160,9 +6654,6 @@ function embedLaunchPrompt(item = state.activePlayerItem) {
     if (isContentNexoraPlayerItem(item)) {
         return "Appuyez pour lancer le lecteur Content-Nexora.";
     }
-    if (isNodeFrenchPlayerItem(item)) {
-        return "Appuyez pour lancer le lecteur FR.";
-    }
     if (isEpornerSource(item)) {
         return "Appuyez pour lancer le lecteur Adults.";
     }
@@ -7198,9 +6689,6 @@ function launchEmbedInline() {
 function embedOpenedMessage() {
     if (isContentNexoraPlayerItem()) {
         return "Lecteur Content-Nexora ouvert. La recherche du titre est lancee.";
-    }
-    if (isNodeFrenchPlayerItem()) {
-        return "Lecteur FR ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
     }
     if (isEpornerSource(state.activePlayerItem)) {
         return "Lecteur Adults ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
@@ -7344,9 +6832,6 @@ function embedRetryMessage() {
     if (isContentNexoraPlayerItem()) {
         return "Relance du lecteur Content-Nexora...";
     }
-    if (isNodeFrenchPlayerItem()) {
-        return "Relance du lecteur FR dans Nexora...";
-    }
     if (isEpornerSource(state.activePlayerItem)) {
         return "Relance du lecteur Adults dans Nexora...";
     }
@@ -7356,9 +6841,6 @@ function embedRetryMessage() {
 function embedAssistMessage() {
     if (isContentNexoraPlayerItem()) {
         return "Si le lecteur Content-Nexora ne s'affiche pas, ouvrez-le dans un onglet separe.";
-    }
-    if (isNodeFrenchPlayerItem()) {
-        return "Si le lecteur FR tourne encore, ouvrez-le dans un onglet separe.";
     }
     if (isEpornerSource(state.activePlayerItem)) {
         return "Si le lecteur Adults tourne encore, ouvrez-le dans un onglet separe.";
@@ -7434,9 +6916,6 @@ function setEmbedPlayerAwaitingLaunch() {
 }
 
 function embedAwaitingMessage() {
-    if (isNodeFrenchPlayerItem()) {
-        return "Lecteur FR pret. Lancez-le depuis le bouton affiche.";
-    }
     if (isEpornerSource(state.activePlayerItem)) {
         return "Lecteur Adults pret. Lancez-le depuis le bouton affiche.";
     }
@@ -7668,13 +7147,6 @@ function inspectPlayerVisualTrack(generation) {
         return;
     }
 
-    if (isNodeFrenchPlayerItem()) {
-        void switchToNodeTmdbFallback(
-            "Le flux FR donne du son sans image; bascule vers une source alternative."
-        );
-        return;
-    }
-
     void switchToUniversalEmbedFallback(
         "Ce flux renvoie du son sans image; bascule vers le lecteur integre."
     );
@@ -7688,7 +7160,7 @@ async function switchToEmbedFallback(reason) {
     state.playerVisualFallbackPending = true;
     const fallbackItem = {
         ...item,
-        playbackProvider: "node-fr-embed",
+        playbackProvider: "provider-embed",
         playbackProviderName: state.activeEmbedFallbackLabel || "Source FR"
     };
 
@@ -7716,58 +7188,6 @@ async function switchToEmbedFallback(reason) {
     }
 }
 
-async function switchToNodeTmdbFallback(reason) {
-    const item = state.activePlayerItem;
-    if (!item || item.playbackProvider === "node-fr-embed" || !nodeApiEnabled()) {
-        return switchToUniversalEmbedFallback(reason);
-    }
-    const fallbackEndpoint = nodeTmdbEmbedFallbackEndpointForItem(item);
-    if (!fallbackEndpoint) {
-        return switchToUniversalEmbedFallback(reason);
-    }
-
-    state.playerVisualFallbackPending = true;
-    try {
-        setPlayerControlsBusy(true);
-        setPlayerLoading("Bascule vers une autre source...", reason);
-        detachPlayerMedia();
-        await settleDetachedPlayer();
-        const source = await nodeApi(fallbackEndpoint);
-        const stream = nodeFrenchStreamFromSource(source);
-        const sourceLabel = [
-            stream.hoster.nom || "Source alternative",
-            stream.hoster.lang || ""
-        ].filter(Boolean).join(" - ");
-        const fallbackItem = {
-            ...item,
-            playbackProvider: "node-fr-embed",
-            playbackProviderName: sourceLabel || "Source alternative"
-        };
-        state.activePlayerItem = fallbackItem;
-        elements.playerBadge.textContent = source.requiresLanguageConfirmation ? "VO" : "FR";
-        await startStreamPlayback(fallbackItem, stream.proxyUrl, stream.playbackMode, {
-            embedFallbackUrl: stream.playbackMode === "hls" ? stream.embedUrl : "",
-            embedFallbackLabel: sourceLabel,
-            preferredAudioLanguage: stream.preferredAudioLanguage,
-            preferredSubtitleLanguage: stream.preferredSubtitleLanguage,
-            visualWatch: true
-        });
-        elements.playerMessage.textContent = "Source alternative ouverte.";
-        return true;
-    } catch (error) {
-        const opened = await switchToUniversalEmbedFallback(
-            error.message || "Impossible d'ouvrir une source alternative."
-        );
-        if (!opened) {
-            detachPlayerMedia();
-            showPlayerError(error.message || "Impossible d'ouvrir une source alternative.");
-        }
-        return false;
-    } finally {
-        state.playerVisualFallbackPending = false;
-        setPlayerControlsBusy(false);
-    }
-}
 
 async function switchToUniversalEmbedFallback(reason) {
     const item = state.activePlayerItem;
@@ -7820,10 +7240,6 @@ function schedulePlayerStartupWatchdog(generation) {
                 void switchToEmbedFallback("La source FR directe ne demarre pas; bascule vers le lecteur du provider.");
                 return;
             }
-            if (isNodeFrenchPlayerItem()) {
-                void switchToNodeTmdbFallback("La source FR directe ne demarre pas; recherche d'une alternative.");
-                return;
-            }
             showPlayerError("La source FR ne produit aucune image lisible pour le moment.");
             return;
         }
@@ -7837,8 +7253,7 @@ function schedulePlayerStartupWatchdog(generation) {
 }
 
 function schedulePlayerRecovery(reason, immediate = false, preferFailover = false) {
-    const nodePlayback = isNodeRecoverablePlayback();
-    if ((!state.activeSessionToken && !nodePlayback)
+        if (!state.activeSessionToken
         || state.playerRecovering
         || state.playerErrorShown
         || state.playerUserPaused) {
@@ -7875,10 +7290,6 @@ function schedulePlayerRecovery(reason, immediate = false, preferFailover = fals
 
 async function recoverPlayer(reason) {
     clearPlayerRecoveryTimer();
-    if (!state.activeSessionToken && isNodeRecoverablePlayback()) {
-        await recoverNodePlayback(reason);
-        return;
-    }
     if (!state.activeSessionToken || state.playerErrorShown || state.playerRecovering || state.playerUserPaused) return;
     if (state.playerOpening) {
         state.playerRecoveryTimer = window.setTimeout(
@@ -7954,83 +7365,7 @@ async function recoverPlayer(reason) {
     }
 }
 
-function isNodeRecoverablePlayback() {
-    return Boolean(
-        isNodeFrenchPlayerItem()
-        && state.activeProxyUrl
-        && state.activePlaybackMode
-        && state.activePlaybackMode !== "embed"
-    );
-}
 
-async function recoverNodePlayback(reason) {
-    clearPlayerRecoveryTimer();
-    if (!isNodeRecoverablePlayback()
-        || state.playerErrorShown
-        || state.playerRecovering
-        || state.playerUserPaused) {
-        return;
-    }
-    if (state.playerOpening) {
-        state.playerRecoveryTimer = window.setTimeout(
-            () => recoverPlayer(reason),
-            500
-        );
-        return;
-    }
-
-    state.playerRecovering = true;
-    state.playerRecoveryAttempts += 1;
-    const resumeTime = snapshotPlaybackResumeTime();
-    const item = state.activePlayerItem;
-    const proxyUrl = state.activeProxyUrl;
-    const playbackMode = state.activePlaybackMode;
-    const playbackOptions = {
-        startTime: resumeTime,
-        embedFallbackUrl: state.activeEmbedFallbackUrl || "",
-        embedFallbackLabel: state.activeEmbedFallbackLabel || "",
-        preferredAudioLanguage: state.activePreferredAudioLanguage || "",
-        preferredSubtitleLanguage: state.activePreferredSubtitleLanguage || "",
-        visualWatch: state.activeVisualWatchdogEnabled
-    };
-
-    try {
-        if (state.playerRecoveryAttempts > 1) {
-            const switched = state.activeEmbedFallbackUrl
-                ? await switchToEmbedFallback(reason || "Le flux direct reste instable.")
-                : await switchToNodeTmdbFallback(reason || "Le flux direct reste instable.");
-            if (!switched) {
-                showPlayerError(reason || "La source video reste instable.");
-            }
-            return;
-        }
-
-        setPlayerLoading(
-            "Reprise du film...",
-            reason || "Nexora reconnecte la source video."
-        );
-        detachPlayerMedia();
-        await settleDetachedPlayer();
-        state.activePlayerItem = item;
-        await startStreamPlayback(item, proxyUrl, playbackMode, playbackOptions);
-    } catch (error) {
-        if (state.playerRecoveryAttempts >= 2) {
-            const switched = await switchToNodeTmdbFallback(
-                error?.message || reason || "Impossible de reprendre la source directe."
-            );
-            if (!switched) {
-                showPlayerError(error?.message || "Impossible de reprendre ce flux.");
-            }
-            return;
-        }
-        state.playerRecoveryTimer = window.setTimeout(
-            () => recoverPlayer(error?.message || reason),
-            playerRecoveryDelayMs()
-        );
-    } finally {
-        state.playerRecovering = false;
-    }
-}
 
 async function tryFailoverPlayer() {
     if (!state.activeSessionToken || !state.activeCanFailover) return null;
@@ -9277,7 +8612,7 @@ elements.streamPlayer.addEventListener("pause", () => {
 elements.streamPlayer.addEventListener("error", () => {
     if (hasActivePlayback() && !state.playerOpening && !state.playerRecovering) {
         const code = elements.streamPlayer.error?.code;
-        if (code === 2 || code === 3 || isNodeFrenchPlayerItem()) {
+        if (code === 2 || code === 3) {
             schedulePlayerRecovery("Le flux a été interrompu, tentative de reprise.", true, code === 2);
             return;
         }
