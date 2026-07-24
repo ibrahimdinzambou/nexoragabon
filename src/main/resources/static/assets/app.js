@@ -742,6 +742,52 @@ async function playMatchedAnimeNexora(item) {
     elements.playerMessage.textContent = `Lecture via ${resolved.providerLabel}.`;
 }
 
+async function playAnimeNexoraItem(item, options = {}) {
+    if (!animeNexoraApiEnabled()) {
+        throw new Error("API Anime Nexora non configuree.");
+    }
+    if (state.playerOpening) return;
+
+    state.playerOpening = true;
+    setPlayerControlsBusy(true);
+    state.playerErrorShown = false;
+    state.playerRecoveryAttempts = 0;
+    state.playerRecovering = false;
+    state.playerRecoveryShouldFailover = false;
+    state.playerUserPaused = false;
+    clearPlayerRecoveryTimer();
+    clearPlayerStartupTimer();
+    trackRecentlyWatched(item);
+    saveActivePlayback(item);
+    state.activeFrenchSourcePayload = null;
+    state.activeFrenchSourceIndex = 0;
+    renderFrenchSourcePanel(null);
+
+    const activeItem = {
+        ...item,
+        playbackProvider: "anime-nexora",
+        playbackProviderName: "Anime NexoraAPI",
+        externalPlayback: true,
+        streamAvailable: true
+    };
+    state.activePlayerItem = activeItem;
+    await ensurePlayerContext(activeItem);
+    openModal("playerModal");
+    elements.playerTitle.textContent = activeItem.name || "Anime";
+    elements.playerBadge.textContent = "ANIME";
+    refreshPlayerRoom(activeItem, elements.playerBadge.textContent);
+    elements.playerQuality.value = requestedPlaybackQuality(activeItem, options);
+    setPlayerLoading("Préparation de l'anime...", "Connexion à la source Anime Nexora.");
+
+    try {
+        await stopPlayer();
+        await playMatchedAnimeNexora(activeItem);
+    } finally {
+        state.playerOpening = false;
+        setPlayerControlsBusy(false);
+    }
+}
+
 function apiUrl(path) {
     return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
 }
@@ -5499,6 +5545,17 @@ async function playItem(item, options = {}) {
     }
     if (item.streamAvailable === false && !isTmdbPlayable(item) && !["movie", "series"].includes(item.type)) {
         showToast(item.streamUnavailableReason || "Ce contenu n'a pas de flux IPTV actif disponible.", true);
+        return;
+    }
+    if (isAnimeNexoraItem(item)) {
+        try {
+            await playAnimeNexoraItem(item, options);
+        } catch (error) {
+            state.playerOpening = false;
+            setPlayerControlsBusy(false);
+            detachPlayerMedia();
+            showPlayerError(error.message || "Aucun flux Anime Nexora disponible pour cet anime.");
+        }
         return;
     }
     if (["movie", "series"].includes(item.type)) {
