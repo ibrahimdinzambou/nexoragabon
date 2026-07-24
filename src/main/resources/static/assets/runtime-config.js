@@ -31,7 +31,12 @@
     }
 
     function configuredAnimeNexoraBase() {
-        return trimSlash(window.NEXORA_ANIME_API_BASE_URL || "") || publicAnimeNexoraApiBase;
+        const explicit = trimSlash(window.NEXORA_ANIME_API_BASE_URL || "");
+        if (explicit) return explicit;
+        const host = String(window.location.hostname || "").toLowerCase();
+        return ["nexoragabon.com", "www.nexoragabon.com", apiHost].includes(host)
+            ? "/anime-api"
+            : publicAnimeNexoraApiBase;
     }
 
     const apiBaseUrl = configuredBase();

@@ -2072,8 +2072,18 @@ async function loadCatalog() {
                 ? { ...item, tmdbId: relatedTmdb.tmdbId }
                 : item;
         });
+        const animeTitleKeys = new Set(
+            enrichedItems
+                .filter((item) => isAnimeNexoraItem(item))
+                .map((item) => catalogProviderTitleKey(item.name))
+                .filter(Boolean)
+        );
+        const providerSeparatedItems = enrichedItems.filter((item) => (
+            !isFrenchSource(item)
+            || !animeTitleKeys.has(catalogProviderTitleKey(item.name))
+        ));
         const apiItems = [];
-        enrichedItems.forEach((item) => {
+        providerSeparatedItems.forEach((item) => {
             if (!types.includes(item.type)) return false;
             const sourceKey = item.sourceCode || item.playbackProvider || item.provider || item.source || "catalog";
             const dedupeKey = `${item.type}:${sourceKey}:${item.id}`;
@@ -3533,6 +3543,14 @@ function isAnimeNexoraItem(item) {
     return id.startsWith("consumet~anime~anime-nexora~")
         || provider.includes("anime-nexora")
         || category.startsWith("anime-nexora");
+}
+
+function catalogProviderTitleKey(value) {
+    return normalizeSearchText(value)
+        .replace(/\s*[·|]\s*.*$/i, "")
+        .replace(/\s*[·|:-]\s*(?:saison|season|version|partie|part)\b.*$/i, "")
+        .replace(/\s+(?:saison|season)\s+\d+.*$/i, "")
+        .trim();
 }
 
 function recentlyWatchedItems(items = state.catalog) {
