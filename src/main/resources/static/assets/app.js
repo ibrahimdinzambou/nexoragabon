@@ -5380,6 +5380,8 @@ async function openSeries(item) {
     try {
         const series = isAnimeNexoraItem(item)
             ? await animeNexoraSeriesInfo(item)
+            : isContentNexoraPlayerItem(item)
+                ? await contentNexoraSeriesInfo(item)
             : await api(
                 `/catalog/series/${encodeURIComponent(item.catalogId || item.id)}?title=${encodeURIComponent(item.name || "")}`
             );
@@ -5731,6 +5733,112 @@ function contentNexoraPlayerParameters(item, query) {
     return parameters;
 }
 
+function contentNexoraEpisodeGroups(episodes) {
+    if (Array.isArray(episodes)) return [{ language: "", entries: episodes }];
+    if (!episodes || typeof episodes !== "object") return [];
+    const preferredLanguages = ["vf", "fr", "vostfr", "vjstfr", "vastfr", "vo"];
+    return Object.entries(episodes)
+        .filter(([, entries]) => Array.isArray(entries) && entries.length)
+        .sort(([left], [right]) => {
+            const leftRank = preferredLanguages.indexOf(String(left).toLowerCase());
+            const rightRank = preferredLanguages.indexOf(String(right).toLowerCase());
+            return (leftRank < 0 ? preferredLanguages.length : leftRank)
+                - (rightRank < 0 ? preferredLanguages.length : rightRank);
+        })
+        .map(([language, entries]) => ({ language, entries }));
+}
+
+function contentNexoraEpisodeNumber(entry, fallback) {
+    const declared = positiveInteger(entry?.episode) || positiveInteger(entry?.index);
+    if (declared) return declared;
+    const title = String(entry?.title || entry?.name || "");
+    return positiveInteger(title.match(/(?:episode|ep\.?)\s*(\d+)/i)?.[1]) || fallback;
+}
+
+function contentNexoraEpisodeEntries(episodes, episodeNumber) {
+    return contentNexoraEpisodeGroups(episodes)
+        .map((group) => {
+            const match = group.entries.find((entry, index) => (
+                contentNexoraEpisodeNumber(entry, index + 1) === episodeNumber
+            ));
+            return match ? { ...match, contentNexoraLanguage: group.language } : null;
+        })
+        .filter(Boolean);
+}
+
+function contentNexoraSeriesEpisodes(seasonEpisodes, seasonNumber, item) {
+    const groups = contentNexoraEpisodeGroups(seasonEpisodes);
+    const episodeCount = Math.max(...groups.map((group) => group.entries.length), 0);
+    return Array.from({ length: episodeCount }, (_, offset) => {
+        const episodeNumber = offset + 1;
+        const entries = contentNexoraEpisodeEntries(seasonEpisodes, episodeNumber);
+        const primary = entries[0] || {};
+        const players = [...new Map(
+            entries.flatMap((entry) => Array.isArray(entry.players) ? entry.players : [])
+                .map((player) => [String(player?.url || JSON.stringify(player)), player])
+        ).values()];
+        return {
+            ...primary,
+            id: contentNexoraItemId(
+                "episode",
+                `${item.contentNexoraUrl || item.id}:s${seasonNumber}:e${episodeNumber}`
+            ),
+            name: primary.title || primary.name || `Episode ${episodeNumber}`,
+            title: primary.title || primary.name || `Episode ${episodeNumber}`,
+            type: "series",
+            isEpisode: true,
+            season: seasonNumber,
+            episode: episodeNumber,
+            players,
+            source: "Content-Nexora",
+            sourceCode: "content-nexora",
+            provider: "content-nexora",
+            playbackProvider: "content-nexora",
+            playbackProviderName: "Content-Nexora",
+            externalPlayback: true,
+            streamAvailable: players.length > 0,
+            contentNexoraUrl: item.contentNexoraUrl,
+            contentNexoraTitle: item.contentNexoraTitle || item.name
+        };
+    });
+}
+
+async function contentNexoraSeriesInfo(item) {
+    if (!item?.contentNexoraUrl) {
+        throw new Error("Content-Nexora n'a pas fourni l'URL de la série.");
+    }
+    const payload = await contentNexoraApi(
+        `/content?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&url=${encodeURIComponent(item.contentNexoraUrl)}`
+    );
+    const content = payload.content || payload;
+    const remoteSeasons = Array.isArray(content?.seasons) ? content.seasons : [];
+    const baseSeason = positiveInteger(item.season) || 1;
+    const seasons = remoteSeasons.map((remoteSeason, index) => {
+        const seasonNumber = remoteSeasons.length === 1
+            ? baseSeason
+            : positiveInteger(remoteSeason?.season) || index + 1;
+        const episodes = contentNexoraSeriesEpisodes(remoteSeason?.episodes, seasonNumber, item);
+        return {
+            ...remoteSeason,
+            season: seasonNumber,
+            name: remoteSeason?.name || remoteSeason?.title || `Saison ${seasonNumber}`,
+            episodeCount: episodes.length,
+            episodes
+        };
+    });
+    return {
+        ...item,
+        name: content.title || item.name,
+        summary: content.synopsis || content.summary || item.summary || "",
+        poster: item.poster || item.image || content.img,
+        backdrop: item.backdrop || item.image || content.img,
+        seasons,
+        seasonCount: seasons.length,
+        episodeCount: seasons.reduce((total, season) => total + season.episodes.length, 0),
+        streamAvailable: seasons.some((season) => season.episodes.length > 0)
+    };
+}
+
 async function playContentNexoraItem(item) {
     if (!contentNexoraApiEnabled()) {
         throw new Error("API Content-Nexora non configuree.");
@@ -5795,9 +5903,8 @@ async function playContentNexoraItem(item) {
         if (!match?.url) {
             throw new Error(`Content-Nexora n'a pas fourni de fiche exploitable pour « ${query} ».`);
         }
-        const contentPath = activeItem.type === "series" ? "/series" : "/content";
         const contentPayload = await contentNexoraApi(
-            `${contentPath}?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&url=${encodeURIComponent(match.url)}`
+            `/content?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&url=${encodeURIComponent(match.url)}`
         );
         const content = contentPayload.content || contentPayload;
         if (activeItem.type === "movie" && !Array.isArray(content?.players)) {
@@ -5989,6 +6096,7 @@ function appendContentNexoraSourceFields(target, node) {
     if (!node || typeof node !== "object") return;
     ["players", "sources", "hosters", "links", "streams", "player", "source"].forEach((field) => {
         if (node[field] !== undefined && node[field] !== null) {
+            if (["player", "source"].includes(field) && typeof node[field] === "string") return;
             appendContentNexoraSourceValue(target, node[field], field);
         }
     });
@@ -6001,12 +6109,9 @@ function contentNexoraSourceCandidates(content, item = state.activePlayerItem) {
         const requestedSeason = positiveInteger(item?.season) || 1;
         const season = seasons.find((entry) => positiveInteger(entry?.season) === requestedSeason)
             || seasons[0];
-        const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
         const requestedEpisode = positiveInteger(item?.episode) || 1;
-        const episode = episodes.find((entry) => positiveInteger(entry?.episode) === requestedEpisode)
-            || episodes[requestedEpisode - 1]
-            || episodes[0];
-        appendContentNexoraSourceFields(candidates, episode);
+        const episodeEntries = contentNexoraEpisodeEntries(season?.episodes, requestedEpisode);
+        episodeEntries.forEach((episode) => appendContentNexoraSourceFields(candidates, episode));
     }
     if (!candidates.length) appendContentNexoraSourceFields(candidates, content);
     return candidates;
