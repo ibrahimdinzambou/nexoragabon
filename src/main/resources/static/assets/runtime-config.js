@@ -1,6 +1,9 @@
 (function () {
     const publicApiBase = "https://api.nexoragabon.com";
-    const publicContentNexoraApiBase = "https://content.nexoragabon.com";
+    // L'API Content passe par l'hote API principal, dont le certificat couvre
+    // deja api.nexoragabon.com. Le lecteur garde son sous-domaine dedie.
+    const publicContentNexoraApiBase = "https://api.nexoragabon.com/content-api";
+    const publicContentNexoraPlayerBase = "https://content.nexoragabon.com";
     const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";
     const publicAnimeNexoraApiBase = "https://api.nexoragabon.com/anime-api";
     const publicSiteUrl = "https://nexoragabon.com";
@@ -33,16 +36,19 @@
     function configuredAnimeNexoraBase() {
         const explicit = trimSlash(window.NEXORA_ANIME_API_BASE_URL || "");
         if (explicit) return explicit;
-        const host = String(window.location.hostname || "").toLowerCase();
-        return ["nexoragabon.com", "www.nexoragabon.com", apiHost].includes(host)
-            ? "/anime-api"
-            : publicAnimeNexoraApiBase;
+        return publicAnimeNexoraApiBase;
+    }
+
+    function configuredContentNexoraPlayerBase() {
+        return trimSlash(window.NEXORA_CONTENT_NEXORA_PLAYER_BASE_URL || "")
+            || publicContentNexoraPlayerBase;
     }
 
     const apiBaseUrl = configuredBase();
     const apiRoot = `${apiBaseUrl}/api`;
     const contentNexoraApiBaseUrl = configuredContentNexoraBase();
     const contentNexoraApiRoot = `${contentNexoraApiBaseUrl}/api`;
+    const contentNexoraPlayerBaseUrl = configuredContentNexoraPlayerBase();
     const dramaApiBaseUrl = configuredDramaBase();
     const dramaApiRoot = `${dramaApiBaseUrl}/api/v1/reelshort`;
     const animeNexoraApiBaseUrl = configuredAnimeNexoraBase();
@@ -73,7 +79,7 @@
     }
 
     function contentNexoraPlayerUrl(parameters = {}) {
-        const url = new URL(`${contentNexoraApiBaseUrl}/`);
+        const url = new URL(`${contentNexoraPlayerBaseUrl}/`);
         Object.entries(parameters || {}).forEach(([key, value]) => {
             if (value !== undefined && value !== null && String(value).trim() !== "") {
                 url.searchParams.set(key, String(value));
@@ -103,6 +109,7 @@
         apiRoot,
         contentNexoraApiBaseUrl,
         contentNexoraApiRoot,
+        contentNexoraPlayerBaseUrl,
         dramaApiBaseUrl,
         dramaApiRoot,
         animeNexoraApiBaseUrl,

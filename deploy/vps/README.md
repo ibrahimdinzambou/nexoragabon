@@ -178,7 +178,8 @@ Si ton front est sur Netlify/Vercel, ajoute:
 ```html
 <script>
   window.NEXORA_API_BASE_URL = "https://api.nexoragabon.com";
-  window.NEXORA_CONTENT_NEXORA_API_BASE_URL = "https://content.nexoragabon.com";
+  window.NEXORA_CONTENT_NEXORA_API_BASE_URL = "https://api.nexoragabon.com/content-api";
+  window.NEXORA_CONTENT_NEXORA_PLAYER_BASE_URL = "https://content.nexoragabon.com";
   window.NEXORA_DRAMA_API_BASE_URL = "https://api.nexoragabon.com/drama-api";
 </script>
 ```
@@ -209,5 +210,5 @@ VÃ©rifier ensuite le contrat API et le lecteur:
 
 ```bash
 curl http://127.0.0.1:8787/api/health
-curl "https://content.nexoragabon.com/api/search?provider=french-stream&q=breaking+bad"
+curl "https://api.nexoragabon.com/content-api/search?provider=french-stream&q=breaking+bad"
 ```
