@@ -767,6 +767,9 @@ async function contentNexoraApi(path, options = {}) {
     if (!url) throw new Error("API Content-Nexora non configuree.");
     const headers = new Headers(options.headers || {});
     headers.set("Accept", "application/json");
+    if (state.token) {
+        headers.set("Authorization", `Bearer ${state.token}`);
+    }
     const response = await fetchWithRetry(url, { ...options, headers });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || body.ok === false) {
@@ -5748,6 +5751,7 @@ async function playContentNexoraItem(item) {
         }
         state.activeContentNexoraMatch = match;
         state.activeContentNexoraContent = content;
+        renderFrenchSourcePanel(content);
         const playerUrl = contentNexoraPlayerUrl(contentNexoraPlayerParameters(activeItem, query));
         if (!playerUrl) throw new Error("Lecteur Content-Nexora non configure.");
         await startStreamPlayback(activeItem, playerUrl, "embed");
@@ -5801,8 +5805,10 @@ function sourceLanguageRank(value) {
 function hosterPlayableKind(hoster) {
     if (!hoster) return "none";
     if (hoster.proxyM3U8 || hoster.proxyM3u8 || hoster.m3u8) return "hls";
-    if (hoster.directUrl || hoster.videoUrl) {
-        return classifyPlayableUrl(hoster.directUrl || hoster.videoUrl, hoster);
+    const directUrl = hoster.directUrl || hoster.videoUrl || hoster.streamUrl
+        || hoster.url || hoster.link || hoster.href;
+    if (directUrl) {
+        return classifyPlayableUrl(directUrl, hoster);
     }
     if (hoster.embedUrl) return "embed";
     return "none";
@@ -5834,8 +5840,202 @@ function hosterScore(hoster) {
 
 
 
-function renderFrenchSourcePanel() {
-    if (elements.playerSourcePanel) elements.playerSourcePanel.hidden = true;
+function contentNexoraSourceOrigin() {
+    const configured = String(window.NexoraContentNexoraApi?.baseUrl || "").trim();
+    const base = configured || String(CONTENT_NEXORA_API_ROOT || "")
+        .replace(/\/api\/?$/, "")
+        || window.location.origin;
+    return /^https?:\/\//i.test(base) ? base : window.location.origin;
+}
+
+function contentNexoraSourceUrl(source) {
+    if (typeof source === "string") return source.trim();
+    if (!source || typeof source !== "object") return "";
+
+    const directCandidates = [
+        source.url,
+        source.link,
+        source.href,
+        source.playerUrl,
+        source.embedUrl,
+        source.directUrl,
+        source.videoUrl,
+        source.streamUrl,
+        source.m3u8,
+        source.proxyM3U8,
+        source.proxyM3u8
+    ];
+    const direct = directCandidates.find((value) => typeof value === "string" && value.trim());
+    if (direct) return direct.trim();
+
+    for (const nested of [source.player, source.stream, source.source]) {
+        const nestedUrl = contentNexoraSourceUrl(nested);
+        if (nestedUrl) return nestedUrl;
+    }
+    return "";
+}
+
+function contentNexoraClickableSourceUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw || /^(?:javascript|data|blob):/i.test(raw)) return "";
+    try {
+        const url = new URL(raw, contentNexoraSourceOrigin());
+        if (!["http:", "https:"].includes(url.protocol) || !url.hostname) return "";
+        return url.href;
+    } catch {
+        return "";
+    }
+}
+
+function appendContentNexoraSourceValue(target, value, fallbackLabel = "") {
+    if (Array.isArray(value)) {
+        value.forEach((entry) => appendContentNexoraSourceValue(target, entry, fallbackLabel));
+        return;
+    }
+    if (typeof value === "string") {
+        target.push({ label: fallbackLabel, url: value });
+        return;
+    }
+    if (!value || typeof value !== "object") return;
+
+    if (contentNexoraSourceUrl(value)) {
+        target.push(value);
+        return;
+    }
+
+    Object.entries(value).forEach(([label, entry]) => {
+        if (typeof entry === "string") {
+            target.push({ label, url: entry });
+        } else if (entry && typeof entry === "object") {
+            target.push({ ...entry, label: entry.label || entry.name || label });
+        }
+    });
+}
+
+function appendContentNexoraSourceFields(target, node) {
+    if (!node || typeof node !== "object") return;
+    ["players", "sources", "hosters", "links", "streams", "player", "source"].forEach((field) => {
+        if (node[field] !== undefined && node[field] !== null) {
+            appendContentNexoraSourceValue(target, node[field], field);
+        }
+    });
+}
+
+function contentNexoraSourceCandidates(content, item = state.activePlayerItem) {
+    const candidates = [];
+    const seasons = Array.isArray(content?.seasons) ? content.seasons : [];
+    if (seasons.length) {
+        const requestedSeason = positiveInteger(item?.season) || 1;
+        const season = seasons.find((entry) => positiveInteger(entry?.season) === requestedSeason)
+            || seasons[0];
+        const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
+        const requestedEpisode = positiveInteger(item?.episode) || 1;
+        const episode = episodes.find((entry) => positiveInteger(entry?.episode) === requestedEpisode)
+            || episodes[requestedEpisode - 1]
+            || episodes[0];
+        appendContentNexoraSourceFields(candidates, episode);
+    }
+    if (!candidates.length) appendContentNexoraSourceFields(candidates, content);
+    return candidates;
+}
+
+function contentNexoraSourceLabel(source, url) {
+    const label = [
+        source?.label,
+        source?.name,
+        source?.title,
+        source?.hoster,
+        source?.provider,
+        source?.host,
+        source?.server,
+        source?.nom
+    ].find((value) => String(value || "").trim());
+    if (label) return String(label).trim();
+    try {
+        return new URL(url).hostname.replace(/^www\./i, "");
+    } catch {
+        return "Source vidéo";
+    }
+}
+
+function contentNexoraSourceLanguage(source) {
+    return String([
+        source?.lang,
+        source?.language,
+        source?.languageName,
+        source?.audio,
+        source?.audioLanguage,
+        source?.nom
+    ].find((value) => String(value || "").trim()) || "VF").trim();
+}
+
+function contentNexoraSourceQuality(source) {
+    return String([
+        source?.quality,
+        source?.resolution,
+        source?.height ? `${source.height}p` : ""
+    ].find((value) => String(value || "").trim()) || "").trim();
+}
+
+function contentNexoraSourceKindLabel(kind) {
+    return kind === "hls" ? "Flux HLS" : kind === "direct" ? "Fichier vidéo" : "Lecteur web";
+}
+
+function normalizeContentNexoraSources(content, item = state.activePlayerItem) {
+    const unique = new Map();
+    contentNexoraSourceCandidates(content, item).forEach((source, index) => {
+        const url = contentNexoraClickableSourceUrl(contentNexoraSourceUrl(source));
+        if (!url || unique.has(url)) return;
+        const raw = typeof source === "object" ? { ...source, url } : { url };
+        const kind = hosterPlayableKind(raw);
+        unique.set(url, {
+            url,
+            label: contentNexoraSourceLabel(raw, url),
+            language: contentNexoraSourceLanguage(raw),
+            quality: contentNexoraSourceQuality(raw),
+            kind,
+            kindLabel: contentNexoraSourceKindLabel(kind),
+            raw,
+            index
+        });
+    });
+    return [...unique.values()].sort((left, right) => hosterScore(right.raw) - hosterScore(left.raw));
+}
+
+function renderFrenchSourcePanel(content = null) {
+    if (!elements.playerSourcePanel || !elements.playerSourceList) return;
+    if (!content) {
+        state.activeFrenchSourcePayload = null;
+        elements.playerSourcePanel.hidden = true;
+        elements.playerSourceList.innerHTML = "";
+        if (elements.playerSourceCount) elements.playerSourceCount.textContent = "0 source";
+        return;
+    }
+
+    const sources = normalizeContentNexoraSources(content, state.activePlayerItem);
+    state.activeFrenchSourcePayload = { content, sources };
+    if (!sources.length) {
+        elements.playerSourcePanel.hidden = true;
+        return;
+    }
+
+    elements.playerSourcePanel.hidden = false;
+    if (elements.playerSourceCount) {
+        elements.playerSourceCount.textContent = `${sources.length} source${sources.length > 1 ? "s" : ""}`;
+    }
+    elements.playerSourceList.innerHTML = sources.map((source) => {
+        const details = [source.language, source.quality, source.kindLabel].filter(Boolean).join(" · ");
+        return `
+            <a class="player-source-option" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" aria-label="Ouvrir ${escapeHtml(source.label)} dans un nouvel onglet">
+                <span class="player-source-dot" aria-hidden="true"></span>
+                <span class="player-source-copy">
+                    <strong>${escapeHtml(source.label)}</strong>
+                    <small>${escapeHtml(details || "Source Content-Nexora")}</small>
+                    <span class="player-source-link">Ouvrir la source <span aria-hidden="true">↗</span></span>
+                </span>
+            </a>
+        `;
+    }).join("");
 }
 
 
@@ -8764,11 +8964,6 @@ elements.streamPlayer.addEventListener("error", () => {
     }
 });
 elements.playerQuality.addEventListener("change", changePlayerQuality);
-elements.playerSourceList?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-source-index]");
-    if (!button) return;
-    switchToFrenchSource(Number(button.dataset.sourceIndex));
-});
 
 state.notifications = buildNotifications();
 renderNotifications();

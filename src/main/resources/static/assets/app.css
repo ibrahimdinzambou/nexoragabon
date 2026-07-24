@@ -4120,6 +4120,7 @@ body.compact-catalog .card-copy strong {
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--ink);
     background: rgba(0, 0, 0, 0.22);
+    text-decoration: none;
     text-align: left;
     transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
@@ -4147,6 +4148,10 @@ body.compact-catalog .card-copy strong {
     gap: 3px;
 }
 
+.player-source-copy {
+    flex: 1 1 auto;
+}
+
 .player-source-option strong,
 .player-source-option small {
     overflow: hidden;
@@ -4162,6 +4167,13 @@ body.compact-catalog .card-copy strong {
 .player-source-option small {
     color: var(--dim);
     font-size: 10px;
+}
+
+.player-source-link {
+    color: var(--gold, #e7c36d);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
 }
 
 .player-source-dot {
