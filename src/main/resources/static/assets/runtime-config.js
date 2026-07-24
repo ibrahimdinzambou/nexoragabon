@@ -1,13 +1,6 @@
 (function () {
     const publicApiBase = "https://api.nexoragabon.com";
-    // Ancienne agrégation FrenchNexora, utilisée en secours pour les sources /streams.
-    const publicNodeApiBase = "https://api.nexoragabon.com/french-providers";
-    // API Nexora Node dédiée aux films français (/api/sources/movie/:tmdbId).
-    const publicLegacyNodeApiBase = "https://api.nexoragabon.com/node-fr";
-    const publicAetherApiBase = "https://api.nexoragabon.com";
-    // API compatible avec ibrahimdinzambou/frenchnexoraAPI.
-    // Peut être remplacée sans rebuild via window.NEXORA_FRENCH_NEXORA_API_BASE_URL.
-    const publicFrenchNexoraApiBase = "https://api.nexoragabon.com/french-providers";
+    const publicContentNexoraApiBase = "https://content.nexoragabon.com";
     const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";
     const publicAnimeNexoraApiBase = "https://api.nexoragabon.com/anime-api";
     const publicSiteUrl = "https://nexoragabon.com";
@@ -21,54 +14,32 @@
         const explicit = trimSlash(window.NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
         const host = String(window.location.hostname || "").toLowerCase();
-        if (host === apiHost) {
-            return "";
-        }
-        return publicApiBase;
+        return host === apiHost ? "" : publicApiBase;
     }
 
-    function configuredNodeBase() {
-        const explicit = trimSlash(window.NEXORA_FRENCH_NEXORA_API_BASE_URL || "");
-        if (explicit) return explicit;
-        return publicNodeApiBase;
-    }
-
-    function configuredFrenchNexoraBase() {
-        const explicit = trimSlash(window.NEXORA_FRENCH_NEXORA_API_BASE_URL || "");
-        return explicit || publicFrenchNexoraApiBase;
-    }
-
-    function configuredLegacyNodeBase() {
+    function configuredContentNexoraBase() {
         const explicit = trimSlash(
-            window.NEXORA_ORION_API_BASE_URL
-            || window.NEXORA_LEGACY_NODE_API_BASE_URL
+            window.NEXORA_CONTENT_NEXORA_API_BASE_URL
+            || window.NEXORA_CONTENT_NEXORA_BASE_URL
             || ""
         );
-        return explicit || publicLegacyNodeApiBase;
+        return explicit || publicContentNexoraApiBase;
     }
 
     function configuredDramaBase() {
-        const explicit = trimSlash(window.NEXORA_DRAMA_API_BASE_URL || "");
-        if (explicit) return explicit;
-        return "";
+        return trimSlash(window.NEXORA_DRAMA_API_BASE_URL || "") || publicDramaApiBase;
     }
 
     function configuredAnimeNexoraBase() {
-        const explicit = trimSlash(window.NEXORA_ANIME_API_BASE_URL || "");
-        return explicit || publicAnimeNexoraApiBase;
+        return trimSlash(window.NEXORA_ANIME_API_BASE_URL || "") || publicAnimeNexoraApiBase;
     }
 
     const apiBaseUrl = configuredBase();
     const apiRoot = `${apiBaseUrl}/api`;
-    const nodeApiBaseUrl = configuredNodeBase();
-    const nodeApiRoot = nodeApiBaseUrl ? `${nodeApiBaseUrl}/api` : "";
-    const frenchNexoraApiBaseUrl = configuredFrenchNexoraBase();
-    const legacyNodeApiBaseUrl = configuredLegacyNodeBase();
-    const legacyNodeApiRoot = legacyNodeApiBaseUrl ? `${legacyNodeApiBaseUrl}/api` : "";
-    const aetherApiBaseUrl = publicAetherApiBase;
-    const aetherApiRoot = `${aetherApiBaseUrl}/api`;
+    const contentNexoraApiBaseUrl = configuredContentNexoraBase();
+    const contentNexoraApiRoot = `${contentNexoraApiBaseUrl}/api`;
     const dramaApiBaseUrl = configuredDramaBase();
-    const dramaApiRoot = dramaApiBaseUrl ? `${dramaApiBaseUrl}/api/v1/reelshort` : "";
+    const dramaApiRoot = `${dramaApiBaseUrl}/api/v1/reelshort`;
     const animeNexoraApiBaseUrl = configuredAnimeNexoraBase();
     const animeNexoraApiRoot = `${animeNexoraApiBaseUrl}/api/v1`;
 
@@ -88,46 +59,25 @@
         return new URL(raw, window.location.origin).href;
     }
 
-    function normalizeNodeProxyUrl(value) {
-        const raw = String(value || "");
-        if (!/^https?:\/\//i.test(raw)) return raw;
-        try {
-            const parsed = new URL(raw);
-            if (parsed.hostname.toLowerCase() !== apiHost
-                || !/^\/api\/proxy\/?$/i.test(parsed.pathname)) {
-                return raw;
-            }
-            const target = parsed.searchParams.get("url") || "";
-            const endpoint = /\.m3u8(?:$|[?#])/i.test(target)
-                ? "/api/proxy/m3u8"
-                : "/api/proxy/ts";
-            return `${nodeApiBaseUrl}${endpoint}${parsed.search}`;
-        } catch {
-            return raw;
-        }
-    }
-
-    function nodeApiUrl(path) {
-        if (!nodeApiBaseUrl) return "";
+    function contentNexoraApiUrl(path) {
         const value = String(path || "");
         if (/^https?:\/\//i.test(value)) return value;
-        if (value.startsWith("/api/")) return `${nodeApiBaseUrl}${value}`;
-        if (value.startsWith("api/")) return `${nodeApiBaseUrl}/${value}`;
-        return `${nodeApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
+        if (value.startsWith("/api/")) return `${contentNexoraApiBaseUrl}${value}`;
+        if (value.startsWith("api/")) return `${contentNexoraApiBaseUrl}/${value}`;
+        return `${contentNexoraApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
     }
 
-    function resolveNodeUrl(value) {
-        const raw = String(value || "");
-        if (!raw) return raw;
-        const normalizedProxy = normalizeNodeProxyUrl(raw);
-        if (normalizedProxy !== raw) return normalizedProxy;
-        if (/^https?:\/\//i.test(raw)) return raw;
-        if (raw.startsWith("/api/") || raw.startsWith("api/")) return nodeApiUrl(raw);
-        return new URL(raw, nodeApiBaseUrl || window.location.origin).href;
+    function contentNexoraPlayerUrl(parameters = {}) {
+        const url = new URL(`${contentNexoraApiBaseUrl}/`);
+        Object.entries(parameters || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && String(value).trim() !== "") {
+                url.searchParams.set(key, String(value));
+            }
+        });
+        return url.href;
     }
 
     function dramaApiUrl(path) {
-        if (!dramaApiBaseUrl) return "";
         const value = String(path || "");
         if (/^https?:\/\//i.test(value)) return value;
         if (value.startsWith("/api/v1/reelshort/")) return `${dramaApiBaseUrl}${value}`;
@@ -143,76 +93,30 @@
         return `${animeNexoraApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
     }
 
-    function legacyNodeApiUrl(path) {
-        if (!legacyNodeApiBaseUrl) return "";
-        const value = String(path || "");
-        if (/^https?:\/\//i.test(value)) return value;
-        if (value.startsWith("/api/")) return `${legacyNodeApiBaseUrl}${value}`;
-        if (value.startsWith("api/")) return `${legacyNodeApiBaseUrl}/${value}`;
-        return `${legacyNodeApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
-    }
-
-    function resolveLegacyNodeUrl(value) {
-        const raw = String(value || "");
-        if (!raw) return raw;
-        if (/^https?:\/\//i.test(raw)) return raw;
-        if (raw.startsWith("/api/") || raw.startsWith("api/")) return legacyNodeApiUrl(raw);
-        return new URL(raw, legacyNodeApiBaseUrl || window.location.origin).href;
-    }
-
     window.NEXORA_CONFIG = {
         apiBaseUrl,
         apiRoot,
-        nodeApiBaseUrl,
-        nodeApiRoot,
-        frenchNexoraApiBaseUrl,
-        legacyNodeApiBaseUrl,
-        legacyNodeApiRoot,
-        aetherApiBaseUrl,
-        aetherApiRoot,
+        contentNexoraApiBaseUrl,
+        contentNexoraApiRoot,
         dramaApiBaseUrl,
         dramaApiRoot,
         animeNexoraApiBaseUrl,
         animeNexoraApiRoot,
-        orionApiBaseUrl: nodeApiBaseUrl,
-        publicSiteUrl,
-        railwayApiBase: publicApiBase,
-        railwayNodeApiBase: publicNodeApiBase,
-        railwayFrenchNexoraApiBase: publicFrenchNexoraApiBase,
-        railwayLegacyNodeApiBase: publicLegacyNodeApiBase,
-        railwayDramaApiBase: publicDramaApiBase
+        publicSiteUrl
     };
+
     window.NexoraApi = {
         baseUrl: apiBaseUrl,
         root: function () { return apiRoot; },
         url: apiUrl,
         resolve: resolveUrl
     };
-    window.NexoraNodeApi = {
-        baseUrl: nodeApiBaseUrl,
-        root: function () { return nodeApiRoot; },
-        enabled: function () { return Boolean(nodeApiBaseUrl); },
-        url: nodeApiUrl,
-        resolve: resolveNodeUrl
-    };
-    window.NexoraLegacyNodeApi = {
-        baseUrl: legacyNodeApiBaseUrl,
-        root: function () { return legacyNodeApiRoot; },
-        enabled: function () { return Boolean(legacyNodeApiBaseUrl); },
-        url: legacyNodeApiUrl,
-        resolve: resolveLegacyNodeUrl
-    };
-    window.NexoraAetherApi = {
-        baseUrl: aetherApiBaseUrl,
-        root: function () { return aetherApiRoot; },
-        enabled: function () { return Boolean(aetherApiBaseUrl); },
-        url: function (path) {
-            const value = String(path || "");
-            if (/^https?:\/\//i.test(value)) return value;
-            if (value.startsWith("/api/")) return `${aetherApiBaseUrl}${value}`;
-            if (value.startsWith("api/")) return `${aetherApiBaseUrl}/${value}`;
-            return `${aetherApiRoot}${value.startsWith("/") ? value : `/${value}`}`;
-        }
+    window.NexoraContentNexoraApi = {
+        baseUrl: contentNexoraApiBaseUrl,
+        root: function () { return contentNexoraApiRoot; },
+        enabled: function () { return Boolean(contentNexoraApiBaseUrl); },
+        url: contentNexoraApiUrl,
+        player: contentNexoraPlayerUrl
     };
     window.NexoraDramaApi = {
         baseUrl: dramaApiBaseUrl,

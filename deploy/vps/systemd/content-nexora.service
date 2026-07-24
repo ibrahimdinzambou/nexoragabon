@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexora Content API and player (Content-Nexora)
+After=network.target
+
+[Service]
+Type=simple
+User=nexora
+WorkingDirectory=/opt/nexora/content-nexora
+Environment=PYTHONUNBUFFERED=1
+Environment=AUTOFLIX_HOST=127.0.0.1
+Environment=AUTOFLIX_PORT=8787
+ExecStart=/opt/nexora/content-nexora/.venv/bin/autoflix-api
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

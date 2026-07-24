@@ -1,0 +1,13 @@
+diff --git a/src/autoflix_api/static/app.js b/src/autoflix_api/static/app.js
+--- a/src/autoflix_api/static/app.js
++++ b/src/autoflix_api/static/app.js
+@@ -1,1 +1,1 @@
+-const $=s=>document.querySelector(s), provider=$('#provider'), query=$('#query'), results=$('#results'), message=$('#message'), video=$('#video'), empty=$('#screen-empty'), playerUrl=$('#player-url');
++const launchParams=new URLSearchParams(window.location.search), $=s=>document.querySelector(s), provider=$('#provider'), query=$('#query'), results=$('#results'), message=$('#message'), video=$('#video'), empty=$('#screen-empty'), playerUrl=$('#player-url');
+@@ -52,1 +52,3 @@
+ query.onkeydown=e=>{if(e.key==='Enter')$('#search').click()};
++function runDeepLinkSearch(data){const title=String(data?.query||'').trim();if(!title)return;if(data.provider)provider.value=data.provider;query.value=title;$('#search').click()}
++window.addEventListener('message',event=>{if(event.data?.type==='content-nexora-search')runDeepLinkSearch(event.data)});
+@@ -55,1 +57,1 @@
+-loadProviders().catch(e=>setMessage(e.message,true));
++loadProviders().then(()=>runDeepLinkSearch({provider:launchParams.get('provider')||'french-stream',query:launchParams.get('q')||launchParams.get('title')||''})).catch(e=>setMessage(e.message,true));

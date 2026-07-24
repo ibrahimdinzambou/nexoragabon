@@ -1,6 +1,5 @@
 const API_ROOT = window.NexoraApi?.root?.() || "/api";
-const NODE_API_ROOT = window.NexoraNodeApi?.root?.() || "";
-const LEGACY_NODE_API_ROOT = window.NexoraLegacyNodeApi?.root?.() || "";
+const CONTENT_NEXORA_API_ROOT = window.NexoraContentNexoraApi?.root?.() || "";
 const DRAMA_API_ROOT = window.NexoraDramaApi?.root?.() || "";
 const ANIME_NEXORA_API_ROOT = window.NexoraAnimeNexoraApi?.root?.() || "";
 const TOKEN_KEY = "nexora_access_token";
@@ -45,7 +44,7 @@ const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
-const NODE_MOVIE_PROVIDER = "auto";
+const CONTENT_NEXORA_PROVIDER = "french-stream";
 const imageRepairCache = new Map();
 const imageRepairInFlight = new Set();
 const launchParams = new URLSearchParams(window.location.search);
@@ -747,8 +746,35 @@ function apiUrl(path) {
     return window.NexoraApi?.url ? window.NexoraApi.url(path) : `${API_ROOT}${path}`;
 }
 
-function nodeApiUrl(path) {
-    return window.NexoraNodeApi?.url ? window.NexoraNodeApi.url(path) : "";
+function contentNexoraApiUrl(path) {
+    return window.NexoraContentNexoraApi?.url
+        ? window.NexoraContentNexoraApi.url(path)
+        : "";
+}
+
+function contentNexoraPlayerUrl(parameters = {}) {
+    return window.NexoraContentNexoraApi?.player
+        ? window.NexoraContentNexoraApi.player(parameters)
+        : "";
+}
+
+function contentNexoraApiEnabled() {
+    return Boolean(CONTENT_NEXORA_API_ROOT || window.NexoraContentNexoraApi?.enabled?.());
+}
+
+async function contentNexoraApi(path, options = {}) {
+    const url = contentNexoraApiUrl(path);
+    if (!url) throw new Error("API Content-Nexora non configuree.");
+    const headers = new Headers(options.headers || {});
+    headers.set("Accept", "application/json");
+    const response = await fetchWithRetry(url, { ...options, headers });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.ok === false) {
+        const error = new Error(body.error || body.message || "API Content-Nexora indisponible.");
+        error.status = response.status;
+        throw error;
+    }
+    return body;
 }
 
 function resolveApiResourceUrl(value) {
@@ -757,83 +783,17 @@ function resolveApiResourceUrl(value) {
         : new URL(value, window.location.origin).href;
 }
 
-function resolveNodeApiResourceUrl(value) {
-    return window.NexoraNodeApi?.resolve
-        ? window.NexoraNodeApi.resolve(value)
-        : resolveApiResourceUrl(value);
-}
-
-function nodeApiEnabled() {
-    return Boolean(NODE_API_ROOT || window.NexoraNodeApi?.enabled?.());
-}
-
-function legacyNodeApiUrl(path) {
-    return window.NexoraLegacyNodeApi?.url ? window.NexoraLegacyNodeApi.url(path) : "";
-}
-
-function legacyNodeApiEnabled() {
-    return Boolean(LEGACY_NODE_API_ROOT || window.NexoraLegacyNodeApi?.enabled?.());
-}
-
-async function legacyNodeApi(path, options = {}) {
-    const url = legacyNodeApiUrl(path);
-    if (!url) throw new Error("API Orion/Aether non configuree.");
-    const headers = new Headers(options.headers || {});
-    headers.set("Accept", "application/json");
-    const response = await fetchWithRetry(url, { ...options, headers });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body.ok === false) {
-        const error = new Error(body.erreur || body.message || "API Orion/Aether indisponible.");
-        error.status = response.status;
-        throw error;
-    }
-    return body;
-}
-
-function aetherApiEnabled() {
-    return Boolean(window.NexoraAetherApi?.enabled?.());
-}
-
-async function aetherApi(path, options = {}) {
-    const url = window.NexoraAetherApi?.url?.(path);
-    if (!url) throw new Error("API Aether non configuree.");
-    const headers = new Headers(options.headers || {});
-    headers.set("Accept", "application/json");
-    const response = await fetchWithRetry(url, { ...options, headers });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body.ok === false || body.success === false) {
-        const error = new Error(body.erreur || body.message || "API Aether indisponible.");
-        error.status = response.status;
-        throw error;
-    }
-    return body.data || body;
-}
-
-async function nodeApi(path, options = {}) {
-    const url = nodeApiUrl(path);
-    if (!url) {
-        throw new Error("API Node FR non configurée.");
-    }
-
-    const headers = new Headers(options.headers || {});
-    headers.set("Accept", "application/json");
-    const response = await fetchWithRetry(url, { ...options, headers });
-    const body = await response.json().catch(() => ({}));
-
-    if (!response.ok || body.ok === false) {
-        const error = new Error(body.erreur || body.message || "Source FR indisponible.");
-        error.status = response.status;
-        throw error;
-    }
-    return body;
-}
-
-async function nodeCatalogApi(path, options = {}) {
-    // Le catalogue appartient à node-api (/node-fr). Le fallback
-    // frenchnexoraAPI expose uniquement les sources /streams.
-    const body = await legacyNodeApi(path, options);
-    return Array.isArray(body) ? body : (body.data || body.items || []);
-}
+// Les anciens connecteurs Node/FrenchNexora sont volontairement desactives.
+// Les films et series passent exclusivement par Content-Nexora.
+function resolveNodeApiResourceUrl(value) { return resolveApiResourceUrl(value); }
+function nodeApiUrl() { return ""; }
+function legacyNodeApiUrl() { return ""; }
+function nodeApiEnabled() { return false; }
+function legacyNodeApiEnabled() { return false; }
+function aetherApiEnabled() { return false; }
+async function nodeApi() { throw new Error("Le connecteur Node FR est desactive."); }
+async function legacyNodeApi() { throw new Error("Le connecteur FrenchNexora est desactive."); }
+async function aetherApi() { throw new Error("Le connecteur Aether est desactive."); }
 
 function dramaApiUrl(path) {
     return window.NexoraDramaApi?.url ? window.NexoraDramaApi.url(path) : "";
@@ -1209,7 +1169,7 @@ function normalizeNodeImageSource(source, fallback = "/assets/images/landscape-1
         return tmdbImagePathUrl(value);
     }
     if (value.startsWith("/api/") || value.startsWith("api/")) {
-        return resolveNodeApiResourceUrl(value);
+        return resolveApiResourceUrl(value);
     }
     try {
         const parsed = new URL(value, window.location.origin);
@@ -1835,22 +1795,12 @@ function normalizeItem(item, type, index) {
     const fallback = fallbackCatalog.filter((entry) => entry.type === type);
     const matched = fallback.find((entry) => entry.id === String(item.id)) || fallback[index % fallback.length];
     const itemType = ["live", "movie", "series"].includes(item.type) ? item.type : type;
-    const sourceCode = String(item.sourceCode || "").toLowerCase();
-    const playbackProvider = String(item.playbackProvider || "").toLowerCase();
-    const provider = String(item.provider || item.source || "").toLowerCase();
-    const isNodeSource = sourceCode === "node-fr"
-        || sourceCode === "orion"
-        || playbackProvider.startsWith("node-fr")
-        || playbackProvider.startsWith("orion")
-        || provider.includes("orion")
-        || provider.includes("source fr");
     const posterFallback = generatedPosterDataUrl(item.name || matched?.name || "Nexora", itemType);
     const landscapeFallback = matched?.image || "/assets/images/landscape-1.jpg";
-    const normalizeSource = isNodeSource ? normalizeNodeImageSource : normalizeImageSource;
     const rawPoster = item.poster || item.image || item.cover || item.thumbnail || item.logo;
     const rawBackdrop = item.backdrop || item.background || item.banner || item.cover || item.image || rawPoster;
-    const image = normalizeSource(rawPoster, posterFallback);
-    const backdrop = normalizeSource(rawBackdrop, landscapeFallback);
+    const image = normalizeImageSource(rawPoster, posterFallback);
+    const backdrop = normalizeImageSource(rawBackdrop, landscapeFallback);
 
     return {
         ...matched,
@@ -2033,26 +1983,13 @@ async function loadCatalog() {
                 const directAnimeItemsPromise = animeNexoraApiEnabled() && ["movie", "series"].includes(type)
                     ? animeNexoraItems(type, query, requestedLimit).catch(() => [])
                     : Promise.resolve([]);
-                // Le catalogue Spring contient les films et séries françaises.
-                // Anime NexoraAPI est ajouté en parallèle, sans masquer ce catalogue.
+                // Spring fournit les metadonnees du catalogue. Content-Nexora
+                // est reserve a la recherche et a la lecture des films/series.
                 const springItemsPromise = api(`/catalog/items?${params}`, { signal: abortController.signal }).catch(() => []);
-                // FrenchNexoraAPI fournit les sources de lecture via
-                // /api/streams, pas un catalogue /api/catalog/items.
-                // Le catalogue anime vient directement d'Anime NexoraAPI.
-                const nodeCatalogParams = new URLSearchParams({
-                    type,
-                    limit: String(requestedLimit)
-                });
-                if (query) nodeCatalogParams.set("q", query);
-                if (movieLibrary) nodeCatalogParams.set("sort", state.movieSort);
-                const nodeItemsPromise = ["movie", "series"].includes(type) && legacyNodeApiEnabled()
-                    ? nodeCatalogApi(`/catalog/items?${nodeCatalogParams}`, { signal: abortController.signal }).catch(() => [])
-                    : Promise.resolve([]);
-                const [springItems, nodeItems, directItems] = await Promise.all([springItemsPromise, nodeItemsPromise, directAnimeItemsPromise]);
-                const orionFrenchItems = buildOrionFrenchCards(springItems, type);
+                const [springItems, directItems] = await Promise.all([springItemsPromise, directAnimeItemsPromise]);
                 return ["movie", "series"].includes(type)
-                    ? [...(directItems || []), ...orionFrenchItems, ...(nodeItems || []), ...(springItems || [])]
-                    : [...(springItems || []), ...(nodeItems || [])];
+                    ? [...(directItems || []), ...(springItems || [])]
+                    : [...(springItems || [])];
             })
         );
         if (requestId !== state.catalogRequestId) return;
@@ -4031,14 +3968,10 @@ function isFrenchSource(value) {
     const playbackProvider = String(value?.playbackProvider || "").toLowerCase();
     const categoryId = String(value?.categoryId || value?.id || "").toLowerCase();
     const source = String(value?.source || value?.provider || "").toLowerCase();
-    return sourceCode === "orion"
-        || sourceCode === "node-fr"
-        || playbackProvider.startsWith("node-fr")
-        || playbackProvider.startsWith("orion")
-        || categoryId.startsWith("orion~")
-        || categoryId.startsWith("orion-french-")
-        || source.includes("node-fr")
-        || source.includes("orion");
+    return sourceCode === "content-nexora"
+        || playbackProvider === "content-nexora"
+        || categoryId.startsWith("content-nexora~")
+        || source.includes("content-nexora");
 }
 
 function isEpornerSource(value) {
@@ -4071,7 +4004,7 @@ function sourceBadge(value, placement = "inline") {
         return `<span class="addon-badge anime-nexora-badge ${placementClass}" aria-label="Contenu fourni par Anime NexoraAPI">NEXORA</span>`;
     }
     if (isFrenchSource(value)) {
-        return `<span class="addon-badge french-badge ${placementClass}" aria-label="Contenu français via l'API Node">FR</span>`;
+        return `<span class="addon-badge french-badge ${placementClass}" aria-label="Contenu français via Content-Nexora">FR</span>`;
     }
     if (isEpornerSource(value)) {
         return `<span class="addon-badge adult-badge ${placementClass}" aria-label="Provider Adults restreint">18+</span>`;
@@ -5466,12 +5399,19 @@ async function playItem(item, options = {}) {
         showToast("Ce programme est un aperçu sans flux vidéo. Rechargez le catalogue.", true);
         return;
     }
-    if (item.streamAvailable === false && !isTmdbPlayable(item)) {
+    if (item.streamAvailable === false && !isTmdbPlayable(item) && !["movie", "series"].includes(item.type)) {
         showToast(item.streamUnavailableReason || "Ce contenu n'a pas de flux IPTV actif disponible.", true);
         return;
     }
-    if (isTmdbPlayable(item) && !isAnimeNexoraItem(item) && !shouldUseNodeFrenchPlayback(item)) {
-        await playTmdbItem(item);
+    if (["movie", "series"].includes(item.type)) {
+        try {
+            await playContentNexoraItem(item);
+        } catch (error) {
+            state.playerOpening = false;
+            setPlayerControlsBusy(false);
+            detachPlayerMedia();
+            showPlayerError(error.message || "Content-Nexora ne propose aucune source pour ce titre.");
+        }
         return;
     }
     if (state.playerOpening) return;
@@ -5506,60 +5446,6 @@ async function playItem(item, options = {}) {
         if (state.activeSessionToken) {
             await stopPlayer();
         }
-        if (isAnimeNexoraItem(item)) {
-            state.activeSessionToken = null;
-            state.activeCanFailover = false;
-            state.activePlaybackQuality = "auto";
-            stopHeartbeat();
-            setPlayerLoading("Ouverture du lecteur Anime Nexora...", "Connexion directe à Anime NexoraAPI.");
-            const streamUrl = await directAnimeNexoraStream(item);
-            await startStreamPlayback(item, streamUrl, animeNexoraPlaybackMode(streamUrl));
-            elements.playerMessage.textContent = "Lecture directe via Anime NexoraAPI.";
-            return;
-        }
-        if (isAnimeItem(item) && animeNexoraApiEnabled()) {
-            try {
-                // Essayer Anime NexoraAPI aussi pour les fiches anime/manga
-                // provenant de Spring, TMDB ou d'un autre catalogue.
-                await playMatchedAnimeNexora(item);
-                return;
-            } catch {
-                // Continuer vers Node/FrenchNexora puis Consumet si nécessaire.
-            }
-        }
-        if (shouldUseNodeFrenchPlayback(item)) {
-            try {
-                await playNodeFrenchItem(item);
-                return;
-            } catch (directError) {
-                let opened;
-                if (isAnimeItem(item) && !isAnimeNexoraItem(item)) {
-                    opened = await switchToConsumetAnimeFallback(
-                        directError.message || "Aucune source FrenchNexora disponible; recherche dans Consumet."
-                    );
-                    if (!opened) {
-                        opened = await switchToUniversalEmbedFallback(
-                            directError.message || "Aucune source FrenchNexora ou Consumet disponible; bascule vers TMDB."
-                        );
-                    }
-                } else {
-                    opened = await switchToUniversalEmbedFallback(
-                        directError.message || "Aucune source FR disponible; bascule vers TMDB."
-                    );
-                }
-                if (!opened) {
-                    detachPlayerMedia();
-                    showPlayerError(directError.message || "Aucune source vidéo disponible.");
-                }
-                return;
-            }
-        }
-        if (isAnimeItem(item)) {
-            const opened = await switchToConsumetAnimeFallback(
-                "Anime NexoraAPI et les sources FR directes ne proposent pas de flux lisible."
-            );
-            if (opened) return;
-        }
         const stream = await api("/stream/open", {
             method: "POST",
             body: JSON.stringify({
@@ -5570,12 +5456,6 @@ async function playItem(item, options = {}) {
         });
         await startStreamFromPayload(item, stream, requestedQuality);
     } catch (error) {
-        if (!isAnimeNexoraItem(item) && ["movie", "series"].includes(item.type) && videasyUrlForItem(item)) {
-            const opened = await switchToUniversalEmbedFallback(
-                playerOpenErrorMessage(error, item) || "Aucune source directe disponible; bascule vers Videasy."
-            );
-            if (opened) return;
-        }
         detachPlayerMedia();
         showPlayerError(playerOpenErrorMessage(error, item));
         showPlayerError(error.message || "Ce flux est momentanément indisponible.");
@@ -5658,13 +5538,122 @@ function requestedPlaybackQuality(item, options = {}) {
 }
 
 function shouldUseNodeFrenchPlayback(item) {
-    // Films et séries TMDB : FrenchNexora -> Orion/Aether -> TMDB/Videasy.
-    // Animés TMDB : FrenchNexora -> Consumet.
-    return ["movie", "series"].includes(item?.type) && Boolean(tmdbIdFromItem(item));
+    return false;
+}
+
+function isContentNexoraPlayerItem(item = state.activePlayerItem) {
+    return item?.playbackProvider === "content-nexora";
+}
+
+function contentNexoraSearchTitle(item) {
+    return String(item?.seriesName || item?.parentTitle || item?.name || "")
+        .replace(/\s*[·|:-]\s*(?:episode|ep\.?|e)\s*\d+.*$/i, "")
+        .replace(/\s+s\d+\s*e\d+.*$/i, "")
+        .replace(/\s+(?:saison|season)\s+\d+.*$/i, "")
+        .trim();
+}
+
+function contentNexoraSearchResults(payload) {
+    if (Array.isArray(payload?.results)) return payload.results;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return Array.isArray(payload) ? payload : [];
+}
+
+function contentNexoraPlayerParameters(item, query) {
+    const parameters = {
+        provider: CONTENT_NEXORA_PROVIDER,
+        q: query,
+        title: query,
+        type: item?.type || "movie"
+    };
+    if (item?.type === "series") {
+        parameters.season = positiveInteger(item.season) || 1;
+        parameters.episode = positiveInteger(item.episode) || 1;
+    }
+    return parameters;
+}
+
+async function playContentNexoraItem(item) {
+    if (!contentNexoraApiEnabled()) {
+        throw new Error("API Content-Nexora non configuree.");
+    }
+    if (state.playerOpening) return;
+
+    const query = contentNexoraSearchTitle(item);
+    if (!query) throw new Error("Titre du programme manquant pour Content-Nexora.");
+
+    state.playerOpening = true;
+    setPlayerControlsBusy(true);
+    state.playerErrorShown = false;
+    state.playerRecoveryAttempts = 0;
+    state.playerRecovering = false;
+    state.playerRecoveryShouldFailover = false;
+    clearPlayerRecoveryTimer();
+    clearPlayerStartupTimer();
+    trackRecentlyWatched(item);
+    saveActivePlayback(item);
+    state.activeSessionToken = null;
+    state.activeCanFailover = false;
+    state.activeFrenchSourcePayload = null;
+    state.activeFrenchSourceIndex = 0;
+    stopHeartbeat();
+    renderFrenchSourcePanel(null);
+
+    const activeItem = {
+        ...item,
+        playbackProvider: "content-nexora",
+        playbackProviderName: "Content-Nexora",
+        externalPlayback: true,
+        streamAvailable: true
+    };
+    state.activePlayerItem = activeItem;
+    await ensurePlayerContext(activeItem);
+    openModal("playerModal");
+    elements.playerTitle.textContent = activeItem.name || query;
+    elements.playerBadge.textContent = activeItem.type === "series" ? "SÉRIE FR" : "FILM FR";
+    refreshPlayerRoom(activeItem, elements.playerBadge.textContent);
+    setPlayerLoading("Ouverture de Content-Nexora...", "Recherche d'une source française.");
+
+    try {
+        await stopPlayer();
+        const payload = await contentNexoraApi(
+            `/search?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&q=${encodeURIComponent(query)}`
+        );
+        const matches = contentNexoraSearchResults(payload);
+        if (!matches.length) {
+            throw new Error(`« ${query} » est introuvable dans Content-Nexora.`);
+        }
+        const normalizedQuery = normalizeSearchText(query);
+        const match = matches.find((candidate) => normalizeSearchText(candidate?.title || "") === normalizedQuery)
+            || matches[0];
+        if (!match?.url) {
+            throw new Error(`Content-Nexora n'a pas fourni de fiche exploitable pour « ${query} ».`);
+        }
+        const contentPath = activeItem.type === "series" ? "/series" : "/content";
+        const contentPayload = await contentNexoraApi(
+            `${contentPath}?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&url=${encodeURIComponent(match.url)}`
+        );
+        const content = contentPayload.content || contentPayload;
+        if (activeItem.type === "movie" && !Array.isArray(content?.players)) {
+            throw new Error(`Content-Nexora n'a pas fourni de lecteur pour « ${query} ».`);
+        }
+        if (activeItem.type === "series" && !Array.isArray(content?.seasons)) {
+            throw new Error(`Content-Nexora n'a pas fourni les saisons de « ${query} ».`);
+        }
+        state.activeContentNexoraMatch = match;
+        state.activeContentNexoraContent = content;
+        const playerUrl = contentNexoraPlayerUrl(contentNexoraPlayerParameters(activeItem, query));
+        if (!playerUrl) throw new Error("Lecteur Content-Nexora non configure.");
+        await startStreamPlayback(activeItem, playerUrl, "embed");
+        elements.playerMessage.textContent = "Lecteur Content-Nexora ouvert. La recherche française est prete.";
+    } finally {
+        state.playerOpening = false;
+        setPlayerControlsBusy(false);
+    }
 }
 
 function isNodeFrenchPlayerItem(item = state.activePlayerItem) {
-    return item?.playbackProvider === "node-fr" || item?.playbackProvider === "node-fr-embed";
+    return false;
 }
 
 function nodeFrenchEndpointForItem(item) {
@@ -7042,7 +7031,10 @@ function isMobileEmbedEnvironment() {
 
 function shouldGateEmbedLaunch(item) {
     return isMobileEmbedEnvironment()
-        && (isTmdbPlayable(item) || isEpornerSource(item) || isNodeFrenchPlayerItem(item));
+        && (isTmdbPlayable(item)
+            || isEpornerSource(item)
+            || isNodeFrenchPlayerItem(item)
+            || isContentNexoraPlayerItem(item));
 }
 
 function configureEmbedFrame() {
@@ -7064,10 +7056,32 @@ function clearEmbedFrame() {
 function loadEmbedFrame(streamUrl) {
     configureEmbedFrame();
     elements.embedPlayer.hidden = false;
+    if (isContentNexoraPlayerItem()) {
+        elements.embedPlayer.addEventListener("load", primeContentNexoraPlayerFrame, { once: true });
+    }
     if (elements.embedPlayer.src !== streamUrl) {
         elements.embedPlayer.src = streamUrl;
     }
     unlockEmbedShield();
+}
+
+function primeContentNexoraPlayerFrame() {
+    if (!isContentNexoraPlayerItem()) return;
+    const query = contentNexoraSearchTitle(state.activePlayerItem);
+    if (!query) return;
+    try {
+        const document = elements.embedPlayer.contentDocument;
+        const input = document?.querySelector("#query");
+        const provider = document?.querySelector("#provider");
+        const search = document?.querySelector("#search");
+        if (!input || !search) return;
+        if (provider) provider.value = CONTENT_NEXORA_PROVIDER;
+        input.value = query;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        search.click();
+    } catch {
+        // A cross-origin player can still be used manually with the title prefilled in its URL.
+    }
 }
 
 function lockEmbedShield(forceHide = false) {
@@ -7143,6 +7157,9 @@ function setEmbedLaunchCopy(item = state.activePlayerItem, buttonText = "Lancer 
 }
 
 function embedLaunchPrompt(item = state.activePlayerItem) {
+    if (isContentNexoraPlayerItem(item)) {
+        return "Appuyez pour lancer le lecteur Content-Nexora.";
+    }
     if (isNodeFrenchPlayerItem(item)) {
         return "Appuyez pour lancer le lecteur FR.";
     }
@@ -7179,6 +7196,9 @@ function launchEmbedInline() {
 }
 
 function embedOpenedMessage() {
+    if (isContentNexoraPlayerItem()) {
+        return "Lecteur Content-Nexora ouvert. La recherche du titre est lancee.";
+    }
     if (isNodeFrenchPlayerItem()) {
         return "Lecteur FR ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
     }
@@ -7321,6 +7341,9 @@ function clearEmbedAssistTimer() {
 }
 
 function embedRetryMessage() {
+    if (isContentNexoraPlayerItem()) {
+        return "Relance du lecteur Content-Nexora...";
+    }
     if (isNodeFrenchPlayerItem()) {
         return "Relance du lecteur FR dans Nexora...";
     }
@@ -7331,6 +7354,9 @@ function embedRetryMessage() {
 }
 
 function embedAssistMessage() {
+    if (isContentNexoraPlayerItem()) {
+        return "Si le lecteur Content-Nexora ne s'affiche pas, ouvrez-le dans un onglet separe.";
+    }
     if (isNodeFrenchPlayerItem()) {
         return "Si le lecteur FR tourne encore, ouvrez-le dans un onglet separe.";
     }
