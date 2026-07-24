@@ -4128,7 +4128,8 @@ body.compact-catalog .card-copy strong {
     transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
-.player-source-loading {
+.player-source-loading,
+.player-source-empty {
     grid-column: 1 / -1;
     padding: 10px;
     color: var(--dim);

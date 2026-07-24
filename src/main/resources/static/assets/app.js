@@ -5752,7 +5752,10 @@ async function playContentNexoraItem(item) {
         state.activeContentNexoraMatch = match;
         state.activeContentNexoraContent = content;
         showFrenchSourceLoadingPanel(content);
-        const sources = await resolveContentNexoraSources(content, activeItem);
+        const sources = await resolveContentNexoraSources(content, activeItem, (resolvedSources) => {
+            renderFrenchSourcePanel(content, resolvedSources);
+            setPlayerControlsBusy(true);
+        });
         renderFrenchSourcePanel(content, sources);
         if (!sources.length) {
             throw new Error("Content-Nexora n'a fourni aucun flux vidéo lisible pour ce contenu.");
@@ -6137,23 +6140,29 @@ async function resolveContentNexoraSource(source, content, index = 0) {
     };
 }
 
-async function resolveContentNexoraSources(content, item = state.activePlayerItem) {
+async function resolveContentNexoraSources(content, item = state.activePlayerItem, onUpdate = null) {
     const candidates = contentNexoraSourceCandidates(content, item);
-    const results = await Promise.allSettled(
-        candidates.map((source, index) => resolveContentNexoraSource(source, content, index))
-    );
     const unique = new Map();
-    results.forEach((result) => {
-        const source = result.status === "fulfilled" ? result.value : null;
-        if (source?.mediaUrl && !unique.has(source.mediaUrl)) {
-            unique.set(source.mediaUrl, source);
-        }
-    });
-    return [...unique.values()].sort((left, right) => {
+    const sortSources = () => [...unique.values()].sort((left, right) => {
         const leftHoster = { ...left.raw, ...left.resolution, url: left.mediaUrl };
         const rightHoster = { ...right.raw, ...right.resolution, url: right.mediaUrl };
         return hosterScore(rightHoster) - hosterScore(leftHoster);
     });
+    const results = await Promise.allSettled(
+        candidates.map(async (source, index) => {
+            const resolved = await resolveContentNexoraSource(source, content, index);
+            if (resolved?.mediaUrl && !unique.has(resolved.mediaUrl)) {
+                unique.set(resolved.mediaUrl, resolved);
+                onUpdate?.(sortSources());
+            }
+            return resolved;
+        })
+    );
+    results.forEach((result) => {
+        const source = result.status === "fulfilled" ? result.value : null;
+        if (source?.mediaUrl && !unique.has(source.mediaUrl)) unique.set(source.mediaUrl, source);
+    });
+    return sortSources();
 }
 
 function showFrenchSourceLoadingPanel(content) {
@@ -6180,8 +6189,12 @@ function renderFrenchSourcePanel(content = null, sources = []) {
 
     state.activeFrenchSourcePayload = { content, sources };
     if (!sources.length) {
-        elements.playerSourcePanel.hidden = true;
-        elements.playerSourceList.innerHTML = "";
+        elements.playerSourcePanel.hidden = false;
+        elements.playerSourceList.innerHTML = `
+            <div class="player-source-empty" role="status">
+                Aucun flux video lisible n'a ete trouve pour ce contenu.
+            </div>
+        `;
         if (elements.playerSourceCount) elements.playerSourceCount.textContent = "0 flux";
         return;
     }
