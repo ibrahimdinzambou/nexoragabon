@@ -1836,6 +1836,89 @@ function searchCatalogLimit(type) {
     return SEARCH_VISIBLE_CATALOG[type] || 240;
 }
 
+function contentNexoraBaseTitle(value) {
+    return String(value || "")
+        .replace(/\s*[-–—:|·]\s*(?:saison|season)\s*\d+.*$/i, "")
+        .replace(/\s+(?:saison|season)\s*\d+.*$/i, "")
+        .trim();
+}
+
+function contentNexoraResultType(result) {
+    const text = `${result?.title || ""} ${result?.url || ""}`;
+    return /(?:\bsaison\b|\bseason\b|\bepisode\b|\bs\d+\b)/i.test(text)
+        ? "series"
+        : "movie";
+}
+
+function contentNexoraItemId(type, url) {
+    let hash = 2166136261;
+    for (const character of String(url || "")) {
+        hash ^= character.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+    return `content-nexora~${type}~${(hash >>> 0).toString(36)}`;
+}
+
+function contentNexoraImage(result, title, type) {
+    let source = String(result?.img || result?.image || result?.poster || "").trim();
+    const duplicatedOrigin = source.match(/^https?:\/\/[^/]+(https?:\/\/.+)$/i);
+    if (duplicatedOrigin?.[1]) source = duplicatedOrigin[1];
+    return normalizeImageSource(source, generatedPosterDataUrl(title || "Nexora", type));
+}
+
+function normalizeContentNexoraSearchItem(result, index) {
+    const remoteTitle = String(result?.title || result?.name || "").trim();
+    const url = String(result?.url || result?.link || "").trim();
+    if (!remoteTitle || !url) return null;
+
+    const type = contentNexoraResultType(result);
+    const name = contentNexoraBaseTitle(remoteTitle) || remoteTitle;
+    const seasonMatch = remoteTitle.match(/(?:saison|season)\s*(\d+)/i);
+    const image = contentNexoraImage(result, name, type);
+    return {
+        id: contentNexoraItemId(type, url),
+        type,
+        name,
+        originalTitle: remoteTitle,
+        image,
+        poster: image,
+        backdrop: image,
+        source: "Content-Nexora",
+        sourceCode: "content-nexora",
+        provider: "content-nexora",
+        playbackProvider: "content-nexora",
+        playbackProviderName: "Content-Nexora",
+        categoryId: `content-nexora~${type}`,
+        categoryName: type === "series" ? "Séries françaises" : "Films français",
+        language: "fr",
+        languageName: "Français",
+        streamAvailable: true,
+        metadataAvailable: true,
+        externalPlayback: true,
+        contentNexoraUrl: url,
+        contentNexoraTitle: remoteTitle,
+        season: type === "series" ? positiveInteger(seasonMatch?.[1]) || 1 : undefined,
+        episode: type === "series" ? 1 : undefined,
+        searchRank: index
+    };
+}
+
+async function searchContentNexoraCatalog(query, limit, options = {}) {
+    if (!query || !contentNexoraApiEnabled()) return [];
+    try {
+        const payload = await contentNexoraApi(
+            `/search?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&q=${encodeURIComponent(query)}`,
+            options
+        );
+        return contentNexoraSearchResults(payload)
+            .map(normalizeContentNexoraSearchItem)
+            .filter(Boolean)
+            .slice(0, limit);
+    } catch {
+        return [];
+    }
+}
+
 async function loadCatalog() {
     if (state.token && !syncSubscriptionAccess()) {
         state.catalogLoading = false;
@@ -1924,6 +2007,13 @@ async function loadCatalog() {
         const types = query || state.activeType === "all"
             ? ["live", "movie", "series"]
             : [state.activeType];
+        const contentNexoraItemsPromise = query
+            ? searchContentNexoraCatalog(
+                query,
+                Math.min(searchCatalogLimit("movie"), 48),
+                { signal: abortController.signal }
+            )
+            : Promise.resolve([]);
         const resultSets = await Promise.all(
             types.map(async (type) => {
                 const movieLibrary = !query && state.activeType === "movie" && type === "movie";
@@ -1952,9 +2042,14 @@ async function loadCatalog() {
                 // Spring fournit les metadonnees du catalogue. Content-Nexora
                 // est reserve a la recherche et a la lecture des films/series.
                 const springItemsPromise = api(`/catalog/items?${params}`, { signal: abortController.signal }).catch(() => []);
-                const [springItems, directItems] = await Promise.all([springItemsPromise, directAnimeItemsPromise]);
+                const [springItems, directItems, contentNexoraItems] = await Promise.all([
+                    springItemsPromise,
+                    directAnimeItemsPromise,
+                    contentNexoraItemsPromise
+                ]);
+                const frenchItems = (contentNexoraItems || []).filter((item) => item.type === type);
                 return ["movie", "series"].includes(type)
-                    ? [...(directItems || []), ...(springItems || [])]
+                    ? [...frenchItems, ...(directItems || []), ...(springItems || [])]
                     : [...(springItems || [])];
             })
         );
@@ -1965,8 +2060,20 @@ async function loadCatalog() {
             const type = types[typeIndex];
             return (items || []).map((item, index) => normalizeItem(item, type, index));
         }).filter((item) => types.includes(item.type));
+        const tmdbByTitle = new Map(
+            mergedItems
+                .filter((item) => isTmdbSource(item) && tmdbIdFromItem(item))
+                .map((item) => [`${item.type}:${normalizeSearchText(item.name)}`, item])
+        );
+        const enrichedItems = mergedItems.map((item) => {
+            if (!isFrenchSource(item) || tmdbIdFromItem(item)) return item;
+            const relatedTmdb = tmdbByTitle.get(`${item.type}:${normalizeSearchText(item.name)}`);
+            return relatedTmdb?.tmdbId
+                ? { ...item, tmdbId: relatedTmdb.tmdbId }
+                : item;
+        });
         const apiItems = [];
-        mergedItems.forEach((item) => {
+        enrichedItems.forEach((item) => {
             if (!types.includes(item.type)) return false;
             const sourceKey = item.sourceCode || item.playbackProvider || item.provider || item.source || "catalog";
             const dedupeKey = `${item.type}:${sourceKey}:${item.id}`;
@@ -5065,6 +5172,10 @@ function handleAccountClick() {
 }
 
 function selectCatalogItem(item) {
+    if (isFrenchSource(item)) {
+        playItem(item);
+        return;
+    }
     if (item.type === "series" && !item.isEpisode) {
         openSeries(item);
         return;
@@ -5376,7 +5487,13 @@ async function playItem(item, options = {}) {
             state.playerOpening = false;
             setPlayerControlsBusy(false);
             detachPlayerMedia();
-            showPlayerError(error.message || "Content-Nexora ne propose aucune source pour ce titre.");
+            const tmdbId = tmdbIdFromItem(item);
+            if (tmdbId && isTmdbPlayable(item)) {
+                showToast("Aucun flux Content-Nexora, bascule vers Videasy.");
+                await playTmdbItem({ ...item, tmdbId });
+            } else {
+                showPlayerError(error.message || "Content-Nexora ne propose aucune source pour ce titre.");
+            }
         }
         return;
     }
@@ -5579,16 +5696,24 @@ async function playContentNexoraItem(item) {
 
     try {
         await stopPlayer();
-        const payload = await contentNexoraApi(
-            `/search?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&q=${encodeURIComponent(query)}`
-        );
-        const matches = contentNexoraSearchResults(payload);
-        if (!matches.length) {
+        let match = item.contentNexoraUrl
+            ? {
+                title: item.contentNexoraTitle || item.originalTitle || query,
+                url: item.contentNexoraUrl
+            }
+            : null;
+        if (!match) {
+            const payload = await contentNexoraApi(
+                `/search?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&q=${encodeURIComponent(query)}`
+            );
+            const matches = contentNexoraSearchResults(payload);
+            if (!matches.length) {
             throw new Error(`« ${query} » est introuvable dans Content-Nexora.`);
         }
-        const normalizedQuery = normalizeSearchText(query);
-        const match = matches.find((candidate) => normalizeSearchText(candidate?.title || "") === normalizedQuery)
-            || matches[0];
+            const normalizedQuery = normalizeSearchText(query);
+            match = matches.find((candidate) => normalizeSearchText(candidate?.title || "") === normalizedQuery)
+                || matches[0];
+        }
         if (!match?.url) {
             throw new Error(`Content-Nexora n'a pas fourni de fiche exploitable pour « ${query} ».`);
         }
@@ -5904,6 +6029,7 @@ function videasyUrlForItem(item) {
 function isTmdbPlayable(value) {
     return value?.playbackProvider === "videasy"
         || isTmdbSource(value)
+        || Boolean(positiveInteger(value?.tmdbId))
         || isTmdbPublicId(value?.id);
 }
 
