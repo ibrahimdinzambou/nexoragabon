@@ -4122,7 +4122,17 @@ body.compact-catalog .card-copy strong {
     background: rgba(0, 0, 0, 0.22);
     text-decoration: none;
     text-align: left;
+    width: 100%;
+    cursor: pointer;
+    font: inherit;
     transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.player-source-loading {
+    grid-column: 1 / -1;
+    padding: 10px;
+    color: var(--dim);
+    font-size: 11px;
 }
 
 .player-source-option:hover {

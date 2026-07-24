@@ -5751,11 +5751,20 @@ async function playContentNexoraItem(item) {
         }
         state.activeContentNexoraMatch = match;
         state.activeContentNexoraContent = content;
-        renderFrenchSourcePanel(content);
-        const playerUrl = contentNexoraPlayerUrl(contentNexoraPlayerParameters(activeItem, query));
-        if (!playerUrl) throw new Error("Lecteur Content-Nexora non configure.");
-        await startStreamPlayback(activeItem, playerUrl, "embed");
-        elements.playerMessage.textContent = "Lecteur Content-Nexora ouvert. La recherche française est prete.";
+        showFrenchSourceLoadingPanel(content);
+        const sources = await resolveContentNexoraSources(content, activeItem);
+        renderFrenchSourcePanel(content, sources);
+        if (!sources.length) {
+            throw new Error("Content-Nexora n'a fourni aucun flux vidéo lisible pour ce contenu.");
+        }
+        state.activeFrenchSourceIndex = 0;
+        await startStreamPlayback(
+            activeItem,
+            sources[0].mediaUrl,
+            sources[0].kind,
+            { visualWatch: true }
+        );
+        elements.playerMessage.textContent = `Lecture via ${sources[0].label}.`;
     } finally {
         state.playerOpening = false;
         setPlayerControlsBusy(false);
@@ -5853,6 +5862,9 @@ function contentNexoraSourceUrl(source) {
     if (!source || typeof source !== "object") return "";
 
     const directCandidates = [
+        source.stream_url,
+        source.streamUrl,
+        source.proxyUrl,
         source.url,
         source.link,
         source.href,
@@ -5878,6 +5890,7 @@ function contentNexoraSourceUrl(source) {
 function contentNexoraClickableSourceUrl(value) {
     const raw = String(value || "").trim();
     if (!raw || /^(?:javascript|data|blob):/i.test(raw)) return "";
+    if (!/^https?:\/\//i.test(raw) && !raw.startsWith("//")) return "";
     try {
         const url = new URL(raw, contentNexoraSourceOrigin());
         if (!["http:", "https:"].includes(url.protocol) || !url.hostname) return "";
@@ -6002,7 +6015,7 @@ function normalizeContentNexoraSources(content, item = state.activePlayerItem) {
     return [...unique.values()].sort((left, right) => hosterScore(right.raw) - hosterScore(left.raw));
 }
 
-function renderFrenchSourcePanel(content = null) {
+function renderFrenchSourcePanelLegacy(content = null) {
     if (!elements.playerSourcePanel || !elements.playerSourceList) return;
     if (!content) {
         state.activeFrenchSourcePayload = null;
@@ -6040,6 +6053,199 @@ function renderFrenchSourcePanel(content = null) {
 
 
 
+
+function contentNexoraSourceReferer(content, pageUrl) {
+    const candidates = [content?.url, content?.sourceUrl, pageUrl];
+    for (const candidate of candidates) {
+        try {
+            const origin = new URL(candidate).origin;
+            if (origin) return `${origin}/`;
+        } catch {
+            // Continue with the next possible source page.
+        }
+    }
+    return "https://french-stream.one/";
+}
+
+function contentNexoraResolvedStreamUrl(payload) {
+    const candidates = [
+        payload?.stream_url,
+        payload?.streamUrl,
+        payload?.direct_url,
+        payload?.directUrl,
+        payload?.video_url,
+        payload?.videoUrl,
+        payload?.url,
+        payload?.stream?.stream_url,
+        payload?.stream?.streamUrl,
+        payload?.stream?.direct_url,
+        payload?.stream?.directUrl,
+        payload?.stream?.video_url,
+        payload?.stream?.videoUrl,
+        payload?.stream?.url,
+        payload?.resolution?.stream_url,
+        payload?.resolution?.streamUrl,
+        payload?.resolution?.direct_url,
+        payload?.resolution?.directUrl,
+        payload?.resolution?.video_url,
+        payload?.resolution?.videoUrl,
+        payload?.resolution?.url
+    ];
+    return candidates.find((value) => typeof value === "string" && value.trim())?.trim() || "";
+}
+
+async function resolveContentNexoraSource(source, content, index = 0) {
+    const raw = typeof source === "object" && source !== null ? { ...source } : { url: source };
+    const pageUrl = contentNexoraClickableSourceUrl(contentNexoraSourceUrl(raw));
+    if (!pageUrl) return null;
+
+    const initialKind = classifyPlayableUrl(pageUrl, raw);
+    let mediaUrl = pageUrl;
+    let resolution = {};
+    if (initialKind !== "hls" && initialKind !== "direct") {
+        resolution = await contentNexoraApi("/resolve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                player_url: pageUrl,
+                referer: contentNexoraSourceReferer(content, pageUrl)
+            })
+        });
+        mediaUrl = contentNexoraResolvedStreamUrl(resolution);
+    }
+
+    const safeMediaUrl = contentNexoraClickableSourceUrl(mediaUrl);
+    if (!safeMediaUrl) return null;
+    const kind = classifyPlayableUrl(safeMediaUrl, {
+        ...raw,
+        ...resolution,
+        type: resolution?.kind || resolution?.type || raw.type || ""
+    });
+    if (kind !== "hls" && kind !== "direct") return null;
+
+    return {
+        mediaUrl: safeMediaUrl,
+        pageUrl,
+        label: contentNexoraSourceLabel(raw, pageUrl),
+        language: contentNexoraSourceLanguage(raw),
+        quality: contentNexoraSourceQuality(raw),
+        kind,
+        kindLabel: contentNexoraSourceKindLabel(kind),
+        raw,
+        resolution,
+        index
+    };
+}
+
+async function resolveContentNexoraSources(content, item = state.activePlayerItem) {
+    const candidates = contentNexoraSourceCandidates(content, item);
+    const results = await Promise.allSettled(
+        candidates.map((source, index) => resolveContentNexoraSource(source, content, index))
+    );
+    const unique = new Map();
+    results.forEach((result) => {
+        const source = result.status === "fulfilled" ? result.value : null;
+        if (source?.mediaUrl && !unique.has(source.mediaUrl)) {
+            unique.set(source.mediaUrl, source);
+        }
+    });
+    return [...unique.values()].sort((left, right) => {
+        const leftHoster = { ...left.raw, ...left.resolution, url: left.mediaUrl };
+        const rightHoster = { ...right.raw, ...right.resolution, url: right.mediaUrl };
+        return hosterScore(rightHoster) - hosterScore(leftHoster);
+    });
+}
+
+function showFrenchSourceLoadingPanel(content) {
+    if (!elements.playerSourcePanel || !elements.playerSourceList) return;
+    state.activeFrenchSourcePayload = { content, sources: [] };
+    elements.playerSourcePanel.hidden = false;
+    if (elements.playerSourceCount) elements.playerSourceCount.textContent = "Resolution...";
+    elements.playerSourceList.innerHTML = `
+        <div class="player-source-loading" role="status">
+            Recherche de flux video lisibles...
+        </div>
+    `;
+}
+
+function renderFrenchSourcePanel(content = null, sources = []) {
+    if (!elements.playerSourcePanel || !elements.playerSourceList) return;
+    if (!content) {
+        state.activeFrenchSourcePayload = null;
+        elements.playerSourcePanel.hidden = true;
+        elements.playerSourceList.innerHTML = "";
+        if (elements.playerSourceCount) elements.playerSourceCount.textContent = "0 source";
+        return;
+    }
+
+    state.activeFrenchSourcePayload = { content, sources };
+    if (!sources.length) {
+        elements.playerSourcePanel.hidden = true;
+        elements.playerSourceList.innerHTML = "";
+        if (elements.playerSourceCount) elements.playerSourceCount.textContent = "0 flux";
+        return;
+    }
+
+    elements.playerSourcePanel.hidden = false;
+    if (elements.playerSourceCount) {
+        elements.playerSourceCount.textContent = `${sources.length} flux`;
+    }
+    elements.playerSourceList.innerHTML = sources.map((source, index) => {
+        const details = [source.language, source.quality, source.kindLabel].filter(Boolean).join(" / ");
+        const active = index === state.activeFrenchSourceIndex ? " active" : "";
+        return `
+            <button class="player-source-option${active}" type="button" data-source-index="${index}" aria-label="Lire ${escapeHtml(source.label)}">
+                <span class="player-source-dot" aria-hidden="true"></span>
+                <span class="player-source-copy">
+                    <strong>${escapeHtml(source.label)}</strong>
+                    <small>${escapeHtml(details || "Flux video")}</small>
+                    <span class="player-source-link">Lire le flux <span aria-hidden="true">&#9654;</span></span>
+                </span>
+            </button>
+        `;
+    }).join("");
+}
+
+async function switchToFrenchSource(index) {
+    const payload = state.activeFrenchSourcePayload;
+    const item = state.activePlayerItem;
+    if (!payload || !item || state.playerOpening) return;
+    const sourceIndex = Number(index);
+    let source = payload.sources?.[sourceIndex];
+    if (!source) return;
+
+    state.playerOpening = true;
+    state.playerErrorShown = false;
+    state.activeFrenchSourceIndex = sourceIndex;
+    setPlayerControlsBusy(true);
+    renderFrenchSourcePanel(payload.content, payload.sources);
+    setPlayerLoading(`Lecture via ${source.label}...`, "Chargement du flux video.");
+    try {
+        await stopPlayer();
+        await startStreamPlayback(item, source.mediaUrl, source.kind, { visualWatch: true });
+        elements.playerMessage.textContent = `Lecture via ${source.label}.`;
+        return;
+    } catch (error) {
+        try {
+            const freshSource = await resolveContentNexoraSource(source.raw, payload.content, sourceIndex);
+            if (freshSource) {
+                source = freshSource;
+                payload.sources[sourceIndex] = freshSource;
+                renderFrenchSourcePanel(payload.content, payload.sources);
+                await stopPlayer();
+                await startStreamPlayback(item, source.mediaUrl, source.kind, { visualWatch: true });
+                elements.playerMessage.textContent = `Lecture via ${source.label}.`;
+                return;
+            }
+        } catch {
+            // Keep the original playback error for the user.
+        }
+        showPlayerError(error.message || "Impossible de lire ce flux video.");
+    } finally {
+        state.playerOpening = false;
+        setPlayerControlsBusy(false);
+    }
+}
 
 function unavailableSourceError(message, failures = []) {
     const error = new Error(message);
@@ -8962,6 +9168,11 @@ elements.streamPlayer.addEventListener("error", () => {
         }
         showPlayerError("Le flux ne répond pas ou son codec n’est pas pris en charge par ce navigateur.");
     }
+});
+elements.playerSourceList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-source-index]");
+    if (!button) return;
+    switchToFrenchSource(Number(button.dataset.sourceIndex));
 });
 elements.playerQuality.addEventListener("change", changePlayerQuality);
 
