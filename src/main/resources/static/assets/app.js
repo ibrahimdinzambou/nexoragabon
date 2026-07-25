@@ -515,6 +515,7 @@ async function animeNexoraItems(type, query, limit) {
                 if (!seasonSlug) return null;
                 const versionName = season.name || `Version ${index + 1}`;
                 const versionImage = season.image_url || season.image || season.poster
+                    || item.image || item.poster || item.backdrop
                     || generatedPosterDataUrl(`${item.name} - ${versionName}`);
                 return {
                     ...item,
@@ -5239,12 +5240,12 @@ function handleAccountClick() {
 }
 
 function selectCatalogItem(item) {
-    if (isFrenchSource(item)) {
-        playItem(item);
-        return;
-    }
     if (item.type === "series" && !item.isEpisode) {
         openSeries(item);
+        return;
+    }
+    if (isFrenchSource(item)) {
+        playItem(item);
         return;
     }
     if (item.type === "movie") {
@@ -5356,6 +5357,26 @@ function releaseYearFromDate(value) {
     return String(value || "").match(/(?:19|20)\d{2}/)?.[0] || "";
 }
 
+async function loadSeriesInfo(item) {
+    if (isAnimeNexoraItem(item)) {
+        return animeNexoraSeriesInfo(item);
+    }
+    const tmdbCatalogItem = isTmdbSource(item) || isTmdbPublicId(item?.id);
+    if (isContentNexoraPlayerItem(item) && !tmdbCatalogItem) {
+        return contentNexoraSeriesInfo(item);
+    }
+    if (contentNexoraApiEnabled() && tmdbCatalogItem) {
+        try {
+            return await contentNexoraSeriesInfo(item);
+        } catch {
+            // Keep the existing TMDB metadata route as a non-destructive fallback.
+        }
+    }
+    return api(
+        `/catalog/series/${encodeURIComponent(item.catalogId || item.id)}?title=${encodeURIComponent(item.name || "")}`
+    );
+}
+
 async function openSeries(item) {
     if (!state.token) {
         requestLogin("Connectez-vous pour consulter les episodes.", () => openSeries(item));
@@ -5378,13 +5399,7 @@ async function openSeries(item) {
     openModal("seriesModal");
 
     try {
-        const series = isAnimeNexoraItem(item)
-            ? await animeNexoraSeriesInfo(item)
-            : isContentNexoraPlayerItem(item)
-                ? await contentNexoraSeriesInfo(item)
-            : await api(
-                `/catalog/series/${encodeURIComponent(item.catalogId || item.id)}?title=${encodeURIComponent(item.name || "")}`
-            );
+        const series = await loadSeriesInfo(item);
         state.activeSeries = series;
         renderSeriesDetails(series, item.image);
     } catch (error) {
@@ -5506,6 +5521,8 @@ function playSeriesEpisode(episodeId) {
     closeModal("seriesModal");
     playItem({
         ...episode,
+        seriesName: series.name,
+        parentTitle: series.name,
         type: "series",
         isEpisode: true,
         season: seasonNumber,
@@ -5797,6 +5814,7 @@ function contentNexoraSeriesEpisodes(seasonEpisodes, seasonNumber, item) {
             playbackProviderName: "Content-Nexora",
             externalPlayback: true,
             streamAvailable: players.length > 0,
+            tmdbId: tmdbIdFromItem(item) || undefined,
             contentNexoraUrl: item.contentNexoraUrl,
             contentNexoraTitle: item.contentNexoraTitle || item.name
         };
@@ -5804,20 +5822,42 @@ function contentNexoraSeriesEpisodes(seasonEpisodes, seasonNumber, item) {
 }
 
 async function contentNexoraSeriesInfo(item) {
-    if (!item?.contentNexoraUrl) {
-        throw new Error("Content-Nexora n'a pas fourni l'URL de la série.");
+    const query = contentNexoraSearchTitle(item);
+    if (!item?.contentNexoraUrl && !query) {
+        throw new Error("Titre de série manquant pour Content-Nexora.");
     }
-    const payload = await contentNexoraApi(
-        `/content?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&url=${encodeURIComponent(item.contentNexoraUrl)}`
-    );
+    const parameters = new URLSearchParams({
+        provider: CONTENT_NEXORA_PROVIDER,
+        type: "series",
+        season: String(positiveInteger(item?.season) || 1),
+        episode: String(positiveInteger(item?.episode) || 1)
+    });
+    if (item?.contentNexoraUrl) {
+        parameters.set("url", item.contentNexoraUrl);
+    } else {
+        parameters.set("q", query);
+        parameters.set("title", query);
+    }
+    const tmdbId = tmdbIdFromItem(item);
+    if (tmdbId) parameters.set("tmdbId", String(tmdbId));
+
+    const payload = await contentNexoraApi(`/series?${parameters}`);
     const content = payload.content || payload;
     const remoteSeasons = Array.isArray(content?.seasons) ? content.seasons : [];
+    if (!remoteSeasons.length) {
+        throw new Error(`Content-Nexora n'a fourni aucun épisode pour « ${query || item.name} ».`);
+    }
+    const resolvedItem = {
+        ...item,
+        contentNexoraUrl: item.contentNexoraUrl || payload.match?.url || content.url,
+        contentNexoraTitle: item.contentNexoraTitle || payload.match?.title || content.title || item.name
+    };
     const baseSeason = positiveInteger(item.season) || 1;
     const seasons = remoteSeasons.map((remoteSeason, index) => {
         const seasonNumber = remoteSeasons.length === 1
             ? baseSeason
             : positiveInteger(remoteSeason?.season) || index + 1;
-        const episodes = contentNexoraSeriesEpisodes(remoteSeason?.episodes, seasonNumber, item);
+        const episodes = contentNexoraSeriesEpisodes(remoteSeason?.episodes, seasonNumber, resolvedItem);
         return {
             ...remoteSeason,
             season: seasonNumber,
@@ -5827,7 +5867,7 @@ async function contentNexoraSeriesInfo(item) {
         };
     });
     return {
-        ...item,
+        ...resolvedItem,
         name: content.title || item.name,
         summary: content.synopsis || content.summary || item.summary || "",
         poster: item.poster || item.image || content.img,
@@ -5882,31 +5922,27 @@ async function playContentNexoraItem(item) {
 
     try {
         await stopPlayer();
-        let match = item.contentNexoraUrl
-            ? {
-                title: item.contentNexoraTitle || item.originalTitle || query,
-                url: item.contentNexoraUrl
-            }
-            : null;
-        if (!match) {
-            const payload = await contentNexoraApi(
-                `/search?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&q=${encodeURIComponent(query)}`
-            );
-            const matches = contentNexoraSearchResults(payload);
-            if (!matches.length) {
-            throw new Error(`« ${query} » est introuvable dans Content-Nexora.`);
-        }
-            const normalizedQuery = normalizeSearchText(query);
-            match = matches.find((candidate) => normalizeSearchText(candidate?.title || "") === normalizedQuery)
-                || matches[0];
-        }
-        if (!match?.url) {
-            throw new Error(`Content-Nexora n'a pas fourni de fiche exploitable pour « ${query} ».`);
+        const contentParameters = new URLSearchParams({
+            provider: CONTENT_NEXORA_PROVIDER,
+            q: query,
+            title: query,
+            type: activeItem.type
+        });
+        if (item.contentNexoraUrl) contentParameters.set("url", item.contentNexoraUrl);
+        const tmdbId = tmdbIdFromItem(activeItem);
+        if (tmdbId) contentParameters.set("tmdbId", String(tmdbId));
+        if (activeItem.type === "series") {
+            contentParameters.set("season", String(positiveInteger(activeItem.season) || 1));
+            contentParameters.set("episode", String(positiveInteger(activeItem.episode) || 1));
         }
         const contentPayload = await contentNexoraApi(
-            `/content?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&url=${encodeURIComponent(match.url)}`
+            `/content?${contentParameters}`
         );
         const content = contentPayload.content || contentPayload;
+        const match = contentPayload.match || {
+            title: item.contentNexoraTitle || item.originalTitle || query,
+            url: item.contentNexoraUrl || content?.url || ""
+        };
         if (activeItem.type === "movie" && !Array.isArray(content?.players)) {
             throw new Error(`Content-Nexora n'a pas fourni de lecteur pour « ${query} ».`);
         }
@@ -5945,6 +5981,9 @@ function classifyPlayableUrl(value, metadata = {}) {
     if (!raw) return "none";
     const normalized = raw.toLowerCase();
     const declaredType = String(metadata.type || metadata.contentType || "").toLowerCase();
+    if (declaredType.includes("embed") || declaredType.includes("iframe")) {
+        return "embed";
+    }
     if (normalized.includes("/proxy/m3u8")
         || /\.m3u8(?:$|[?#])/.test(normalized)
         || declaredType.includes("mpegurl")
@@ -6268,15 +6307,21 @@ async function resolveContentNexoraSource(source, content, index = 0) {
     let mediaUrl = pageUrl;
     let resolution = {};
     if (initialKind !== "hls" && initialKind !== "direct") {
-        resolution = await contentNexoraApi("/resolve", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                player_url: pageUrl,
-                referer: contentNexoraSourceReferer(content, pageUrl)
-            })
-        });
-        mediaUrl = contentNexoraResolvedStreamUrl(resolution);
+        try {
+            resolution = await contentNexoraApi("/resolve", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    player_url: pageUrl,
+                    referer: contentNexoraSourceReferer(content, pageUrl)
+                })
+            });
+            mediaUrl = contentNexoraResolvedStreamUrl(resolution) || pageUrl;
+        } catch {
+            // Unsupported extractors can still be opened through the original web player.
+            resolution = { kind: "embed", resolved: false };
+            mediaUrl = pageUrl;
+        }
     }
 
     const safeMediaUrl = contentNexoraClickableSourceUrl(mediaUrl);
@@ -6286,7 +6331,7 @@ async function resolveContentNexoraSource(source, content, index = 0) {
         ...resolution,
         type: resolution?.kind || resolution?.type || raw.type || ""
     });
-    if (kind !== "hls" && kind !== "direct") return null;
+    if (!["hls", "direct", "embed"].includes(kind)) return null;
 
     return {
         mediaUrl: safeMediaUrl,
