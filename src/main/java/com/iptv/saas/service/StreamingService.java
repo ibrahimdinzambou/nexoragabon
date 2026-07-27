@@ -15,8 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.net.URI;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -216,6 +218,92 @@ public class StreamingService {
         session = sessions.save(session);
         audit.log(user, "stream.opened", "UserSession", session.id, session.contentType + ":" + itemId);
         return session;
+    }
+
+    /**
+     * Opens a session for a URL that was resolved and verified by Content-Nexora
+     * on the server. This method must never be called with a browser-supplied URL.
+     */
+    @Transactional
+    public synchronized UserSession openContentNexora(
+            UserEntity user,
+            String type,
+            String itemId,
+            String streamUrl,
+            String kind,
+            Map<String, String> headers
+    ) {
+        Organization organization = organizationService.currentOrganization(user);
+        Subscription subscription = requireActiveSubscription(organization);
+        String normalizedType = "series".equalsIgnoreCase(type) ? "series" : "movie";
+        String normalizedKind = "hls".equalsIgnoreCase(kind) ? "hls" : "video";
+        String validatedUrl = requireExternalStreamUrl(streamUrl);
+        String sessionItemId = "external~content-nexora~" + normalizedKind + "~"
+                + Integer.toUnsignedString(Objects.hash(itemId, validatedUrl), 36);
+
+        cleanupInactive(organization);
+        List<UserSession> activeForUser = sessions.findByUserAndStatus(user, Enums.SessionStatus.ACTIVE);
+        UserSession existing = activeForUser.stream()
+                .filter(session -> sessionItemId.equals(session.itemId))
+                .filter(session -> validatedUrl.equals(session.streamUrl))
+                .findFirst()
+                .orElse(null);
+        if (existing != null) {
+            existing.lastHeartbeatAt = Instant.now();
+            return sessions.save(existing);
+        }
+
+        int maxStreams = subscription.plan == null ? 1 : subscription.plan.maxConcurrentStreams;
+        if (activeForUser.size() >= maxStreams && maxStreams == 1) {
+            activeForUser.forEach(session -> closeSession(session, Enums.SessionStatus.CLOSED));
+            activeForUser = List.of();
+        }
+        if (activeForUser.size() >= maxStreams) {
+            throw ApiException.paymentRequired(
+                    "Limite de streams simultanes atteinte pour cet utilisateur (" + maxStreams + ")"
+            );
+        }
+
+        UserSession session = new UserSession();
+        session.sessionToken = UUID.randomUUID().toString();
+        session.user = user;
+        session.organization = organization;
+        session.iptvAccount = null;
+        session.contentType = normalizedType;
+        session.itemId = sessionItemId;
+        session.streamUrl = validatedUrl;
+        session.streamHeaders = StreamRequestHeaders.encode(headers);
+        session.playbackQuality = "auto";
+        session.status = Enums.SessionStatus.ACTIVE;
+        session.openedAt = Instant.now();
+        session.lastHeartbeatAt = Instant.now();
+        session = sessions.save(session);
+        audit.log(user, "stream.content_nexora.opened", "UserSession", session.id, normalizedType + ":" + itemId);
+        return session;
+    }
+
+    private String requireExternalStreamUrl(String value) {
+        String streamUrl = value == null ? "" : value.strip();
+        if (streamUrl.isBlank() || streamUrl.length() > 8192) {
+            throw ApiException.validation("URL de flux Content-Nexora invalide");
+        }
+        try {
+            URI uri = URI.create(streamUrl);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase();
+            if (!Set.of("http", "https").contains(scheme)
+                    || host.isBlank()
+                    || uri.getUserInfo() != null
+                    || host.equals("localhost")
+                    || host.endsWith(".localhost")
+                    || host.endsWith(".local")
+                    || host.endsWith(".internal")) {
+                throw new IllegalArgumentException();
+            }
+            return streamUrl;
+        } catch (IllegalArgumentException exception) {
+            throw ApiException.validation("URL de flux Content-Nexora invalide");
+        }
     }
 
     @Transactional(noRollbackFor = ApiException.class)

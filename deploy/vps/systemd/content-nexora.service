@@ -6,11 +6,14 @@ After=network.target
 Type=simple
 User=nexora
 WorkingDirectory=/opt/nexora/content-nexora
+EnvironmentFile=-/opt/nexora/app/.env
 Environment=PYTHONUNBUFFERED=1
 Environment=AUTOFLIX_HOST=127.0.0.1
 Environment=AUTOFLIX_PORT=8787
 Environment=AUTOFLIX_CORS_MODE=nginx
-ExecStart=/opt/nexora/content-nexora/.venv/bin/gunicorn --bind 127.0.0.1:8787 --workers 3 --worker-class sync --timeout 30 --graceful-timeout 5 --access-logfile - --error-logfile - autoflix_api.app:app
+Environment=AUTOFLIX_REMOTE_CONFIG_ENABLED=0
+Environment=AUTOFLIX_PLAYER_TIMEOUT_SECONDS=12
+ExecStart=/opt/nexora/content-nexora/.venv/bin/gunicorn --bind 127.0.0.1:8787 --workers 3 --worker-class gthread --threads 4 --timeout 45 --graceful-timeout 10 --access-logfile - --error-logfile - autoflix_api.app:app
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

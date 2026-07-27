@@ -1,12 +1,14 @@
 diff --git a/src/autoflix_api/app.py b/src/autoflix_api/app.py
-index a27d9ef..1a5ad83 100644
+index a27d9ef..c60d229 100644
 --- a/src/autoflix_api/app.py
 +++ b/src/autoflix_api/app.py
-@@ -4,0 +5 @@ import re
+@@ -3,0 +4 @@ import os
++import ipaddress
+@@ -4,0 +6 @@ import re
 +import time
-@@ -8,0 +10 @@ from pathlib import Path
+@@ -8,0 +11 @@ from pathlib import Path
 +from threading import Lock
-@@ -51,0 +54,41 @@ PROVIDERS = {
+@@ -51,0 +55,41 @@ PROVIDERS = {
 +RESPONSE_CACHE_MAX_ENTRIES = 128
 +RESPONSE_CACHE_STALE_TTL_SECONDS = 15 * 60
 +_response_cache: dict[tuple[str, ...], tuple[float, float, Any]] = {}
@@ -48,7 +50,43 @@ index a27d9ef..1a5ad83 100644
 +        )
 +    return value
 +
-@@ -610,2 +653,11 @@ def search():
+@@ -281,0 +326,33 @@ def provider_or_error(name: str):
++def _safe_http_url(value: Any) -> str:
++    """Reject malformed URLs and local network targets before scraper requests."""
++    url = str(value or "").strip()
++    parsed = urlparse(url)
++    hostname = (parsed.hostname or "").lower().rstrip(".")
++    if parsed.scheme not in {"http", "https"} or not hostname or parsed.username or parsed.password:
++        raise ValueError("A valid public HTTP(S) URL is required")
++    if hostname == "localhost" or hostname.endswith((".local", ".localhost", ".internal")):
++        raise ValueError("Local network URLs are not allowed")
++    try:
++        address = ipaddress.ip_address(hostname)
++    except ValueError:
++        pass
++    else:
++        if not address.is_global:
++            raise ValueError("Private or local network URLs are not allowed")
++    return url
++
++
++def _provider_url(provider_name: str, value: Any) -> str:
++    """Only let a provider scraper open URLs on its own configured website."""
++    url = _safe_http_url(value)
++    provider = provider_or_error(provider_name)
++    module = provider["module"]
++    if provider_name.lower() == "anime-sama":
++        module.get_website_url()
++    expected = (urlparse(str(getattr(module, "website_origin", ""))).hostname or "").lower()
++    actual = (urlparse(url).hostname or "").lower()
++    if not expected or (actual != expected and not actual.endswith("." + expected)):
++        raise ValueError("The content URL does not belong to the selected provider")
++    return url
++
++
+@@ -383,0 +461 @@ def _requested_content(provider_name: str, operation: str) -> tuple[dict[str, An
++    url = _provider_url(provider_name, url)
+@@ -610,2 +688,11 @@ def search():
 -        result = call_provider(provider_name, "search", query=query)
 -        return jsonify({"results": [normalize_search_result(item, provider_name) for item in result]})
 +        payload = cached_response(
@@ -62,11 +100,11 @@ index a27d9ef..1a5ad83 100644
 +            },
 +        )
 +        return jsonify(payload)
-@@ -613 +665,2 @@ def search():
+@@ -613 +700,2 @@ def search():
 -        return jsonify({"error": str(exc)}), 502
 +        app.logger.exception("Content-Nexora search failed")
 +        return jsonify({"error": str(exc), "code": "upstream_failure"}), 502
-@@ -620,4 +673,7 @@ def content():
+@@ -620,4 +708,7 @@ def content():
 -        normalized, match = _requested_content(provider_name, "content")
 -        payload = {"content": _merge_node_sources(normalized)}
 -        if match:
@@ -78,11 +116,11 @@ index a27d9ef..1a5ad83 100644
 +                payload["match"] = match
 +            return payload
 +        payload = cached_response(request_cache_key("content"), 180, load_content)
-@@ -628 +684,2 @@ def content():
+@@ -628 +719,2 @@ def content():
 -        return jsonify({"error": str(exc)}), 502
 +        app.logger.exception("Content-Nexora content lookup failed")
 +        return jsonify({"error": str(exc), "code": "upstream_failure"}), 502
-@@ -635,4 +692,7 @@ def series():
+@@ -635,4 +727,7 @@ def series():
 -        normalized, match = _requested_content(provider_name, "series")
 -        payload = {"content": _merge_node_sources(normalized)}
 -        if match:
@@ -94,13 +132,406 @@ index a27d9ef..1a5ad83 100644
 +                payload["match"] = match
 +            return payload
 +        payload = cached_response(request_cache_key("series"), 180, load_series)
-@@ -643 +703,2 @@ def series():
+@@ -643 +738,2 @@ def series():
 -        return jsonify({"error": str(exc)}), 502
 +        app.logger.exception("Content-Nexora series lookup failed")
 +        return jsonify({"error": str(exc), "code": "upstream_failure"}), 502
-@@ -698 +759 @@ def main():
+@@ -650 +746,4 @@ def season():
+-        return jsonify({"season": normalize_content(call_provider(provider_name, "season", url=request.args["url"]), provider_name)})
++        provider_url = _provider_url(provider_name, request.args["url"])
++        return jsonify({"season": normalize_content(call_provider(provider_name, "season", url=provider_url), provider_name)})
++    except ValueError as exc:
++        return jsonify({"error": str(exc)}), 400
+@@ -659 +758,4 @@ def episode():
+-        return jsonify({"episode": normalize_content(call_provider(provider_name, "episode", url=request.args["url"]), provider_name)})
++        provider_url = _provider_url(provider_name, request.args["url"])
++        return jsonify({"episode": normalize_content(call_provider(provider_name, "episode", url=provider_url), provider_name)})
++    except ValueError as exc:
++        return jsonify({"error": str(exc)}), 400
+@@ -668,2 +769,0 @@ def resolve():
+-    if urlparse(player_url).scheme not in {"http", "https"}:
+-        return jsonify({"error": "player_url must be an HTTP(S) URL"}), 400
+@@ -671 +771,14 @@ def resolve():
+-        referer = str(payload.get("referer", "https://autoflix.local/"))
++        player_url = _safe_http_url(player_url)
++    except ValueError as exc:
++        return jsonify({"error": str(exc)}), 400
++    if not player.supported_host(player_url) or not player.is_supported(player_url):
++        return jsonify({
++            "stream_url": player_url,
++            "embed_url": player_url,
++            "kind": "embed",
++            "resolved": False,
++            "playable": True,
++            "resolutionError": "Lecteur externe non pris en charge par le résolveur",
++        })
++    try:
++        referer = _safe_http_url(payload.get("referer", "https://nexoragabon.com/"))
+@@ -679,0 +793 @@ def resolve():
++                "playable": True,
+@@ -680,0 +795,2 @@ def resolve():
++        stream_url = _safe_http_url(stream_url)
++        probe = player.probe_stream(stream_url, headers={"Referer": referer})
+@@ -684 +800 @@ def resolve():
+-            "kind": "hls" if ".m3u8" in stream_url.lower() else "video",
++            "kind": probe["kind"],
+@@ -685,0 +802,4 @@ def resolve():
++            "playable": True,
++            "available_qualities": probe.get("qualities", []),
++            "content_type": probe.get("content_type", ""),
++            "request_headers": {"Referer": referer},
+@@ -698 +818 @@ def main():
 -    app.run(host=os.getenv("AUTOFLIX_HOST", "127.0.0.1"), port=int(os.getenv("AUTOFLIX_PORT", "8787")), debug=False)
 +    app.run(host=os.getenv("AUTOFLIX_HOST", "127.0.0.1"), port=int(os.getenv("AUTOFLIX_PORT", "8787")), debug=False, threaded=True)
+diff --git a/src/autoflix_api/static/app.css b/src/autoflix_api/static/app.css
+index 2258021..fc06bdf 100644
+--- a/src/autoflix_api/static/app.css
++++ b/src/autoflix_api/static/app.css
+@@ -2 +2,12 @@
+-:root{--ink:#e9e4d8;--muted:#98998e;--bg:#111311;--panel:#191c19;--line:#343a32;--lime:#c8f05a;--orange:#ff7a45}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:'Space Grotesk',sans-serif;min-height:100vh}.grain{position:fixed;inset:0;opacity:.06;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E")}.shell{max-width:1240px;margin:auto;padding:28px 36px}.topbar{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:22px;font:500 12px 'DM Mono',monospace;letter-spacing:.08em}.brand{display:flex;align-items:center;gap:12px}.brand em{color:var(--muted);font-style:normal}.mark{display:grid;place-items:center;background:var(--lime);color:#111;width:31px;height:31px;font-weight:700;letter-spacing:-.08em}.status{color:var(--muted)}.status i{display:inline-block;width:7px;height:7px;background:var(--lime);border-radius:50%;margin-right:8px;box-shadow:0 0 10px var(--lime)}.hero{padding:88px 0 70px;max-width:820px}.eyebrow,.section-label{font:500 11px 'DM Mono',monospace;letter-spacing:.14em;color:var(--lime)}h1{font-size:clamp(55px,8vw,112px);line-height:.88;letter-spacing:-.075em;margin:21px 0 29px;font-weight:600}h1 span{color:var(--orange)}.lede{color:var(--muted);max-width:470px;font-size:16px;line-height:1.55}.workspace{display:grid;grid-template-columns:360px 1fr;gap:18px}.card{border:1px solid var(--line);background:linear-gradient(140deg,#1a1e1a,#151715);padding:25px}.controls{min-height:520px}.controls label{display:block;color:var(--muted);font:11px 'DM Mono',monospace;margin:28px 0 9px;text-transform:uppercase}.search-row,.source-row{display:flex;gap:8px}select,input{font:14px 'DM Mono',monospace;color:var(--ink);background:#101210;border:1px solid var(--line);padding:14px 13px;outline:none;width:100%}select:focus,input:focus{border-color:var(--lime)}button{border:0;background:var(--lime);color:#121510;font:600 11px 'DM Mono',monospace;padding:0 16px;cursor:pointer;white-space:nowrap}button:hover{background:#e1ff86}.message{color:var(--muted);font-size:12px;line-height:1.5}.results{margin-top:22px;display:grid;gap:7px;max-height:265px;overflow:auto}.result{padding:13px;border:1px solid var(--line);cursor:pointer;transition:.2s}.result:hover{border-color:var(--lime);transform:translateX(3px)}.result strong{font-size:14px;font-weight:500}.result small{display:block;color:var(--muted);margin-top:5px;font:10px 'DM Mono',monospace}.player{min-height:520px}.player-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:20px}.player h2{font-size:23px;letter-spacing:-.04em;margin:10px 0 0;font-weight:500}.pill{font:10px 'DM Mono',monospace;color:var(--orange);border:1px solid #75412f;padding:7px 9px}.screen{position:relative;background:#0b0c0b;aspect-ratio:16/9;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden}.screen video{width:100%;height:100%;display:none}.screen video.active{display:block}.screen-empty{text-align:center;color:var(--muted);display:grid;gap:11px}.screen-empty strong{font:500 12px 'DM Mono',monospace;letter-spacing:.16em;color:var(--ink)}.screen-empty small{font-size:11px}.crosshair{font-size:42px;color:var(--lime);font-weight:200}.source-row{margin-top:18px}.source-row button{background:var(--orange);color:#1c110d}.source-row button:hover{background:#ff9a70}.resolved{font:11px 'DM Mono',monospace;color:var(--muted);word-break:break-all;margin-top:12px;min-height:16px}.resolved a{color:var(--lime)}footer{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:18px;margin-top:54px;color:var(--muted);font:10px 'DM Mono',monospace}footer a{color:var(--lime);text-decoration:none}@media(max-width:800px){.shell{padding:20px}.hero{padding:60px 0 45px}.workspace{grid-template-columns:1fr}.controls,.player{min-height:auto}footer{gap:12px;flex-wrap:wrap}}
++:root{--ink:#e9e4d8;--muted:#98998e;--bg:#111311;--panel:#191c19;--line:#343a32;--lime:#c8f05a;--orange:#ff7a45}
++*{box-sizing:border-box}
++body{margin:0;background:var(--bg);color:var(--ink);font-family:'Space Grotesk',sans-serif;min-height:100vh}
++.grain{position:fixed;inset:0;opacity:.06;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E")}
++.shell{max-width:1240px;margin:auto;padding:28px 36px}.topbar{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:22px;font:500 12px 'DM Mono',monospace;letter-spacing:.08em}.brand{display:flex;align-items:center;gap:12px}.brand em{color:var(--muted);font-style:normal}.mark{display:grid;place-items:center;background:var(--lime);color:#111;width:31px;height:31px;font-weight:700;letter-spacing:-.08em}.status{color:var(--muted)}.status i{display:inline-block;width:7px;height:7px;background:var(--lime);border-radius:50%;margin-right:8px;box-shadow:0 0 10px var(--lime)}
++.hero{padding:88px 0 70px;max-width:820px}.eyebrow,.section-label{font:500 11px 'DM Mono',monospace;letter-spacing:.14em;color:var(--lime)}h1{font-size:clamp(55px,8vw,112px);line-height:.88;letter-spacing:-.075em;margin:21px 0 29px;font-weight:600}h1 span{color:var(--orange)}.lede{color:var(--muted);max-width:470px;font-size:16px;line-height:1.55}
++.workspace{display:grid;grid-template-columns:360px 1fr;gap:18px}.card{border:1px solid var(--line);background:linear-gradient(140deg,#1a1e1a,#151715);padding:25px}.controls{min-height:520px}.controls label{display:block;color:var(--muted);font:11px 'DM Mono',monospace;margin:28px 0 9px;text-transform:uppercase}.search-row,.source-row{display:flex;gap:8px}select,input{font:14px 'DM Mono',monospace;color:var(--ink);background:#101210;border:1px solid var(--line);padding:14px 13px;outline:none;width:100%}select:focus,input:focus{border-color:var(--lime)}button{border:0;background:var(--lime);color:#121510;font:600 11px 'DM Mono',monospace;padding:0 16px;cursor:pointer;white-space:nowrap}button:hover{background:#e1ff86}.message{color:var(--muted);font-size:12px;line-height:1.5}.results{margin-top:22px;display:grid;gap:7px;max-height:265px;overflow:auto}
++.result{display:block;width:100%;padding:13px;border:1px solid var(--line);cursor:pointer;transition:.2s;text-align:left;color:var(--ink);background:transparent}.result:hover{border-color:var(--lime);transform:translateX(3px);background:#1d221c}.result strong{font-size:14px;font-weight:500;display:block}.result small{display:block;color:var(--muted);margin-top:5px;font:10px 'DM Mono',monospace}
++.player{min-height:520px}.player-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:20px;gap:18px}.player-status{display:flex;align-items:flex-end;gap:9px}.quality-control{display:grid;gap:4px;color:var(--muted);font:9px 'DM Mono',monospace;letter-spacing:.08em}.quality-control select{min-width:92px;padding:6px 8px;font-size:10px}.player h2{font-size:23px;letter-spacing:-.04em;margin:10px 0 0;font-weight:500}.pill{font:10px 'DM Mono',monospace;color:var(--orange);border:1px solid #75412f;padding:7px 9px}
++.screen{position:relative;background:#0b0c0b;aspect-ratio:16/9;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden}.screen video,.screen iframe{width:100%;height:100%;display:none;border:0;background:#000}.screen video.active,.screen iframe:not([hidden]){display:block}.screen-empty{text-align:center;color:var(--muted);display:grid;gap:11px}.screen-empty[hidden]{display:none}.screen-empty strong{font:500 12px 'DM Mono',monospace;letter-spacing:.16em;color:var(--ink)}.screen-empty small{font-size:11px}.crosshair{font-size:42px;color:var(--lime);font-weight:200}
++.source-row{margin-top:18px}.source-row button{background:var(--orange);color:#1c110d}.source-row button:hover{background:#ff9a70}.resolved{font:11px 'DM Mono',monospace;color:var(--muted);word-break:break-all;margin-top:12px;min-height:16px}.resolved a{color:var(--lime)}footer{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:18px;margin-top:54px;color:var(--muted);font:10px 'DM Mono',monospace}footer a{color:var(--lime);text-decoration:none}
++@media(max-width:800px){.shell{padding:20px}.hero{padding:60px 0 45px}.workspace{grid-template-columns:1fr}.controls,.player{min-height:auto}.player-head{align-items:stretch;flex-direction:column}.player-status{justify-content:space-between}footer{gap:12px;flex-wrap:wrap}}
+diff --git a/src/autoflix_api/static/app.js b/src/autoflix_api/static/app.js
+index 6a7f70f..4b5201f 100644
+--- a/src/autoflix_api/static/app.js
++++ b/src/autoflix_api/static/app.js
+@@ -1,26 +1,85 @@
+-const $=s=>document.querySelector(s), provider=$('#provider'), query=$('#query'), results=$('#results'), message=$('#message'), video=$('#video'), empty=$('#screen-empty'), playerUrl=$('#player-url');
+-async function api(url, options){const r=await fetch(url,options);const data=await r.json();if(!r.ok){const error=new Error(data.error||'Erreur API');error.status=r.status;throw error}return data}
+-async function loadProviders(){const data=await api('/api/providers');provider.innerHTML=data.providers.map(p=>`<option value="${p.id}">${p.label}</option>`).join('')}
+-function setMessage(text,error=false){message.textContent=text;message.style.color=error?'var(--orange)':'var(--muted)'}
+-function collectPlayers(value, found=[]){
+-  if(!value||typeof value!=='object')return found;
+-  if(!Array.isArray(value)&&value.url&&value.name&&/^https?:\/\//i.test(value.url))found.push({name:value.name,url:value.url});
+-  if(Array.isArray(value))value.forEach(x=>collectPlayers(x,found));
+-  else Object.values(value).forEach(x=>collectPlayers(x,found));
+-  return found;
+-}
+-async function selectResult(item){
+-  playerUrl.value='';$('#now-playing').textContent=item.title||'Source sélectionnée';
+-  if(!item.url)return;
+-  setMessage('Chargement des lecteurs…');
+-  try{
+-    const data=await api(`/api/content?provider=${encodeURIComponent(provider.value)}&url=${encodeURIComponent(item.url)}`);
+-    const content=data.content;
+-    if(content.type==='movie')return renderPlayers(content.players);
+-    if(content.type==='series')return renderSeasons(content);
+-    if(content.type==='season')return renderEpisodes(content.episodes);
+-    setMessage('Type de contenu non reconnu.',true);
+-  }catch(e){setMessage(e.message,true)}
+-}
+-function renderPlayers(players){
+-  if(!players||!players.length){setMessage('Aucun lecteur exploitable trouvé.',true);return}
++const $ = (selector) => document.querySelector(selector);
++const provider = $("#provider"), query = $("#query"), results = $("#results");
++const message = $("#message"), video = $("#video"), embed = $("#embed");
++const empty = $("#screen-empty"), playerUrl = $("#player-url"), quality = $("#quality");
++const launchParams = new URLSearchParams(window.location.search);
++let hlsPlayer = null;
++let selectedReferer = "https://nexoragabon.com/";
++
++async function api(url, options) {
++  const response = await fetch(url, options);
++  const data = await response.json();
++  if (!response.ok) {
++    const error = new Error(data.error || "Erreur API");
++    error.status = response.status;
++    throw error;
++  }
++  return data;
++}
++
++function setMessage(text, error = false) {
++  message.textContent = text;
++  message.style.color = error ? "var(--orange)" : "var(--muted)";
++}
++
++function resultCard(title, detail, onClick) {
++  const card = document.createElement("button");
++  const heading = document.createElement("strong");
++  const description = document.createElement("small");
++  card.type = "button";
++  card.className = "result";
++  heading.textContent = title;
++  description.textContent = detail;
++  card.append(heading, description);
++  card.addEventListener("click", onClick);
++  return card;
++}
++
++function clearPlayback() {
++  if (hlsPlayer) hlsPlayer.destroy();
++  hlsPlayer = null;
++  video.pause();
++  video.removeAttribute("src");
++  video.load();
++  video.classList.remove("active");
++  embed.hidden = true;
++  embed.src = "about:blank";
++  empty.hidden = false;
++  quality.replaceChildren(new Option("AUTO", "-1"));
++  quality.disabled = true;
++}
++
++function resolvedLink(url, label) {
++  const link = document.createElement("a");
++  link.href = url;
++  link.target = "_blank";
++  link.rel = "noopener noreferrer";
++  link.textContent = "ouvrir dans un nouvel onglet ↗";
++  $("#resolved").replaceChildren(document.createTextNode(`${label} : `), link);
++}
++
++async function loadProviders() {
++  const data = await api("/api/providers");
++  provider.replaceChildren(...data.providers.map((entry) => new Option(entry.label, entry.id)));
++}
++
++async function selectResult(item) {
++  playerUrl.value = "";
++  $("#now-playing").textContent = item.title || "Source sélectionnée";
++  if (!item.url) return;
++  selectedReferer = item.url;
++  setMessage("Chargement des lecteurs…");
++  try {
++    const data = await api(`/api/content?provider=${encodeURIComponent(provider.value)}&url=${encodeURIComponent(item.url)}`);
++    const content = data.content;
++    selectedReferer = content?.url || item.url;
++    if (content.type === "movie") return renderPlayers(content.players);
++    if (content.type === "series") return renderSeasons(content);
++    if (content.type === "season") return renderEpisodes(content.episodes);
++    setMessage("Type de contenu non reconnu.", true);
++  } catch (error) { setMessage(error.message, true); }
++}
++
++function renderPlayers(players) {
++  results.replaceChildren();
++  if (!players?.length) return setMessage("Aucun lecteur exploitable trouvé.", true);
+@@ -28,3 +87,10 @@ function renderPlayers(players){
+-  results.innerHTML=players.map((p,i)=>`<div class="result player-choice" data-i="${i}"><strong>${p.name}</strong><small>${new URL(p.url).hostname} · sélectionner cette source ↗</small></div>`).join('');
+-  results.querySelectorAll('.player-choice').forEach((el,i)=>el.onclick=()=>{playerUrl.value=players[i].url;$('#format').textContent='READY';setMessage(`Source « ${players[i].name} » sélectionnée. Cliquez sur RÉSOUDRE.`)});
+-  playerUrl.value=players[0].url;
++  players.forEach((entry) => {
++    let hostname = "source externe";
++    try { hostname = new URL(entry.url).hostname; } catch { /* invalid URLs are rejected by the API */ }
++    results.append(resultCard(entry.name, `${hostname} · sélectionner ↗`, () => {
++      playerUrl.value = entry.url;
++      $("#format").textContent = "READY";
++      setMessage(`Source « ${entry.name} » sélectionnée. Cliquez sur RÉSOUDRE.`);
++    }));
++  });
++  playerUrl.value = players[0].url;
+@@ -32,2 +98,5 @@ function renderPlayers(players){
+-function renderSeasons(content){
+-  const seasons=content.seasons||[];if(!seasons.length){setMessage('Aucune saison trouvée.',true);return}
++
++function renderSeasons(content) {
++  const seasons = content.seasons || [];
++  results.replaceChildren();
++  if (!seasons.length) return setMessage("Aucune saison trouvée.", true);
+@@ -35,13 +104,24 @@ function renderSeasons(content){
+-  results.innerHTML=seasons.map((s,i)=>`<div class="result season-choice" data-i="${i}"><strong>${s.title||`Saison ${i+1}`}</strong><small>${Object.values(s.episodes||{}).flat().length||'Charger'} épisode(s) · ouvrir ↗</small></div>`).join('');
+-  results.querySelectorAll('.season-choice').forEach((el,i)=>el.onclick=()=>openSeason(seasons[i]));
+-}
+-async function openSeason(season){
+-  try{
+-    let data=season;
+-    if(!Object.keys(season.episodes||{}).length){setMessage('Chargement des épisodes…');data=(await api(`/api/season?provider=${encodeURIComponent(provider.value)}&url=${encodeURIComponent(season.url)}`)).season}
+-    $('#now-playing').textContent=`${$('#now-playing').textContent} · ${data.title}`;renderEpisodes(data.episodes);
+-  }catch(e){setMessage(e.message,true)}
+-}
+-function renderEpisodes(byLanguage){
+-  const entries=Object.entries(byLanguage||{});const all=entries.flatMap(([language,items])=>items.map(item=>({...item,language})));
+-  if(!all.length){setMessage('Aucun épisode trouvé.',true);return}
++  seasons.forEach((season, index) => {
++    const count = Object.values(season.episodes || {}).flat().length || "Charger";
++    results.append(resultCard(season.title || `Saison ${index + 1}`, `${count} épisode(s) · ouvrir ↗`, () => openSeason(season)));
++  });
++}
++
++async function openSeason(season) {
++  try {
++    let data = season;
++    if (!Object.keys(season.episodes || {}).length) {
++      setMessage("Chargement des épisodes…");
++      data = (await api(`/api/season?provider=${encodeURIComponent(provider.value)}&url=${encodeURIComponent(season.url)}`)).season;
++    }
++    selectedReferer = data.url || selectedReferer;
++    $("#now-playing").textContent = data.title || "Saison";
++    renderEpisodes(data.episodes);
++  } catch (error) { setMessage(error.message, true); }
++}
++
++function renderEpisodes(byLanguage) {
++  const all = Object.entries(byLanguage || {})
++    .flatMap(([language, items]) => items.map((item) => ({ ...item, language })));
++  results.replaceChildren();
++  if (!all.length) return setMessage("Aucun épisode trouvé.", true);
+@@ -49,2 +129,82 @@ function renderEpisodes(byLanguage){
+-  results.innerHTML=all.map((e,i)=>`<div class="result episode-choice" data-i="${i}"><strong>${e.title}</strong><small>${e.language.toUpperCase()} · ${e.players?.length||0} lecteur(s) · ouvrir ↗</small></div>`).join('');
+-  results.querySelectorAll('.episode-choice').forEach((el,i)=>el.onclick=()=>{ $('#now-playing').textContent=all[i].title; renderPlayers(all[i].players) });
++  all.forEach((episode) => results.append(resultCard(
++    episode.title,
++    `${episode.language.toUpperCase()} · ${episode.players?.length || 0} lecteur(s) · ouvrir ↗`,
++    () => { $("#now-playing").textContent = episode.title; renderPlayers(episode.players); }
++  )));
++}
++
++function populateHlsQualities(player) {
++  const levels = Array.isArray(player.levels) ? player.levels : [];
++  const options = [new Option("AUTO", "-1")];
++  levels.map((level, index) => ({ index, height: Number(level.height || 0), bitrate: Number(level.bitrate || 0) }))
++    .sort((left, right) => left.height - right.height || left.bitrate - right.bitrate)
++    .forEach((level) => options.push(new Option(
++      level.height ? `${level.height}p` : `${Math.round(level.bitrate / 1000)} kb/s`,
++      String(level.index)
++    )));
++  quality.replaceChildren(...options);
++  quality.disabled = levels.length === 0;
++}
++
++function playResolvedSource(data, originalUrl) {
++  clearPlayback();
++  const kind = String(data.kind || "embed").toLowerCase();
++  const stream = data.stream_url || data.embed_url || originalUrl;
++  $("#format").textContent = kind.toUpperCase();
++  if (!data.resolved || kind === "embed") {
++    embed.src = data.embed_url || originalUrl;
++    embed.hidden = false;
++    empty.hidden = true;
++    resolvedLink(embed.src, "Lecteur externe");
++    setMessage("Lecteur externe chargé. Cette source n'expose pas de flux vidéo direct.");
++    return;
++  }
++  empty.hidden = true;
++  video.classList.add("active");
++  resolvedLink(stream, "Flux vérifié");
++  if (kind === "hls" && window.Hls?.isSupported?.()) {
++    hlsPlayer = new window.Hls({ enableWorker: true, capLevelToPlayerSize: true });
++    hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED, () => {
++      populateHlsQualities(hlsPlayer);
++      video.play().catch(() => {});
++      setMessage("Manifest HLS vérifié et prêt.");
++    });
++    hlsPlayer.on(window.Hls.Events.ERROR, (event, details) => {
++      if (details?.fatal) setMessage("Le flux HLS a été interrompu. Essayez une autre source.", true);
++    });
++    hlsPlayer.loadSource(stream);
++    hlsPlayer.attachMedia(video);
++  } else {
++    video.src = stream;
++    video.play().catch(() => {});
++    setMessage(kind === "hls" ? "Flux HLS natif prêt (qualité automatique)." : "Flux vidéo vérifié et prêt.");
++  }
++}
++
++$("#search").addEventListener("click", async () => {
++  const value = query.value.trim();
++  if (value.length < 2) return setMessage("Entrez au moins 2 caractères.", true);
++  results.replaceChildren();
++  setMessage("Scan en cours…");
++  try {
++    const data = await api(`/api/search?provider=${encodeURIComponent(provider.value)}&q=${encodeURIComponent(value)}`);
++    if (!data.results.length) return setMessage("Aucun résultat.");
++    setMessage(`${data.results.length} résultat(s) trouvé(s).`);
++    data.results.forEach((item) => results.append(resultCard(
++      item.title || "Sans titre",
++      `${(item.genres || []).join(" · ") || "SOURCE"}${item.url ? " ↗" : ""}`,
++      () => selectResult(item)
++    )));
++  } catch (error) { setMessage(error.message, true); }
++});
++
++query.addEventListener("keydown", (event) => {
++  if (event.key === "Enter") $("#search").click();
++});
++
++function runDeepLinkSearch(data) {
++  const title = String(data?.query || "").trim();
++  if (!title) return;
++  if (data.provider) provider.value = data.provider;
++  query.value = title;
++  $("#search").click();
+@@ -52,4 +212,44 @@ function renderEpisodes(byLanguage){
+-$('#search').onclick=async()=>{const q=query.value.trim();if(q.length<2)return setMessage('Entrez au moins 2 caractères.',true);results.innerHTML='';setMessage('Scan en cours…');try{const data=await api(`/api/search?provider=${encodeURIComponent(provider.value)}&q=${encodeURIComponent(q)}`);if(!data.results.length){setMessage('Aucun résultat.');return}setMessage(`${data.results.length} résultat(s) trouvé(s).`);results.innerHTML=data.results.map((x,i)=>`<div class="result" data-i="${i}"><strong>${x.title||'Sans titre'}</strong><small>${(x.genres||[]).join(' · ')||'SOURCE'} ${x.url?'↗':''}</small></div>`).join('');results.querySelectorAll('.result').forEach((el,i)=>el.onclick=()=>selectResult(data.results[i]))}catch(e){setMessage(e.message,true)}};
+-query.onkeydown=e=>{if(e.key==='Enter')$('#search').click()};
+-$('#resolve').onclick=async()=>{const url=playerUrl.value.trim();const button=$('#resolve');if(!url)return setMessage('Sélectionnez d’abord un vrai lecteur.',true);button.disabled=true;button.textContent='RÉSOLUTION…';setMessage('Extraction du flux… cela peut prendre quelques secondes.');$('#format').textContent='FETCHING';try{const data=await api('/api/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({player_url:url,referer:'https://french-stream.one/'})});const stream=data.stream_url;$('#format').textContent=(data.kind||'stream').toUpperCase();$('#resolved').innerHTML=`Flux résolu : <a href="${stream}" target="_blank" rel="noreferrer">ouvrir dans un nouvel onglet ↗</a>`;empty.style.display='none';video.classList.add('active');if(window.Hls&&Hls.isSupported()&&/\.m3u8/i.test(stream)){const hls=new Hls();hls.loadSource(stream);hls.attachMedia(video);hls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>{}))}else{video.src=stream;video.play().catch(()=>{})}setMessage('Flux prêt.')}catch(e){$('#format').textContent='ERROR';const detail=e.status===404?'Ce lecteur ne fournit plus de flux compatible. Essayez une autre source.':e.status===502?'Le lecteur tiers répond lentement ou bloque la résolution. Attendez puis essayez une autre source.':e.message;setMessage(detail,true);$('#resolved').textContent=''}finally{button.disabled=false;button.textContent='RÉSOUDRE'}};
+-loadProviders().catch(e=>setMessage(e.message,true));
++
++window.addEventListener("message", (event) => {
++  const allowed = event.origin === window.location.origin
++    || /^https:\/\/(?:www\.)?nexoragabon\.com$/i.test(event.origin);
++  if (allowed && event.data?.type === "content-nexora-search") runDeepLinkSearch(event.data);
++});
++
++quality.addEventListener("change", () => {
++  if (!hlsPlayer) return;
++  const level = Number(quality.value);
++  hlsPlayer.currentLevel = level;
++  hlsPlayer.loadLevel = level;
++});
++
++$("#resolve").addEventListener("click", async () => {
++  const url = playerUrl.value.trim();
++  const button = $("#resolve");
++  if (!url) return setMessage("Sélectionnez d'abord un vrai lecteur.", true);
++  button.disabled = true;
++  button.textContent = "RÉSOLUTION…";
++  setMessage("Extraction et vérification du flux…");
++  $("#format").textContent = "FETCHING";
++  try {
++    const data = await api("/api/resolve", {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ player_url: url, referer: selectedReferer })
++    });
++    playResolvedSource(data, url);
++  } catch (error) {
++    clearPlayback();
++    $("#format").textContent = "ERROR";
++    setMessage(error.message || "Ce lecteur est momentanément indisponible.", true);
++    $("#resolved").replaceChildren();
++  } finally {
++    button.disabled = false;
++    button.textContent = "RÉSOUDRE";
++  }
++});
++
++loadProviders().then(() => runDeepLinkSearch({
++  provider: launchParams.get("provider") || "french-stream",
++  query: launchParams.get("q") || launchParams.get("title") || ""
++})).catch((error) => setMessage(error.message, true));
+diff --git a/src/autoflix_api/templates/index.html b/src/autoflix_api/templates/index.html
+index cc145ab..75e7162 100644
+--- a/src/autoflix_api/templates/index.html
++++ b/src/autoflix_api/templates/index.html
+@@ -15 +15 @@
+-      <div class="player card"><div class="player-head"><div><div class="section-label">02 — PLAYBACK MONITOR</div><h2 id="now-playing">Aucun signal sélectionné</h2></div><span id="format" class="pill">IDLE</span></div><div class="screen"><video id="video" controls playsinline></video><div id="screen-empty" class="screen-empty"><span class="crosshair">＋</span><strong>NO SIGNAL</strong><small>Sélectionnez une source puis résolvez un lecteur</small></div></div><div class="source-row"><input id="player-url" placeholder="URL du lecteur (https://…)" spellcheck="false"><button id="resolve">RÉSOUDRE</button></div><div id="resolved" class="resolved"></div></div>
++      <div class="player card"><div class="player-head"><div><div class="section-label">02 — PLAYBACK MONITOR</div><h2 id="now-playing">Aucun signal sélectionné</h2></div><div class="player-status"><span id="format" class="pill">IDLE</span><label class="quality-control" for="quality">QUALITÉ<select id="quality" disabled><option value="-1">AUTO</option></select></label></div></div><div class="screen"><video id="video" controls playsinline></video><iframe id="embed" title="Lecteur vidéo externe" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" referrerpolicy="origin" hidden></iframe><div id="screen-empty" class="screen-empty"><span class="crosshair">＋</span><strong>NO SIGNAL</strong><small>Sélectionnez une source puis résolvez un lecteur</small></div></div><div class="source-row"><input id="player-url" placeholder="URL du lecteur (https://…)" spellcheck="false"><button id="resolve">RÉSOUDRE</button></div><div id="resolved" class="resolved" aria-live="polite"></div></div>
+diff --git a/src/autoflix_cli/config_loader.py b/src/autoflix_cli/config_loader.py
+index 452dbd6..981239f 100644
+--- a/src/autoflix_cli/config_loader.py
++++ b/src/autoflix_cli/config_loader.py
+@@ -1,0 +2 @@ import json
++import os
+@@ -28,0 +30,4 @@ def load_remote_jsonc(url: str, default: dict) -> dict:
++    enabled = os.getenv("AUTOFLIX_REMOTE_CONFIG_ENABLED", "1").strip().lower()
++    if enabled in {"0", "false", "no", "off"}:
++        return default
++
+@@ -47,2 +51,0 @@ def load_local_jsonc(file_path: str, default: dict = None) -> dict:
+-    import os
+-
 diff --git a/src/autoflix_cli/scraping/french_stream.py b/src/autoflix_cli/scraping/french_stream.py
 index 164bb58..6aa1fe6 100644
 --- a/src/autoflix_cli/scraping/french_stream.py
@@ -121,3 +552,213 @@ index 164bb58..6aa1fe6 100644
 @@ -168 +171 @@ def get_content(url: str):
 -    response = scraper.get(url)
 +    response = scraper.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+diff --git a/src/autoflix_cli/scraping/player.py b/src/autoflix_cli/scraping/player.py
+index 9d9c71f..057c69f 100644
+--- a/src/autoflix_cli/scraping/player.py
++++ b/src/autoflix_cli/scraping/player.py
+@@ -8,0 +9 @@ import re, base64
++import os
+@@ -15,0 +17 @@ scraper = requests.Session(curl_options=DNS_OPTIONS)
++REQUEST_TIMEOUT_SECONDS = max(3, int(os.getenv("AUTOFLIX_PLAYER_TIMEOUT_SECONDS", "12")))
+@@ -37,3 +38,0 @@ kakaflix_players = load_remote_jsonc(
+-actual_player_config = None
+-
+-
+@@ -59 +58 @@ def extract_hls_url(unpacked_code):
+-def get_hls_link_default(url: str, headers: dict) -> str:
++def get_hls_link_default(url: str, headers: dict, config: dict | None = None) -> str:
+@@ -63,4 +62,3 @@ def get_hls_link_default(url: str, headers: dict) -> str:
+-    global actual_player_config
+-
+-    if actual_player_config.get("m3u8-extractor"):
+-        if actual_player_config.get("m3u8-extractor").get("no-header"):
++    config = config or {}
++    if config.get("m3u8-extractor"):
++        if config.get("m3u8-extractor").get("no-header"):
+@@ -69 +67,6 @@ def get_hls_link_default(url: str, headers: dict) -> str:
+-    response = scraper.get(url, headers=headers, impersonate="chrome")
++    response = scraper.get(
++        url,
++        headers=headers,
++        impersonate="chrome",
++        timeout=REQUEST_TIMEOUT_SECONDS,
++    )
+@@ -115 +118,6 @@ def get_hls_link_embed4me(embed_url: str) -> str:
+-    r = scraper.get(api_url, headers=headers, impersonate="chrome", timeout=10)
++    r = scraper.get(
++        api_url,
++        headers=headers,
++        impersonate="chrome",
++        timeout=REQUEST_TIMEOUT_SECONDS,
++    )
+@@ -143,0 +152 @@ def get_hls_link_uqload(url: str, headers: dict) -> str:
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -162 +171 @@ def get_hls_link_sendvid(url: str) -> str:
+-    response = scraper.get(url, impersonate="chrome")
++    response = scraper.get(url, impersonate="chrome", timeout=REQUEST_TIMEOUT_SECONDS)
+@@ -182 +191 @@ def get_hls_link_sibnet(url: str) -> str:
+-    response = scraper.get(url, impersonate="chrome")
++    response = scraper.get(url, impersonate="chrome", timeout=REQUEST_TIMEOUT_SECONDS)
+@@ -281,0 +291 @@ def get_hls_link_filemoon(url: str, headers: dict) -> str:
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -291 +301,2 @@ def get_hls_link_filemoon(url: str, headers: dict) -> str:
+-        return get_hls_link(url, headers)
++        # Avoid recursively selecting the Filemoon parser for the same URL.
++        return get_hls_link_default(url, headers)
+@@ -309,0 +321 @@ def get_hls_link_vidoza(url: str, headers: dict) -> str:
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -334,0 +347 @@ def get_hls_link_kakaflix(url: str, headers: dict) -> str:
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -362,0 +376 @@ def get_hls_link_myvidplay(url: str, headers: dict) -> str:
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -395,0 +410 @@ def get_hls_link_vidmoly(url: str, headers: dict) -> str:
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -425 +440,5 @@ def get_hls_link_veev(url):
+-        html = scraper.get(f"https://veev.to/e/{media_id}", impersonate="chrome").text
++        html = scraper.get(
++            f"https://veev.to/e/{media_id}",
++            impersonate="chrome",
++            timeout=REQUEST_TIMEOUT_SECONDS,
++        ).text
+@@ -491 +510,5 @@ def get_hls_link_veev(url):
+-            resp = scraper.get(dl_url, impersonate="chrome").json()
++            resp = scraper.get(
++                dl_url,
++                impersonate="chrome",
++                timeout=REQUEST_TIMEOUT_SECONDS,
++            ).json()
+@@ -531 +554 @@ def get_hls_link_montmyoboky(url, headers):
+-    }, headers=headers)
++    }, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+@@ -536 +559,5 @@ def get_hls_link_montmyoboky(url, headers):
+-    response_player = scraper.get(f'{arkanime.website_origin}/api/source/resolve?token={episode_data["token"]}', headers=headers)
++    response_player = scraper.get(
++        f'{arkanime.website_origin}/api/source/resolve?token={episode_data["token"]}',
++        headers=headers,
++        timeout=REQUEST_TIMEOUT_SECONDS,
++    )
+@@ -545 +572 @@ def get_hls_link_montmyoboky(url, headers):
+-def get_hls_link(url: str, headers: dict = {}, return_subs: bool = False) -> str | tuple[str | None, str | None] | None:
++def get_hls_link(url: str, headers: dict | None = None, return_subs: bool = False) -> str | tuple[str | None, str | None] | None:
+@@ -558,3 +585,2 @@ def get_hls_link(url: str, headers: dict = {}, return_subs: bool = False) -> str
+-    global actual_player_config
+-
+-    # Find matching player and parse accordingly
++    headers = dict(headers or {})
++    # Find matching player and parse accordingly.
+@@ -563 +588,0 @@ def get_hls_link(url: str, headers: dict = {}, return_subs: bool = False) -> str
+-            actual_player_config = config
+@@ -570 +595 @@ def get_hls_link(url: str, headers: dict = {}, return_subs: bool = False) -> str
+-                stream_url = get_hls_link_default(url, headers)
++                stream_url = get_hls_link_default(url, headers, config)
+@@ -600 +624,0 @@ def get_hls_link(url: str, headers: dict = {}, return_subs: bool = False) -> str
+-    actual_player_config = None
+@@ -605,0 +630,67 @@ def get_hls_link(url: str, headers: dict = {}, return_subs: bool = False) -> str
++def supported_host(url: str) -> bool:
++    """Only let the resolver contact a hostname declared in the player registry."""
++    from urllib.parse import urlparse
++
++    hostname = (urlparse(url).hostname or "").lower()
++    if not hostname:
++        return False
++    labels = set(hostname.split("."))
++    for player_name in players:
++        token = player_name.lower().strip(".")
++        if "." in token and (hostname == token or hostname.endswith("." + token)):
++            return True
++        if token in labels:
++            return True
++    return False
++
++
++def probe_stream(url: str, headers: dict | None = None) -> dict:
++    """Verify an extracted media URL without downloading the media body."""
++    from urllib.parse import urlparse
++    import m3u8
++
++    normalized_headers = dict(headers or {})
++    normalized_headers.setdefault("Accept", "application/vnd.apple.mpegurl, video/*;q=0.9, */*;q=0.5")
++    response = scraper.get(
++        url,
++        headers=normalized_headers,
++        impersonate="chrome",
++        timeout=REQUEST_TIMEOUT_SECONDS,
++        stream=True,
++    )
++    try:
++        response.raise_for_status()
++        content_type = str(response.headers.get("content-type", "")).lower()
++        path = urlparse(url).path.lower()
++        looks_hls = ".m3u8" in path or "mpegurl" in content_type
++        result = {
++            "ok": True,
++            "kind": "hls" if looks_hls else "video",
++            "content_type": content_type,
++            "qualities": [],
++        }
++        if looks_hls:
++            playlist_text = response.text
++            if not playlist_text.lstrip().startswith("#EXTM3U"):
++                raise ValueError("La source extraite ne renvoie pas un manifeste HLS")
++            playlist = m3u8.loads(playlist_text, uri=url)
++            qualities = []
++            for variant in playlist.playlists:
++                resolution = variant.stream_info.resolution
++                if not resolution:
++                    continue
++                width, height = resolution
++                qualities.append({
++                    "width": int(width),
++                    "height": int(height),
++                    "bandwidth": int(variant.stream_info.bandwidth or 0),
++                })
++            result["qualities"] = sorted(
++                {item["height"]: item for item in qualities}.values(),
++                key=lambda item: item["height"],
++            )
++        return result
++    finally:
++        response.close()
++
++
+diff --git a/tests/test_api_contract.py b/tests/test_api_contract.py
+index bdd0e39..dec023e 100644
+--- a/tests/test_api_contract.py
++++ b/tests/test_api_contract.py
+@@ -152 +152 @@ class ContentContractTests(unittest.TestCase):
+-                "player_url": "https://hoster.test/embed/episode-1",
++                "player_url": "https://vidzy.test/embed/episode-1",
+@@ -160 +160 @@ class ContentContractTests(unittest.TestCase):
+-        self.assertEqual("https://hoster.test/embed/episode-1", body["stream_url"])
++        self.assertEqual("https://vidzy.test/embed/episode-1", body["stream_url"])
+@@ -162,0 +163,30 @@ class ContentContractTests(unittest.TestCase):
++    @patch("autoflix_api.app.player.probe_stream")
++    @patch("autoflix_api.app.player.get_hls_link")
++    def test_resolved_player_is_probed_and_exposes_real_qualities(self, resolver_mock, probe_mock):
++        resolver_mock.return_value = ("https://cdn.test/master.m3u8", None)
++        probe_mock.return_value = {
++            "ok": True,
++            "kind": "hls",
++            "content_type": "application/vnd.apple.mpegurl",
++            "qualities": [{"width": 1536, "height": 864, "bandwidth": 1800000}],
++        }
++
++        response = self.client.post("/api/resolve", json={
++            "player_url": "https://vidzy.test/embed/episode-1",
++            "referer": "https://french-stream.one/episode-1",
++        })
++
++        self.assertEqual(200, response.status_code)
++        body = response.get_json()
++        self.assertTrue(body["resolved"])
++        self.assertEqual("hls", body["kind"])
++        self.assertEqual(864, body["available_qualities"][0]["height"])
++        probe_mock.assert_called_once()
++
++    def test_resolver_rejects_local_network_urls(self):
++        response = self.client.post("/api/resolve", json={
++            "player_url": "http://127.0.0.1:8080/private",
++        })
++
++        self.assertEqual(400, response.status_code)
++

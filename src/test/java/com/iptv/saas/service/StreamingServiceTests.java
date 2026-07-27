@@ -819,4 +819,56 @@ class StreamingServiceTests {
         assertEquals(replacement, moved.iptvAccount);
         verify(accounts).save(failed);
     }
+
+    @Test
+    void opensAProxiedContentNexoraSessionWithoutAnIptvAccount() {
+        UserSessionRepository sessions = mock(UserSessionRepository.class);
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        SubscriptionRepository subscriptions = mock(SubscriptionRepository.class);
+        OrganizationService organizations = mock(OrganizationService.class);
+        IptvCatalogService catalog = mock(IptvCatalogService.class);
+        CommunityAddonService addons = mock(CommunityAddonService.class);
+        SubscriptionAccessService access = mock(SubscriptionAccessService.class);
+        TelegramAlertService telegram = mock(TelegramAlertService.class);
+        AuditService audit = mock(AuditService.class);
+        StreamingService service = new StreamingService(
+                sessions, accounts, subscriptions, organizations, catalog, addons, access, telegram, audit, 90
+        );
+        Organization organization = new Organization();
+        organization.status = Enums.OrganizationStatus.ACTIVE;
+        UserEntity user = new UserEntity();
+        user.id = 7L;
+        Plan plan = new Plan();
+        plan.maxConcurrentStreams = 2;
+        Subscription subscription = new Subscription();
+        subscription.plan = plan;
+        subscription.status = Enums.SubscriptionStatus.ACTIVE;
+        subscription.currentPeriodEnd = Instant.now().plusSeconds(3600);
+
+        when(organizations.currentOrganization(user)).thenReturn(organization);
+        when(subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(organization))
+                .thenReturn(Optional.of(subscription));
+        when(sessions.findByOrganizationAndStatusAndLastHeartbeatAtBefore(
+                eq(organization),
+                eq(Enums.SessionStatus.ACTIVE),
+                any(Instant.class)
+        )).thenReturn(List.of());
+        when(sessions.findByUserAndStatus(user, Enums.SessionStatus.ACTIVE)).thenReturn(List.of());
+        when(sessions.save(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserSession opened = service.openContentNexora(
+                user,
+                "series",
+                "episode-1",
+                "https://cdn.example/master.m3u8",
+                "hls",
+                Map.of("Referer", "https://french-stream.example/title")
+        );
+
+        assertEquals("https://cdn.example/master.m3u8", opened.streamUrl);
+        assertTrue(opened.itemId.startsWith("external~content-nexora~hls~"));
+        assertEquals("series", opened.contentType);
+        assertEquals(null, opened.iptvAccount);
+        assertTrue(opened.streamHeaders.contains("Referer="));
+    }
 }

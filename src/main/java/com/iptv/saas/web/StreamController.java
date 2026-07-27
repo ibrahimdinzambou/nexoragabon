@@ -4,6 +4,7 @@ import com.iptv.saas.security.SecurityUtils;
 import com.iptv.saas.domain.UserSession;
 import com.iptv.saas.service.CommunityAddonService;
 import com.iptv.saas.service.ConsumetContentService;
+import com.iptv.saas.service.ContentNexoraPlaybackService;
 import com.iptv.saas.service.EpornerContentService;
 import com.iptv.saas.service.StreamRelayService;
 import com.iptv.saas.service.StreamRequestHeaders;
@@ -53,6 +54,7 @@ public class StreamController {
     private final CommunityAddonService addons;
     private final ConsumetContentService consumet;
     private final EpornerContentService eporner;
+    private final ContentNexoraPlaybackService contentNexora;
 
     public StreamController(
             StreamingService streams,
@@ -60,7 +62,7 @@ public class StreamController {
             VlcRemuxService remux,
             CommunityAddonService addons
     ) {
-        this(streams, relay, remux, addons, null, null);
+        this(streams, relay, remux, addons, null, null, null);
     }
 
     public StreamController(
@@ -70,7 +72,18 @@ public class StreamController {
             CommunityAddonService addons,
             ConsumetContentService consumet
     ) {
-        this(streams, relay, remux, addons, consumet, null);
+        this(streams, relay, remux, addons, consumet, null, null);
+    }
+
+    public StreamController(
+            StreamingService streams,
+            StreamRelayService relay,
+            VlcRemuxService remux,
+            CommunityAddonService addons,
+            ConsumetContentService consumet,
+            EpornerContentService eporner
+    ) {
+        this(streams, relay, remux, addons, consumet, eporner, null);
     }
 
     @Autowired
@@ -80,7 +93,8 @@ public class StreamController {
             VlcRemuxService remux,
             CommunityAddonService addons,
             ConsumetContentService consumet,
-            EpornerContentService eporner
+            EpornerContentService eporner,
+            ContentNexoraPlaybackService contentNexora
     ) {
         this.streams = streams;
         this.relay = relay;
@@ -88,6 +102,7 @@ public class StreamController {
         this.addons = addons;
         this.consumet = consumet;
         this.eporner = eporner;
+        this.contentNexora = contentNexora;
     }
 
     @PostMapping("/api/stream/open")
@@ -356,6 +371,21 @@ public class StreamController {
             response.header(HttpHeaders.ACCEPT_RANGES, acceptRanges);
         }
         return response.body(body);
+    }
+
+    @PostMapping("/api/stream/content-nexora")
+    public Object openContentNexora(@Valid @RequestBody ContentNexoraOpenRequest request) {
+        if (contentNexora == null) {
+            throw ApiException.serviceUnavailable("Lecture Content-Nexora indisponible");
+        }
+        UserSession session = contentNexora.open(
+                SecurityUtils.currentUser(),
+                request.type(),
+                request.itemId(),
+                request.playerUrl(),
+                request.referer()
+        );
+        return Responses.ok(sessionPayload(session));
     }
 
     private ResponseEntity<StreamingResponseBody> rewrittenHlsResponse(
@@ -638,7 +668,8 @@ public class StreamController {
         if (embed) {
             return "embed";
         }
-        if (looksLikeHlsPlaylistUrl(session.streamUrl)) {
+        if (looksLikeHlsPlaylistUrl(session.streamUrl)
+                || session.itemId != null && session.itemId.startsWith("external~content-nexora~hls~")) {
             return "hls";
         }
         if ("live".equals(session.contentType)
@@ -689,6 +720,14 @@ public class StreamController {
     }
 
     public record OpenRequest(String type, @NotBlank @Size(max = 8192) String itemId, String quality) {
+    }
+
+    public record ContentNexoraOpenRequest(
+            String type,
+            @NotBlank @Size(max = 8192) String itemId,
+            @NotBlank @Size(max = 8192) String playerUrl,
+            @NotBlank @Size(max = 8192) String referer
+    ) {
     }
 
     public record QualityRequest(String quality) {

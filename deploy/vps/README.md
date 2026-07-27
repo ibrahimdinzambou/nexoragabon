@@ -68,11 +68,13 @@ git clone https://github.com/ibrahimdinzambou/Content-Nexora.git /opt/nexora/con
 cd /opt/nexora/content-nexora
 python3 -m venv .venv
 . .venv/bin/activate
-for patch in content-nexora-deep-link.patch content-nexora-resilience.patch; do
-  git apply --check --unidiff-zero "/opt/nexora/app/deploy/vps/$patch" \
-    && git apply --unidiff-zero "/opt/nexora/app/deploy/vps/$patch" \
-    || true
-done
+patch=/opt/nexora/app/deploy/vps/content-nexora-resilience.patch
+if git apply --unidiff-zero --reverse --check "$patch" >/dev/null 2>&1; then
+  echo "Correctifs Content-Nexora déjà appliqués"
+else
+  git apply --unidiff-zero --check "$patch"
+  git apply --unidiff-zero "$patch"
+fi
 pip install -e . gunicorn
 
 # Source du catalogue anime
@@ -157,19 +159,27 @@ curl http://127.0.0.1:5001/health
 
 ## 5. Installer Nginx
 
-Modifier `deploy/vps/nginx/nexora.conf` si tes domaines changent, puis:
+Le fichier Nginx versionné contient directement les vhosts HTTPS afin qu'une
+mise à jour ne supprime plus le certificat de `content.nexoragabon.com`.
+Obtenir d'abord le certificat (première installation uniquement):
 
 ```bash
+sudo systemctl stop nginx
+sudo certbot certonly --standalone \
+  --pre-hook "systemctl stop nginx" \
+  --post-hook "systemctl start nginx" \
+  -d nexoragabon.com -d www.nexoragabon.com \
+  -d api.nexoragabon.com -d content.nexoragabon.com
 sudo cp /opt/nexora/app/deploy/vps/nginx/nexora.conf /etc/nginx/sites-available/nexora.conf
 sudo ln -sfn /etc/nginx/sites-available/nexora.conf /etc/nginx/sites-enabled/nexora.conf
 sudo nginx -t
-sudo systemctl reload nginx
+sudo systemctl restart nginx
 ```
 
-Activer HTTPS:
+Tester le renouvellement HTTPS:
 
 ```bash
-sudo certbot --nginx -d nexoragabon.com -d www.nexoragabon.com -d api.nexoragabon.com -d content.nexoragabon.com
+sudo certbot renew --dry-run
 ```
 
 ## 6. Connecter le front
@@ -214,14 +224,20 @@ cd /opt/nexora/content-nexora
 git stash push -m "nexora-patches-before-update-$(date +%Y%m%d-%H%M%S)" -- \
   src/autoflix_api/app.py \
   src/autoflix_api/static/app.js \
-  src/autoflix_cli/scraping/french_stream.py || true
+  src/autoflix_api/static/app.css \
+  src/autoflix_api/templates/index.html \
+  src/autoflix_cli/config_loader.py \
+  src/autoflix_cli/scraping/french_stream.py \
+  src/autoflix_cli/scraping/player.py || true
 git pull --ff-only
 . .venv/bin/activate
-for patch in content-nexora-deep-link.patch content-nexora-resilience.patch; do
-  git apply --check --unidiff-zero "/opt/nexora/app/deploy/vps/$patch" \
-    && git apply --unidiff-zero "/opt/nexora/app/deploy/vps/$patch" \
-    || true
-done
+patch=/opt/nexora/app/deploy/vps/content-nexora-resilience.patch
+if git apply --unidiff-zero --reverse --check "$patch" >/dev/null 2>&1; then
+  echo "Correctifs Content-Nexora déjà appliqués"
+else
+  git apply --unidiff-zero --check "$patch"
+  git apply --unidiff-zero "$patch"
+fi
 pip install -e . gunicorn
 sudo chown -R nexora:nexora /opt/nexora
 sudo cp /opt/nexora/app/deploy/vps/systemd/content-nexora.service /etc/systemd/system/

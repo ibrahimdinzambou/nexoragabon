@@ -35,6 +35,7 @@ const CONTENT_NEXORA_SEARCH_CACHE_TTL_MS = 30 * 1000;
 const EXTERNAL_API_TIMEOUT_MS = 25000;
 const CONTENT_NEXORA_RESOLVE_TIMEOUT_MS = 18000;
 const CONTENT_NEXORA_SOURCE_CONCURRENCY = 2;
+const CONTENT_NEXORA_EMBED_FALLBACK_DELAY_MS = 8000;
 const EXTERNAL_API_CACHE_MAX_ENTRIES = 120;
 const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
@@ -5470,13 +5471,9 @@ async function loadSeriesInfo(item) {
     if (isContentNexoraPlayerItem(item) && !tmdbCatalogItem) {
         return contentNexoraSeriesInfo(item);
     }
-    if (contentNexoraApiEnabled() && tmdbCatalogItem) {
-        try {
-            return await contentNexoraSeriesInfo(item);
-        } catch {
-            // Keep the existing TMDB metadata route as a non-destructive fallback.
-        }
-    }
+    // TMDB owns the complete season tree. Content-Nexora is queried only when
+    // an episode is actually played, otherwise a one-season scraper result
+    // would replace and hide the remaining TMDB seasons.
     return api(
         `/catalog/series/${encodeURIComponent(item.catalogId || item.id)}?title=${encodeURIComponent(item.name || "")}`
     );
@@ -5714,6 +5711,8 @@ async function playItem(item, options = {}) {
     state.activeFrenchSourcePayload = null;
     state.activeFrenchSourceIndex = 0;
     renderFrenchSourcePanel(null);
+    resetPlayerQualityOptions();
+    elements.playerQuality.disabled = false;
     const requestedQuality = requestedPlaybackQuality(item, options);
     elements.playerQuality.value = requestedQuality;
     await ensurePlayerContext(item);
@@ -5754,6 +5753,10 @@ async function changePlayerQuality(event) {
     const requestedQuality = event.target.value || "auto";
     const item = state.activePlayerItem;
     const previousQuality = state.activePlaybackQuality || state.profileSettings.quality || "auto";
+    if (item && isContentNexoraPlayerItem(item) && state.activePlaybackMode === "hls") {
+        changeContentNexoraHlsQuality(requestedQuality);
+        return;
+    }
     if (!item || !state.activeSessionToken) {
         saveProfileSettings({ quality: requestedQuality });
         return;
@@ -5810,6 +5813,74 @@ function setPlayerControlsBusy(isBusy) {
     elements.playerSourceList?.querySelectorAll("button").forEach((button) => {
         button.disabled = Boolean(isBusy);
     });
+}
+
+function resetPlayerQualityOptions() {
+    elements.playerQuality?.querySelectorAll("option").forEach((option) => {
+        option.disabled = false;
+    });
+}
+
+function contentNexoraQualityTarget(quality) {
+    return { data: 480, hd: 720, fullhd: 1080 }[quality] || 0;
+}
+
+function contentNexoraHlsLevelForQuality(player, quality) {
+    const levels = Array.isArray(player?.levels) ? player.levels : [];
+    if (quality === "auto") return -1;
+    if (!levels.length) return -1;
+    if (quality === "uhd") {
+        return levels.reduce((best, level, index) => (
+            Number(level?.height || 0) > Number(levels[best]?.height || 0) ? index : best
+        ), 0);
+    }
+    const target = contentNexoraQualityTarget(quality);
+    if (!target) return -1;
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    levels.forEach((level, index) => {
+        const height = Number(level?.height || 0);
+        const distance = Math.abs(height - target);
+        if (height && distance <= target * 0.2 && distance < bestDistance) {
+            bestIndex = index;
+            bestDistance = distance;
+        }
+    });
+    return bestIndex;
+}
+
+function refreshContentNexoraQualityOptions(player) {
+    const levels = Array.isArray(player?.levels) ? player.levels : [];
+    elements.playerQuality?.querySelectorAll("option").forEach((option) => {
+        option.disabled = option.value !== "auto"
+            && contentNexoraHlsLevelForQuality(player, option.value) < 0;
+    });
+    elements.playerQuality.disabled = levels.length === 0;
+}
+
+function changeContentNexoraHlsQuality(requestedQuality) {
+    const player = state.hlsPlayer;
+    if (!player) {
+        elements.playerQuality.value = "auto";
+        state.activePlaybackQuality = "auto";
+        showToast("Ce navigateur gère automatiquement la qualité HLS.");
+        return;
+    }
+    const level = contentNexoraHlsLevelForQuality(player, requestedQuality);
+    if (requestedQuality !== "auto" && level < 0) {
+        elements.playerQuality.value = state.activePlaybackQuality || "auto";
+        showToast(`${qualityLabel(requestedQuality)} n'est pas disponible sur cette source.`);
+        return;
+    }
+    player.currentLevel = level;
+    player.loadLevel = level;
+    player.nextLevel = level;
+    state.activePlaybackQuality = requestedQuality;
+    elements.playerQuality.value = requestedQuality;
+    saveProfileSettings({ quality: requestedQuality });
+    showToast(requestedQuality === "auto"
+        ? "Qualité adaptative activée."
+        : `Lecture en ${qualityLabel(requestedQuality)}.`);
 }
 
 function hasActivePlayback() {
@@ -6010,6 +6081,11 @@ async function playContentNexoraItem(item) {
     state.activeFrenchSourcePayload = null;
     state.activeFrenchSourceIndex = 0;
     state.activeFrenchSourceMediaUrl = "";
+    elements.playerQuality.value = "auto";
+    elements.playerQuality.disabled = true;
+    elements.playerQuality.querySelectorAll("option").forEach((option) => {
+        option.disabled = option.value !== "auto";
+    });
     stopHeartbeat();
     renderFrenchSourcePanel(null);
 
@@ -6084,15 +6160,21 @@ async function playContentNexoraItem(item) {
         if (!sources.length) {
             throw new Error("Content-Nexora n'a fourni aucun flux vidéo lisible pour ce contenu.");
         }
-        state.activeFrenchSourceIndex = 0;
-        state.activeFrenchSourceMediaUrl = sources[0].mediaUrl;
-        await startStreamPlayback(
-            activeItem,
-            sources[0].mediaUrl,
-            sources[0].kind,
-            { visualWatch: true }
-        );
-        elements.playerMessage.textContent = `Lecture via ${sources[0].label}.`;
+        const failures = [];
+        for (let index = 0; index < sources.length; index += 1) {
+            const source = sources[index];
+            state.activeFrenchSourceIndex = index;
+            state.activeFrenchSourceMediaUrl = source.mediaUrl;
+            try {
+                await openContentNexoraSource(activeItem, source, content);
+                elements.playerMessage.textContent = `Lecture via ${source.label}.`;
+                return;
+            } catch (error) {
+                failures.push(error);
+                await stopPlayer();
+            }
+        }
+        throw unavailableSourceError("Aucun flux Content-Nexora n'a pu démarrer.", failures);
     } finally {
         state.playerOpening = false;
         setPlayerControlsBusy(false);
@@ -6457,23 +6539,33 @@ async function resolveContentNexoraSource(source, content, index = 0) {
 
     const safeMediaUrl = contentNexoraClickableSourceUrl(mediaUrl);
     if (!safeMediaUrl) return null;
-    const kind = classifyPlayableUrl(safeMediaUrl, {
+    const kind = resolution?.resolved === false ? "embed" : classifyPlayableUrl(safeMediaUrl, {
         ...raw,
         ...resolution,
         type: resolution?.kind || resolution?.type || raw.type || ""
     });
     if (!["hls", "direct", "embed"].includes(kind)) return null;
 
+    const availableQualities = Array.isArray(resolution?.available_qualities)
+        ? resolution.available_qualities
+        : [];
+    const declaredQuality = contentNexoraSourceQuality(raw);
     return {
         mediaUrl: safeMediaUrl,
         pageUrl,
         label: contentNexoraSourceLabel(raw, pageUrl),
         language: contentNexoraSourceLanguage(raw),
-        quality: contentNexoraSourceQuality(raw),
+        quality: declaredQuality || availableQualities
+            .map((entry) => positiveInteger(entry?.height))
+            .filter(Boolean)
+            .map((height) => `${height}p`)
+            .join(", "),
         kind,
         kindLabel: contentNexoraSourceKindLabel(kind),
         raw,
         resolution,
+        verified: initialKind === "hls" || initialKind === "direct" || resolution?.resolved === true,
+        availableQualities,
         index
     };
 }
@@ -6490,12 +6582,24 @@ async function resolveContentNexoraSources(content, item = state.activePlayerIte
     const sortSources = () => [...unique.values()].sort((left, right) => {
         const leftHoster = { ...left.raw, ...left.resolution, url: left.mediaUrl };
         const rightHoster = { ...right.raw, ...right.resolution, url: right.mediaUrl };
-        return hosterScore(rightHoster) - hosterScore(leftHoster);
+        const sourceRank = (source) => source.verified
+            ? source.kind === "hls" ? 300 : 200
+            : 0;
+        return sourceRank(right) - sourceRank(left)
+            || hosterScore(rightHoster) - hosterScore(leftHoster);
     });
     let cursor = 0;
     let firstSettled = false;
     let settleFirst;
     const firstAvailable = new Promise((resolve) => { settleFirst = resolve; });
+    const embedFallbackTimer = window.setTimeout(() => {
+        if (firstSettled) return;
+        const sources = sortSources();
+        if (sources.some((source) => source.kind === "embed")) {
+            firstSettled = true;
+            settleFirst(sources);
+        }
+    }, CONTENT_NEXORA_EMBED_FALLBACK_DELAY_MS);
     const worker = async () => {
         while (cursor < candidates.length) {
             const candidateIndex = cursor;
@@ -6507,8 +6611,9 @@ async function resolveContentNexoraSources(content, item = state.activePlayerIte
                     unique.set(resolved.mediaUrl, resolved);
                     const sources = sortSources();
                     onUpdate?.(sources);
-                    if (!firstSettled) {
+                    if (!firstSettled && resolved.verified && resolved.kind !== "embed") {
                         firstSettled = true;
+                        window.clearTimeout(embedFallbackTimer);
                         settleFirst(sources);
                     }
                 }
@@ -6521,6 +6626,7 @@ async function resolveContentNexoraSources(content, item = state.activePlayerIte
         { length: Math.min(CONTENT_NEXORA_SOURCE_CONCURRENCY, candidates.length) },
         () => worker()
     )).then(() => {
+        window.clearTimeout(embedFallbackTimer);
         const sources = sortSources();
         if (!firstSettled) {
             firstSettled = true;
@@ -6530,6 +6636,27 @@ async function resolveContentNexoraSources(content, item = state.activePlayerIte
         return sources;
     });
     return options.firstAvailable ? firstAvailable : completion;
+}
+
+async function openContentNexoraSource(item, source, content) {
+    if (source.kind === "embed" || !source.verified) {
+        state.activeSessionToken = null;
+        state.activeCanFailover = false;
+        await startStreamPlayback(item, source.pageUrl || source.mediaUrl, "embed", { visualWatch: false });
+        return;
+    }
+    const playerUrl = source.pageUrl || contentNexoraSourceUrl(source.raw);
+    const stream = await api("/stream/content-nexora", {
+        method: "POST",
+        body: JSON.stringify({
+            type: item.type,
+            itemId: item.id,
+            playerUrl,
+            referer: contentNexoraSourceReferer(content, playerUrl)
+        }),
+        retryTransient: true
+    });
+    await startStreamFromPayload(item, stream, "auto");
 }
 
 function showFrenchSourceLoadingPanel(content) {
@@ -6605,7 +6732,7 @@ async function switchToFrenchSource(index) {
     setPlayerLoading(`Lecture via ${source.label}...`, "Chargement du flux video.");
     try {
         await stopPlayer();
-        await startStreamPlayback(item, source.mediaUrl, source.kind, { visualWatch: true });
+        await openContentNexoraSource(item, source, payload.content);
         elements.playerMessage.textContent = `Lecture via ${source.label}.`;
         return;
     } catch (error) {
@@ -6617,7 +6744,7 @@ async function switchToFrenchSource(index) {
                 state.activeFrenchSourceMediaUrl = freshSource.mediaUrl;
                 renderFrenchSourcePanel(payload.content, payload.sources);
                 await stopPlayer();
-                await startStreamPlayback(item, source.mediaUrl, source.kind, { visualWatch: true });
+                await openContentNexoraSource(item, source, payload.content);
                 elements.playerMessage.textContent = `Lecture via ${source.label}.`;
                 return;
             }
@@ -8507,6 +8634,9 @@ function attachHlsPlayer(player, video, streamUrl, options = {}) {
             reject(error);
         };
         const onParsed = () => {
+            if (isContentNexoraPlayerItem()) {
+                refreshContentNexoraQualityOptions(player);
+            }
             const audioSelected = selectPreferredHlsAudioTrack(player, options.preferredAudioLanguage);
             const subtitlesSelected = selectPreferredHlsSubtitleTrack(player, options.preferredSubtitleLanguage);
             if (!subtitlesSelected && options.enableSubtitles) {
