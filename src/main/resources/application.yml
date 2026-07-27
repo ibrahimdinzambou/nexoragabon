@@ -146,6 +146,11 @@ app:
     timeout-seconds: ${CONSUMET_TIMEOUT_SECONDS:20}
     max-response-bytes: ${CONSUMET_MAX_RESPONSE_BYTES:2097152}
     allowed-stream-hosts: ${CONSUMET_ALLOWED_STREAM_HOSTS:}
+  external-api-proxy:
+    content-base-url: ${CONTENT_NEXORA_INTERNAL_BASE_URL:http://127.0.0.1:8787}
+    anime-base-url: ${ANIME_NEXORA_INTERNAL_BASE_URL:http://127.0.0.1:5001}
+    timeout-seconds: ${EXTERNAL_API_PROXY_TIMEOUT_SECONDS:45}
+    max-response-bytes: ${EXTERNAL_API_PROXY_MAX_RESPONSE_BYTES:8388608}
   eporner:
     enabled: ${EPORNER_ENABLED:true}
     base-url: ${EPORNER_API_BASE_URL:https://www.eporner.com/api/v2}

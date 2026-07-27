@@ -5,7 +5,7 @@ Cette configuration deploie les services suivants sur le meme VPS:
 - `nexora-api`: application Spring Boot, port local `8080`.
 - `nexora-drama`: API Python ReelShort/Drama, port local `5000`.
 - `content-nexora`: API Python et lecteur web Content-Nexora, port local `8787`, expose sous `content.nexoragabon.com`.
-- `nexora-anime`: API Python Anime-Sama, port local `5001`, exposee sous `/anime-api`.
+- `nexora-anime`: API Python Anime-Sama, port local `5001`, relayee par Spring sous `/api/external/anime`.
 
 Nginx expose le site et l'API en HTTPS, puis Spring appelle l'API drama en interne avec:
 
@@ -111,8 +111,10 @@ DRAMA_API_BASE_URL=http://127.0.0.1:5000/api/v1/reelshort
 DRAMA_API_TIMEOUT_SECONDS=20
 CONTENT_NEXORA_API_BASE_URL=https://content.nexoragabon.com
 ANIME_NEXORA_ENABLED=true
-ANIME_NEXORA_BASE_URL=https://api.nexoragabon.com/anime-api
+ANIME_NEXORA_BASE_URL=http://127.0.0.1:5001
 ANIME_SOURCE_MODE=anime-nexora
+ANIME_NEXORA_INTERNAL_BASE_URL=http://127.0.0.1:5001
+CONTENT_NEXORA_INTERNAL_BASE_URL=http://127.0.0.1:8787
 ```
 
 Si tu utilises PostgreSQL:
@@ -182,7 +184,7 @@ Si ton front est sur Netlify/Vercel, ajoute:
 ```html
 <script>
   window.NEXORA_API_BASE_URL = "https://api.nexoragabon.com";
-  window.NEXORA_CONTENT_NEXORA_API_BASE_URL = "https://api.nexoragabon.com/content-api";
+  window.NEXORA_CONTENT_NEXORA_API_BASE_URL = "https://api.nexoragabon.com/api/external/content";
   window.NEXORA_CONTENT_NEXORA_PLAYER_BASE_URL = "https://content.nexoragabon.com";
   window.NEXORA_DRAMA_API_BASE_URL = "https://api.nexoragabon.com/drama-api";
 </script>
@@ -200,6 +202,10 @@ sudo -u nexora git -C /opt/nexora/app fetch origin main
 sudo -u nexora git -C /opt/nexora/app switch main
 sudo -u nexora git -C /opt/nexora/app pull --ff-only origin main
 sudo -u nexora bash -c 'cd /opt/nexora/app && ./mvnw -DskipTests package'
+
+sudo -u nexora git -C /opt/nexora/anime-nexoraAPI pull --ff-only origin main
+sudo -u nexora /opt/nexora/anime-nexoraAPI/.venv/bin/python -m pip install \
+  -e '/opt/nexora/anime-nexoraAPI[api]'
 
 cd /opt/nexora/app/reelshort-api
 . .venv/bin/activate
@@ -219,6 +225,7 @@ done
 pip install -e . gunicorn
 sudo chown -R nexora:nexora /opt/nexora
 sudo cp /opt/nexora/app/deploy/vps/systemd/content-nexora.service /etc/systemd/system/
+sudo cp /opt/nexora/app/deploy/vps/systemd/nexora-anime.service /etc/systemd/system/
 sudo cp /opt/nexora/app/deploy/vps/nginx/nexora.conf /etc/nginx/sites-available/nexora.conf
 sudo systemctl daemon-reload
 sudo nginx -t
@@ -231,5 +238,6 @@ VÃ©rifier ensuite le contrat API et le lecteur:
 
 ```bash
 curl http://127.0.0.1:8787/api/health
-curl "https://api.nexoragabon.com/content-api/search?provider=french-stream&q=breaking+bad"
+curl "http://127.0.0.1:8787/api/search?provider=french-stream&q=breaking+bad"
+curl "http://127.0.0.1:5001/api/v1/catalogues?limit=24"
 ```

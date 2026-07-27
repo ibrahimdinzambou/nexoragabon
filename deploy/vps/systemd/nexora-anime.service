@@ -9,7 +9,9 @@ WorkingDirectory=/opt/nexora/anime-nexoraAPI
 Environment=ANIME_SAMA_SITE_URL=https://anime-sama.to/
 Environment=FLASK_HOST=127.0.0.1
 Environment=PORT=5001
-ExecStart=/opt/nexora/anime-nexoraAPI/.venv/bin/anime-sama-api
+Environment=ANIME_SAMA_CATALOGUE_CACHE_TTL_SECONDS=300
+Environment=ANIME_SAMA_CATALOGUE_CACHE_STALE_TTL_SECONDS=1800
+ExecStart=/opt/nexora/anime-nexoraAPI/.venv/bin/gunicorn --bind 127.0.0.1:5001 --workers 1 --threads 4 --worker-class gthread --timeout 90 --graceful-timeout 10 --access-logfile - --error-logfile - anime_sama_api.api:app
 Restart=on-failure
 RestartSec=5
 User=nexora

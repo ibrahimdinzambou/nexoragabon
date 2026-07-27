@@ -483,6 +483,9 @@ async function animeNexoraApi(path, options = {}) {
         : `${ANIME_NEXORA_API_ROOT}${path.startsWith("/") ? path : `/${path}`}`;
     const headers = new Headers(options.headers || {});
     headers.set("Accept", "application/json");
+    if (state.token) {
+        headers.set("Authorization", `Bearer ${state.token}`);
+    }
     const method = String(options.method || "GET").toUpperCase();
     const load = async () => {
         const response = await fetchWithRetry(url, {
@@ -556,7 +559,7 @@ async function animeNexoraItems(type, query, limit) {
         params.set("q", query);
         params.set("limit", String(enrichmentLimit));
     }
-    else params.set("limit", String(Math.min(100, Math.max(1, limit || 24))));
+    else params.set("limit", String(Math.min(48, Math.max(1, limit || 24))));
     const endpoint = query ? "/search" : "/catalogues";
     const body = await animeNexoraApi(`${endpoint}?${params}`);
     const values = Array.isArray(body.data) ? body.data : [];

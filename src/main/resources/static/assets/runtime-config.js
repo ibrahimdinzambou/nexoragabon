@@ -1,11 +1,12 @@
 (function () {
     const publicApiBase = "https://api.nexoragabon.com";
-    // L'API Content passe par l'hote API principal, dont le certificat couvre
-    // deja api.nexoragabon.com. Le lecteur garde son sous-domaine dedie.
-    const publicContentNexoraApiBase = "https://api.nexoragabon.com/content-api";
+    // Les API Python passent par Spring sur /api/external/*, puis Spring les
+    // joint en loopback. Le navigateur ne depend donc plus des blocs Nginx
+    // /anime-api et /content-api. Le lecteur Content garde son domaine dedie.
+    const publicContentNexoraApiBase = "https://api.nexoragabon.com/api/external/content";
     const publicContentNexoraPlayerBase = "https://content.nexoragabon.com";
     const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";
-    const publicAnimeNexoraApiBase = "https://api.nexoragabon.com/anime-api";
+    const publicAnimeNexoraApiBase = "https://api.nexoragabon.com/api/external/anime";
     const publicSiteUrl = "https://nexoragabon.com";
     const apiHost = "api.nexoragabon.com";
 

@@ -567,7 +567,7 @@ public class ConsumetContentService {
         JsonNode response = fetchJson(animeNexoraEndpoint(
                 query == null || query.isBlank() ? "api/v1/catalogues" : "api/v1/search",
                 query == null || query.isBlank()
-                        ? Map.of("limit", String.valueOf(Math.max(1, Math.min(100, requestedLimit <= 0 ? DEFAULT_PAGE_SIZE : requestedLimit))))
+                        ? Map.of("limit", String.valueOf(Math.max(1, Math.min(48, requestedLimit <= 0 ? DEFAULT_PAGE_SIZE : requestedLimit))))
                         : Map.of("q", query.strip())));
         JsonNode values = response.path("data");
         if (!values.isArray()) {
