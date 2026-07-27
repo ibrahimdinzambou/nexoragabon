@@ -169,17 +169,23 @@ index a27d9ef..c60d229 100644
 +        referer = _safe_http_url(payload.get("referer", "https://nexoragabon.com/"))
 @@ -679,0 +793 @@ def resolve():
 +                "playable": True,
-@@ -680,0 +795,2 @@ def resolve():
+@@ -680,0 +795,8 @@ def resolve():
 +        stream_url = _safe_http_url(stream_url)
-+        probe = player.probe_stream(stream_url, headers={"Referer": referer})
-@@ -684 +800 @@ def resolve():
++        parsed_player_url = urlparse(player_url)
++        player_host = (parsed_player_url.hostname or "").lower()
++        request_headers = {"Referer": referer}
++        if player_host.startswith(("uqload.", "oneupload.")):
++            player_origin = f"{parsed_player_url.scheme}://{parsed_player_url.netloc}"
++            request_headers = {"Referer": f"{player_origin}/", "Origin": player_origin}
++        probe = player.probe_stream(stream_url, headers=request_headers)
+@@ -684 +806 @@ def resolve():
 -            "kind": "hls" if ".m3u8" in stream_url.lower() else "video",
 +            "kind": probe["kind"],
-@@ -685,0 +802,4 @@ def resolve():
+@@ -685,0 +808,4 @@ def resolve():
 +            "playable": True,
 +            "available_qualities": probe.get("qualities", []),
 +            "content_type": probe.get("content_type", ""),
-+            "request_headers": {"Referer": referer},
++            "request_headers": request_headers,
 @@ -698 +818 @@ def main():
 -    app.run(host=os.getenv("AUTOFLIX_HOST", "127.0.0.1"), port=int(os.getenv("AUTOFLIX_PORT", "8787")), debug=False)
 +    app.run(host=os.getenv("AUTOFLIX_HOST", "127.0.0.1"), port=int(os.getenv("AUTOFLIX_PORT", "8787")), debug=False, threaded=True)
@@ -734,7 +740,7 @@ index bdd0e39..dec023e 100644
 @@ -162,0 +163,30 @@ class ContentContractTests(unittest.TestCase):
 +    @patch("autoflix_api.app.player.probe_stream")
 +    @patch("autoflix_api.app.player.get_hls_link")
-+    def test_resolved_player_is_probed_and_exposes_real_qualities(self, resolver_mock, probe_mock):
++    def test_resolved_uqload_player_uses_hoster_headers_and_exposes_real_qualities(self, resolver_mock, probe_mock):
 +        resolver_mock.return_value = ("https://cdn.test/master.m3u8", None)
 +        probe_mock.return_value = {
 +            "ok": True,
@@ -744,7 +750,7 @@ index bdd0e39..dec023e 100644
 +        }
 +
 +        response = self.client.post("/api/resolve", json={
-+            "player_url": "https://vidzy.test/embed/episode-1",
++            "player_url": "https://uqload.is/embed-episode-1.html",
 +            "referer": "https://french-stream.one/episode-1",
 +        })
 +
@@ -753,7 +759,7 @@ index bdd0e39..dec023e 100644
 +        self.assertTrue(body["resolved"])
 +        self.assertEqual("hls", body["kind"])
 +        self.assertEqual(864, body["available_qualities"][0]["height"])
-+        probe_mock.assert_called_once()
++        probe_mock.assert_called_once_with("https://cdn.test/master.m3u8", headers={"Referer": "https://uqload.is/", "Origin": "https://uqload.is"})
 +
 +    def test_resolver_rejects_local_network_urls(self):
 +        response = self.client.post("/api/resolve", json={
