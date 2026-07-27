@@ -193,10 +193,13 @@ avant `/assets/runtime-config.js`, ou modifie `src/main/resources/static/assets/
 ## 7. Redemarrer apres mise a jour
 
 ```bash
-cd /opt/nexora/app
-sudo chown -R "$USER:$USER" /opt/nexora/app
-git pull
-./mvnw -DskipTests package
+sudo chown -R nexora:nexora /opt/nexora/app
+sudo -u nexora git -C /opt/nexora/app remote set-url origin \
+  https://github.com/ibrahimdinzambou/nexoragabon.git
+sudo -u nexora git -C /opt/nexora/app fetch origin main
+sudo -u nexora git -C /opt/nexora/app switch main
+sudo -u nexora git -C /opt/nexora/app pull --ff-only origin main
+sudo -u nexora bash -c 'cd /opt/nexora/app && ./mvnw -DskipTests package'
 
 cd /opt/nexora/app/reelshort-api
 . .venv/bin/activate
