@@ -9,21 +9,25 @@
     const publicAnimeNexoraApiBase = "https://api.nexoragabon.com/api/external/anime";
     const publicSiteUrl = "https://nexoragabon.com";
     const apiHost = "api.nexoragabon.com";
+    const firstPartyHosts = new Set([
+        "nexoragabon.com",
+        "www.nexoragabon.com",
+        apiHost
+    ]);
 
     function trimSlash(value) {
         return String(value || "").replace(/\/+$/, "");
     }
 
+    function isFirstPartyHost() {
+        const host = String(window.location.hostname || "").toLowerCase();
+        return firstPartyHosts.has(host);
+    }
+
     function configuredBase() {
         const explicit = trimSlash(window.NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
-        const host = String(window.location.hostname || "").toLowerCase();
-        const firstPartyHosts = new Set([
-            "nexoragabon.com",
-            "www.nexoragabon.com",
-            apiHost
-        ]);
-        return firstPartyHosts.has(host) ? "" : publicApiBase;
+        return isFirstPartyHost() ? "" : publicApiBase;
     }
 
     function configuredContentNexoraBase() {
@@ -32,7 +36,8 @@
             || window.NEXORA_CONTENT_NEXORA_BASE_URL
             || ""
         );
-        return explicit || publicContentNexoraApiBase;
+        if (explicit) return explicit;
+        return isFirstPartyHost() ? "/api/external/content" : publicContentNexoraApiBase;
     }
 
     function configuredDramaBase() {
@@ -42,7 +47,7 @@
     function configuredAnimeNexoraBase() {
         const explicit = trimSlash(window.NEXORA_ANIME_API_BASE_URL || "");
         if (explicit) return explicit;
-        return publicAnimeNexoraApiBase;
+        return isFirstPartyHost() ? "/api/external/anime" : publicAnimeNexoraApiBase;
     }
 
     function configuredContentNexoraPlayerBase() {
