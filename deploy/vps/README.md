@@ -59,7 +59,7 @@ sudo apt install -y certbot python3-certbot-nginx
 sudo useradd --system --create-home --shell /usr/sbin/nologin nexora || true
 sudo mkdir -p /opt/nexora
 sudo chown "$USER:$USER" /opt/nexora
-git clone https://github.com/Dinzambou241/DramaAPI-nexora.git /opt/nexora/app
+git clone https://github.com/ibrahimdinzambou/nexoragabon.git /opt/nexora/app
 cd /opt/nexora/app
 ./mvnw -DskipTests package
 
