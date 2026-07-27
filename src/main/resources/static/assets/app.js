@@ -1491,6 +1491,11 @@ function recentItemPayload(item) {
         type: item.type,
         name: item.name,
         isEpisode: Boolean(item.isEpisode),
+        seriesName: item.seriesName || undefined,
+        parentTitle: item.parentTitle || undefined,
+        originalTitle: item.originalTitle || undefined,
+        contentNexoraUrl: item.contentNexoraUrl || undefined,
+        contentNexoraTitle: item.contentNexoraTitle || undefined,
         tmdbId: item.tmdbId || undefined,
         season: item.season || undefined,
         episode: item.episode || undefined,
@@ -5899,9 +5904,22 @@ function isContentNexoraPlayerItem(item = state.activePlayerItem) {
 }
 
 function contentNexoraSearchTitle(item) {
-    return String(item?.seriesName || item?.parentTitle || item?.name || "")
+    const value = String(
+        item?.seriesName
+        || item?.parentTitle
+        || item?.contentNexoraTitle
+        || item?.name
+        || ""
+    );
+    const isSeriesEpisode = item?.type === "series"
+        && (item?.isEpisode || (positiveInteger(item?.season) && positiveInteger(item?.episode)));
+    const seriesTitle = isSeriesEpisode
+        ? value.replace(/\s*(?:\u00c2?\u00b7|\u2022)\s*.+$/u, "")
+        : value;
+    return seriesTitle
         .replace(/\s*[·|:-]\s*(?:episode|ep\.?|e)\s*\d+.*$/i, "")
         .replace(/\s+s\d+\s*e\d+.*$/i, "")
+        .replace(/\s*(?:[-\u2013\u2014:|]|\u00c2?\u00b7)\s*(?:saison|season)\s*\d+.*$/i, "")
         .replace(/\s+(?:saison|season)\s+\d+.*$/i, "")
         .trim();
 }
