@@ -161,15 +161,18 @@ curl http://127.0.0.1:5001/health
 
 Le fichier Nginx versionné contient directement les vhosts HTTPS afin qu'une
 mise à jour ne supprime plus le certificat de `content.nexoragabon.com`.
-Obtenir d'abord le certificat (première installation uniquement):
+Le site principal et `www` peuvent rester hébergés ailleurs; seuls `api` et
+`content` doivent pointer vers ce VPS. Obtenir d'abord leurs certificats
+séparés (première installation uniquement):
 
 ```bash
 sudo systemctl stop nginx
 sudo certbot certonly --standalone \
-  --pre-hook "systemctl stop nginx" \
-  --post-hook "systemctl start nginx" \
-  -d nexoragabon.com -d www.nexoragabon.com \
-  -d api.nexoragabon.com -d content.nexoragabon.com
+  --cert-name api.nexoragabon.com \
+  -d api.nexoragabon.com
+sudo certbot certonly --standalone \
+  --cert-name content.nexoragabon.com \
+  -d content.nexoragabon.com
 sudo cp /opt/nexora/app/deploy/vps/nginx/nexora.conf /etc/nginx/sites-available/nexora.conf
 sudo ln -sfn /etc/nginx/sites-available/nexora.conf /etc/nginx/sites-enabled/nexora.conf
 sudo nginx -t
