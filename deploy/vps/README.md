@@ -254,6 +254,11 @@ sudo systemctl restart nexora-drama nexora-api content-nexora
 sudo systemctl restart nexora-anime
 ```
 
+Les routes `/api/**` laissent Spring Security gérer CORS, y compris les requêtes
+préliminaires `OPTIONS`. N'ajoutez pas d'en-têtes `Access-Control-Allow-*` dans
+le bloc Nginx `location /api/`, sinon les réponses applicatives contiendront
+deux valeurs `Access-Control-Allow-Origin` et seront refusées par le navigateur.
+
 VÃ©rifier ensuite le contrat API et le lecteur:
 
 ```bash

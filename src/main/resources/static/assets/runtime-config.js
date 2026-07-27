@@ -18,7 +18,12 @@
         const explicit = trimSlash(window.NEXORA_API_BASE_URL || "");
         if (explicit) return explicit;
         const host = String(window.location.hostname || "").toLowerCase();
-        return host === apiHost ? "" : publicApiBase;
+        const firstPartyHosts = new Set([
+            "nexoragabon.com",
+            "www.nexoragabon.com",
+            apiHost
+        ]);
+        return firstPartyHosts.has(host) ? "" : publicApiBase;
     }
 
     function configuredContentNexoraBase() {
