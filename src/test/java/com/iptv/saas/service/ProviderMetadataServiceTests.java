@@ -15,12 +15,14 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProviderMetadataServiceTests {
     private HttpServer server;
     private ProviderMetadataService metadata;
     private String providerBaseUrl;
+    private String seriesListResponseOverride;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -94,6 +96,43 @@ class ProviderMetadataServiceTests {
         assertEquals("La famille découvre sa nouvelle maison.", episodes.get(0).get("summary"));
         assertEquals("45 min", episodes.get(0).get("duration"));
         assertTrue(String.valueOf(details.get("backdrop")).contains("backdrop.jpg"));
+    }
+
+    @Test
+    void refusesProviderMetadataForAHomonymousSeriesFromAnotherYear() {
+        seriesListResponseOverride = """
+                [{
+                  "series_id": 88,
+                  "name": "Happy Family USA",
+                  "year": "1980",
+                  "cover": "https://images.test/happy.jpg",
+                  "plot": "Mauvaise adaptation."
+                }]
+                """;
+        IptvAccount account = account();
+        M3uPlaylistService.Entry episode = entry(
+                "episode-2025",
+                "Happy Family USA (2025) S01E01",
+                "series",
+                providerBaseUrl + "/series/demo/secret/3001.mkv",
+                "series-2025",
+                "Happy Family USA (2025)",
+                1,
+                1
+        );
+        M3uPlaylistService.Series series = new M3uPlaylistService.Series(
+                "series-2025",
+                "Happy Family USA (2025)",
+                "series-drama",
+                "Drama",
+                "https://images.test/happy.jpg",
+                List.of(episode)
+        );
+
+        Map<String, Object> details = metadata.seriesDetails(account, series);
+
+        assertFalse(details.containsKey("summary"));
+        assertEquals(2025, details.get("releaseYear"));
     }
 
     private IptvAccount account() {
@@ -177,7 +216,7 @@ class ProviderMetadataServiceTests {
                     }
                     """;
         } else {
-            response = """
+            response = seriesListResponseOverride != null ? seriesListResponseOverride : """
                     [{
                       "series_id": 77,
                       "name": "Happy Family USA",

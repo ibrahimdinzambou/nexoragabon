@@ -298,6 +298,38 @@ class IptvCatalogServiceRoundRobinTests {
     }
 
     @Test
+    void prefersFrenchNexoraBeforeApiNodeForTheExactSameEpisode() {
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        M3uPlaylistService playlists = mock(M3uPlaylistService.class);
+        XtreamCatalogService xtream = mock(XtreamCatalogService.class);
+        ProviderMetadataService metadata = mock(ProviderMetadataService.class);
+        CatalogImageService images = mock(CatalogImageService.class);
+        IptvCatalogService catalog = new IptvCatalogService(accounts, playlists, xtream, metadata, images);
+
+        IptvAccount apiNode = xtreamAccount(65L, "API Node", 0);
+        IptvAccount frenchNexora = xtreamAccount(33L, "French-Nexora", 0);
+        M3uPlaylistService.Series apiSummary = seriesSummary(apiNode, "5137", "Happy Family USA (2025)");
+        M3uPlaylistService.Series frenchSummary = seriesSummary(frenchNexora, "9042", "Happy Family USA");
+        M3uPlaylistService.Series apiDetails = seriesDetails(apiSummary, apiNode, "171669");
+        M3uPlaylistService.Series frenchDetails = seriesDetails(frenchSummary, frenchNexora, "7002");
+
+        when(accounts.findByActiveTrueAndDisabledFalse()).thenReturn(List.of(apiNode, frenchNexora));
+        when(accounts.findById(apiNode.id)).thenReturn(Optional.of(apiNode));
+        when(xtream.load(apiNode)).thenReturn(playlistWithSeries(apiSummary));
+        when(xtream.load(frenchNexora)).thenReturn(playlistWithSeries(frenchSummary));
+        when(xtream.loadSeries(apiNode, apiSummary.id())).thenReturn(apiDetails);
+        when(xtream.loadSeries(frenchNexora, frenchSummary.id())).thenReturn(frenchDetails);
+
+        IptvCatalogService.StreamSelection selection = catalog.selectStream(
+                "series",
+                "xtream-65-series-5137_171669"
+        );
+
+        assertEquals(frenchNexora.id, selection.account().id);
+        assertEquals("http://33.test/series/user/pass/7002.mp4", selection.streamUrl());
+    }
+
+    @Test
     void triesUniqueSeriesSourceWhenItIsOccupied() {
         IptvAccountRepository accounts = mock(IptvAccountRepository.class);
         M3uPlaylistService playlists = mock(M3uPlaylistService.class);

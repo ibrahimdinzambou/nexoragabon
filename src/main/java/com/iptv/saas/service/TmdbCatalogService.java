@@ -90,7 +90,7 @@ public class TmdbCatalogService {
         if (TYPE_SERIES.equals(itemId.type())) {
             return seriesInfo(publicItemId, null);
         }
-        JsonNode details = tmdb.details(TYPE_MOVIE, itemId.tmdbId(), "credits,release_dates");
+        JsonNode details = tmdb.details(TYPE_MOVIE, itemId.tmdbId(), "credits,release_dates,external_ids");
         Map<String, Object> payload = detailPayload(details, TYPE_MOVIE, movieCategory("tmdb-movie-popular"));
         images.rewrite(payload);
         return payload;
@@ -101,7 +101,7 @@ public class TmdbCatalogService {
         if (!TYPE_SERIES.equals(itemId.type())) {
             throw ApiException.validation("Cet element TMDB n'est pas une serie");
         }
-        JsonNode details = tmdb.details("tv", itemId.tmdbId(), "credits,content_ratings");
+        JsonNode details = tmdb.details("tv", itemId.tmdbId(), "credits,content_ratings,external_ids");
         Map<String, Object> payload = detailPayload(details, TYPE_SERIES, seriesCategory("tmdb-series-popular"));
         String title = text(details, "name");
         if ((title == null || title.isBlank()) && titleHint != null && !titleHint.isBlank()) {
@@ -207,6 +207,12 @@ public class TmdbCatalogService {
         payload.put("id", publicItemId(type, id));
         payload.put("tmdbId", id);
         payload.put("name", title);
+        String originalTitle = TYPE_SERIES.equals(type)
+                ? text(item, "original_name")
+                : text(item, "original_title");
+        if (originalTitle != null && !originalTitle.isBlank()) {
+            payload.put("originalTitle", originalTitle);
+        }
         payload.put("type", type);
         payload.put("categoryId", category.id());
         payload.put("categoryName", category.name());
@@ -247,6 +253,13 @@ public class TmdbCatalogService {
         payload.put("directors", directors(details));
         payload.put("country", countries(details));
         payload.put("ageRating", TYPE_MOVIE.equals(type) ? movieCertification(details) : tvCertification(details));
+        String imdbId = text(details, "imdb_id");
+        if (imdbId == null || imdbId.isBlank()) {
+            imdbId = text(details.path("external_ids"), "imdb_id");
+        }
+        if (imdbId != null && !imdbId.isBlank()) {
+            payload.put("imdbId", imdbId);
+        }
         payload.put("streamAvailable", true);
         payload.put("externalPlayback", true);
         payload.put("playbackProvider", PLAYBACK_PROVIDER);

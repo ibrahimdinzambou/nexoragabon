@@ -131,18 +131,20 @@ public class ProviderMetadataService {
         }
 
         String expectedTitle = normalizedTitle(series.title());
+        int expectedYear = releaseYear(series.title());
         String expectedPoster = normalizedUrl(series.poster());
         JsonNode titleMatch = null;
         for (JsonNode candidate : response.get()) {
-            if (!expectedPoster.isBlank()) {
-                String providerPoster = normalizedUrl(firstText(candidate, "cover", "poster"));
-                if (expectedPoster.equals(providerPoster)) {
-                    return Optional.of(candidate);
-                }
+            String candidateTitle = normalizedTitle(firstText(candidate, "name", "title"));
+            if (!expectedTitle.equals(candidateTitle)) continue;
+            int candidateYear = releaseYear(firstText(candidate, "year", "releaseDate", "release_date", "name"));
+            if (expectedYear > 0 && candidateYear > 0 && expectedYear != candidateYear) continue;
+
+            String providerPoster = normalizedUrl(firstText(candidate, "cover", "poster"));
+            if (!expectedPoster.isBlank() && expectedPoster.equals(providerPoster)) {
+                return Optional.of(candidate);
             }
-            if (expectedTitle.equals(normalizedTitle(firstText(candidate, "name")))) {
-                titleMatch = candidate;
-            }
+            titleMatch = candidate;
         }
         return Optional.ofNullable(titleMatch);
     }

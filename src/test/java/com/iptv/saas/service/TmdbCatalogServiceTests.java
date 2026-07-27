@@ -212,6 +212,7 @@ class TmdbCatalogServiceTests {
                 {
                   "id":1399,
                   "name":"Game of Thrones",
+                  "original_name":"Game of Thrones",
                   "overview":"Noble families fight for power.",
                   "poster_path":"/got.jpg",
                   "backdrop_path":"/got-backdrop.jpg",
@@ -223,7 +224,8 @@ class TmdbCatalogServiceTests {
                     {"season_number":1,"name":"Season 1","episode_count":2,"poster_path":"/s1.jpg"}
                   ],
                   "credits":{"cast":[{"name":"Emilia Clarke"}]},
-                  "content_ratings":{"results":[{"iso_3166_1":"FR","rating":"16"}]}
+                  "content_ratings":{"results":[{"iso_3166_1":"FR","rating":"16"}]},
+                  "external_ids":{"imdb_id":"tt0944947"}
                 }
                 """));
         server.createContext("/tv/1399/season/1", exchange -> json(exchange, """
@@ -256,6 +258,8 @@ class TmdbCatalogServiceTests {
         Map<String, Object> series = service.seriesInfo("tmdb~series~1399", null);
 
         assertEquals("Game of Thrones", series.get("name"));
+        assertEquals("Game of Thrones", series.get("originalTitle"));
+        assertEquals("tt0944947", series.get("imdbId"));
         assertEquals(1, series.get("seasonCount"));
         assertEquals(2, series.get("episodeCount"));
         assertEquals(true, series.get("streamAvailable"));

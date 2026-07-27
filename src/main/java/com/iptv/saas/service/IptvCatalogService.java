@@ -700,6 +700,7 @@ public class IptvCatalogService {
             if (!excluded.contains(requestedSource.account().id)
                     && canServeStream(requestedSource.account())) {
                 if (excluded.isEmpty()
+                        && !"api-node".equals(catalogSourceCode(requestedSource.account()))
                         && requestedSource.account().activeStreams == 0
                         && !hasRecentStreamFailure(requestedSource.account())) {
                     return new StreamSelection(
@@ -709,7 +710,8 @@ public class IptvCatalogService {
                     );
                 }
                 candidatesByAccount.put(requestedSource.account().id, requestedSource);
-                if (requestedSource.account().activeStreams == 0
+                if (!"api-node".equals(catalogSourceCode(requestedSource.account()))
+                        && requestedSource.account().activeStreams == 0
                         && !hasRecentStreamFailure(requestedSource.account())) {
                     return new StreamSelection(
                             requestedSource.account(),
@@ -958,6 +960,7 @@ public class IptvCatalogService {
             details.put("categoryId", canonicalCategoryId(entry.type(), entry.categoryName()));
             applyLanguage(details, entry.categoryName());
             applyPrivateAccess(details, account);
+            applyCatalogSource(details, account);
             images.rewrite(details);
             return details;
         }
@@ -1457,10 +1460,19 @@ public class IptvCatalogService {
     private List<IptvAccount> prioritizeCatalogAccounts(List<IptvAccount> catalogAccounts) {
         return catalogAccounts.stream()
                 .sorted(Comparator
-                        .comparing((IptvAccount account) -> !hasReusableCatalog(account))
+                        .comparingInt(this::catalogProviderRank)
+                        .thenComparing((IptvAccount account) -> !hasReusableCatalog(account))
                         .thenComparingDouble(this::loadRatio)
                         .thenComparing(account -> account.id))
                 .toList();
+    }
+
+    private int catalogProviderRank(IptvAccount account) {
+        return switch (catalogSourceCode(account)) {
+            case "french-nexora" -> 0;
+            case "api-node" -> 1;
+            default -> 2;
+        };
     }
 
     private boolean hasReusableCatalog(IptvAccount account) {
@@ -1492,20 +1504,28 @@ public class IptvCatalogService {
     }
 
     private List<SeriesSource> mergedSeries(List<CatalogSource> sources) {
-        Map<String, List<SeriesSource>> grouped = new LinkedHashMap<>();
+        List<List<SeriesSource>> grouped = new ArrayList<>();
         for (CatalogSource source : sources) {
             for (M3uPlaylistService.Series series : source.playlist().series()) {
-                grouped.computeIfAbsent(seriesKey(series), ignored -> new ArrayList<>())
-                        .add(new SeriesSource(source.account(), series));
+                List<SeriesSource> matchingGroup = grouped.stream()
+                        .filter(group -> seriesIdentityMatches(group.get(0).series().title(), series.title()))
+                        .findFirst()
+                        .orElseGet(() -> {
+                            List<SeriesSource> created = new ArrayList<>();
+                            grouped.add(created);
+                            return created;
+                        });
+                matchingGroup.add(new SeriesSource(source.account(), series));
             }
         }
-        return grouped.values().stream().map(this::mergeSeriesGroup).toList();
+        return grouped.stream().map(this::mergeSeriesGroup).toList();
     }
 
     private SeriesSource mergeSeriesGroup(List<SeriesSource> group) {
         SeriesSource representative = group.stream()
                 .min(Comparator
-                        .comparing((SeriesSource source) -> source.series().poster() == null
+                        .comparingInt((SeriesSource source) -> catalogProviderRank(source.account()))
+                        .thenComparing(source -> source.series().poster() == null
                                 || source.series().poster().isBlank())
                         .thenComparing(source -> source.account().id))
                 .orElseThrow();
@@ -1550,7 +1570,6 @@ public class IptvCatalogService {
             boolean preferAlternativeAccounts,
             List<IptvAccount> candidateCatalogAccounts
     ) {
-        String key = seriesKey(requested.series());
         Map<Long, SeriesSource> matching = new LinkedHashMap<>();
         if (!preferAlternativeAccounts) {
             matching.put(requested.account().id, requested);
@@ -1565,7 +1584,7 @@ public class IptvCatalogService {
                 .toList();
         for (CatalogSource source : availableSources(availableAccounts)) {
             source.playlist().series().stream()
-                    .filter(series -> seriesKey(series).equals(key))
+                    .filter(series -> seriesIdentityMatches(requested.series().title(), series.title()))
                     .findFirst()
                     .ifPresent(series -> matching.put(source.account().id, new SeriesSource(source.account(), series)));
         }
@@ -1620,6 +1639,7 @@ public class IptvCatalogService {
         details.putAll(merged.series().detailPayload());
         applyLanguage(details, merged.series().categoryName());
         applyPrivateAccess(details, primary.account());
+        applyCatalogSource(details, merged.account());
         images.rewrite(details);
         return details;
     }
@@ -1641,7 +1661,7 @@ public class IptvCatalogService {
         String key = contentKey(requested);
         List<EntrySource> matches = new ArrayList<>();
         source.playlist().entries().stream()
-                .filter(entry -> contentKey(entry).equals(key))
+                .filter(entry -> contentIdentityMatches(requested, entry))
                 .findFirst()
                 .ifPresent(entry -> matches.add(new EntrySource(source.account(), entry)));
         if (!"series".equals(requested.type()) || requested.seriesTitle() == null) {
@@ -1649,14 +1669,13 @@ public class IptvCatalogService {
         }
 
         source.playlist().series().stream()
-                .filter(series -> normalizeSeriesIdentity(series.title())
-                        .equals(normalizeSeriesIdentity(requested.seriesTitle())))
+                .filter(series -> seriesIdentityMatches(series.title(), requested.seriesTitle()))
                 .findFirst()
                 .ifPresent(series -> {
                     try {
                         SeriesSource detailed = loadSeriesDetails(new SeriesSource(source.account(), series));
                         detailed.series().episodes().stream()
-                                .filter(entry -> contentKey(entry).equals(key))
+                                .filter(entry -> contentIdentityMatches(requested, entry))
                                 .findFirst()
                                 .ifPresent(entry -> matches.add(new EntrySource(source.account(), entry)));
                     } catch (RuntimeException exception) {
@@ -1683,6 +1702,13 @@ public class IptvCatalogService {
         if (leftAvailable != rightAvailable) {
             return leftAvailable ? left : right;
         }
+        int providerComparison = Integer.compare(
+                catalogProviderRank(left.account()),
+                catalogProviderRank(right.account())
+        );
+        if (providerComparison != 0) {
+            return providerComparison < 0 ? left : right;
+        }
         int loadComparison = Double.compare(loadRatio(left.account()), loadRatio(right.account()));
         if (loadComparison != 0) {
             return loadComparison < 0 ? left : right;
@@ -1700,12 +1726,20 @@ public class IptvCatalogService {
             throw ApiException.serviceUnavailable("Aucun compte IPTV ne peut servir ce contenu");
         }
         List<EntrySource> preferredCandidates = entriesWithoutRecentStreamFailures(candidates);
-        double minimumLoad = preferredCandidates.stream()
+        int preferredProviderRank = preferredCandidates.stream()
+                .map(EntrySource::account)
+                .mapToInt(this::catalogProviderRank)
+                .min()
+                .orElse(2);
+        List<EntrySource> providerCandidates = preferredCandidates.stream()
+                .filter(source -> catalogProviderRank(source.account()) == preferredProviderRank)
+                .toList();
+        double minimumLoad = providerCandidates.stream()
                 .map(EntrySource::account)
                 .mapToDouble(this::loadRatio)
                 .min()
                 .orElse(0);
-        List<EntrySource> tied = preferredCandidates.stream()
+        List<EntrySource> tied = providerCandidates.stream()
                 .filter(source -> Double.compare(loadRatio(source.account()), minimumLoad) == 0)
                 .sorted(Comparator.comparing(source -> source.account().id))
                 .toList();
@@ -1746,6 +1780,7 @@ public class IptvCatalogService {
         Map<String, Object> payload = new LinkedHashMap<>(category.apiPayload());
         payload.put("id", canonicalCategoryId(category.type(), category.name()));
         applyPrivateAccess(payload, account);
+        applyCatalogSource(payload, account);
         return payload;
     }
 
@@ -1758,6 +1793,7 @@ public class IptvCatalogService {
         payload.put("categoryId", canonicalCategoryId(entry.type(), entry.categoryName()));
         applyLanguage(payload, entry.categoryName());
         applyPrivateAccess(payload, account);
+        applyCatalogSource(payload, account);
         images.rewrite(payload);
         return payload;
     }
@@ -1770,6 +1806,7 @@ public class IptvCatalogService {
         Map<String, Object> payload = new LinkedHashMap<>(series.apiPayload());
         applyLanguage(payload, series.categoryName());
         applyPrivateAccess(payload, account);
+        applyCatalogSource(payload, account);
         images.rewrite(payload);
         return payload;
     }
@@ -1781,6 +1818,41 @@ public class IptvCatalogService {
         payload.put("privateUse", true);
         payload.put("privateAccess", true);
         payload.put("assignedIptvAccountId", account.id);
+    }
+
+    private void applyCatalogSource(Map<String, Object> payload, IptvAccount account) {
+        if (account == null) {
+            return;
+        }
+        String code = catalogSourceCode(account);
+        String label = switch (code) {
+            case "french-nexora" -> "French-Nexora";
+            case "api-node" -> "API Node";
+            default -> "IPTV";
+        };
+        payload.put("sourceCode", code);
+        payload.put("source", label);
+        payload.put("provider", label);
+        payload.put("playbackProvider", code);
+        payload.put("playbackProviderName", label);
+    }
+
+    static String catalogSourceCode(IptvAccount account) {
+        if (account == null) {
+            return "iptv";
+        }
+        String identity = String.join(" ",
+                account.name == null ? "" : account.name,
+                account.baseUrl == null ? "" : account.baseUrl,
+                account.playlistUrl == null ? "" : account.playlistUrl
+        ).toLowerCase(Locale.ROOT);
+        if (identity.matches(".*(?:french[-_ ]?nexora|nexora[-_ ]?french).*$")) {
+            return "french-nexora";
+        }
+        if (identity.matches(".*(?:api[-_ ]?node|node[-_ ]?api).*$")) {
+            return "api-node";
+        }
+        return "iptv";
     }
 
     private void applyLanguage(Map<String, Object> payload, String categoryName) {
@@ -1820,7 +1892,33 @@ public class IptvCatalogService {
         return entry.type() + "|" + normalizeIdentity(entry.name());
     }
 
-    private String normalizeSeriesIdentity(String value) {
+    private boolean contentIdentityMatches(
+            M3uPlaylistService.Entry left,
+            M3uPlaylistService.Entry right
+    ) {
+        if (!Objects.equals(left.type(), right.type())) {
+            return false;
+        }
+        if (!"series".equals(left.type())) {
+            return contentKey(left).equals(contentKey(right));
+        }
+        String leftTitle = left.seriesTitle() == null ? left.name() : left.seriesTitle();
+        String rightTitle = right.seriesTitle() == null ? right.name() : right.seriesTitle();
+        return seriesIdentityMatches(leftTitle, rightTitle)
+                && Objects.equals(left.seasonNumber(), right.seasonNumber())
+                && Objects.equals(left.episodeNumber(), right.episodeNumber());
+    }
+
+    static boolean seriesIdentityMatches(String left, String right) {
+        if (!normalizeSeriesIdentity(left).equals(normalizeSeriesIdentity(right))) {
+            return false;
+        }
+        int leftYear = M3uPlaylistService.releaseYear(left);
+        int rightYear = M3uPlaylistService.releaseYear(right);
+        return leftYear <= 0 || rightYear <= 0 || leftYear == rightYear;
+    }
+
+    static String normalizeSeriesIdentity(String value) {
         String normalized = normalizeIdentity(value);
         String previous;
         do {
@@ -1833,7 +1931,7 @@ public class IptvCatalogService {
         return normalized;
     }
 
-    private String normalizeIdentity(String value) {
+    private static String normalizeIdentity(String value) {
         return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "")
                 .toLowerCase(Locale.ROOT)
