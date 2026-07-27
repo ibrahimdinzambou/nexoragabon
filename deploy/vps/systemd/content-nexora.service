@@ -9,7 +9,7 @@ WorkingDirectory=/opt/nexora/content-nexora
 Environment=PYTHONUNBUFFERED=1
 Environment=AUTOFLIX_HOST=127.0.0.1
 Environment=AUTOFLIX_PORT=8787
-ExecStart=/opt/nexora/content-nexora/.venv/bin/autoflix-api
+ExecStart=/opt/nexora/content-nexora/.venv/bin/gunicorn --bind 127.0.0.1:8787 --workers 3 --worker-class sync --timeout 30 --graceful-timeout 5 --access-logfile - --error-logfile - autoflix_api.app:app
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

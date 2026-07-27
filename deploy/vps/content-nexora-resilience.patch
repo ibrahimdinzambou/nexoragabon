@@ -1,0 +1,123 @@
+diff --git a/src/autoflix_api/app.py b/src/autoflix_api/app.py
+index a27d9ef..1a5ad83 100644
+--- a/src/autoflix_api/app.py
++++ b/src/autoflix_api/app.py
+@@ -4,0 +5 @@ import re
++import time
+@@ -8,0 +10 @@ from pathlib import Path
++from threading import Lock
+@@ -51,0 +54,41 @@ PROVIDERS = {
++RESPONSE_CACHE_MAX_ENTRIES = 128
++RESPONSE_CACHE_STALE_TTL_SECONDS = 15 * 60
++_response_cache: dict[tuple[str, ...], tuple[float, float, Any]] = {}
++_response_cache_lock = Lock()
++
++
++def request_cache_key(namespace: str) -> tuple[str, ...]:
++    return (namespace, *(f"{key}={value}" for key, value in sorted(request.args.items())))
++
++
++def cached_response(key: tuple[str, ...], ttl_seconds: int, loader):
++    """Avoid repeated scraper work and keep a stale value for upstream outages."""
++    now = time.monotonic()
++    with _response_cache_lock:
++        cached = _response_cache.get(key)
++        if cached and cached[0] > now:
++            return cached[2]
++
++    try:
++        value = loader()
++    except Exception:
++        with _response_cache_lock:
++            stale = _response_cache.get(key)
++            if stale and stale[1] > now:
++                app.logger.warning("Serving stale Content-Nexora response for %s", key[0])
++                return stale[2]
++        raise
++
++    with _response_cache_lock:
++        expired = [cache_key for cache_key, entry in _response_cache.items() if entry[1] <= now]
++        for cache_key in expired:
++            _response_cache.pop(cache_key, None)
++        while len(_response_cache) >= RESPONSE_CACHE_MAX_ENTRIES:
++            _response_cache.pop(next(iter(_response_cache)))
++        _response_cache[key] = (
++            now + ttl_seconds,
++            now + RESPONSE_CACHE_STALE_TTL_SECONDS,
++            value,
++        )
++    return value
++
+@@ -610,2 +653,11 @@ def search():
+-        result = call_provider(provider_name, "search", query=query)
+-        return jsonify({"results": [normalize_search_result(item, provider_name) for item in result]})
++        payload = cached_response(
++            request_cache_key("search"),
++            60,
++            lambda: {
++                "results": [
++                    normalize_search_result(item, provider_name)
++                    for item in call_provider(provider_name, "search", query=query)
++                ]
++            },
++        )
++        return jsonify(payload)
+@@ -613 +665,2 @@ def search():
+-        return jsonify({"error": str(exc)}), 502
++        app.logger.exception("Content-Nexora search failed")
++        return jsonify({"error": str(exc), "code": "upstream_failure"}), 502
+@@ -620,4 +673,7 @@ def content():
+-        normalized, match = _requested_content(provider_name, "content")
+-        payload = {"content": _merge_node_sources(normalized)}
+-        if match:
+-            payload["match"] = match
++        def load_content():
++            normalized, match = _requested_content(provider_name, "content")
++            payload = {"content": _merge_node_sources(normalized)}
++            if match:
++                payload["match"] = match
++            return payload
++        payload = cached_response(request_cache_key("content"), 180, load_content)
+@@ -628 +684,2 @@ def content():
+-        return jsonify({"error": str(exc)}), 502
++        app.logger.exception("Content-Nexora content lookup failed")
++        return jsonify({"error": str(exc), "code": "upstream_failure"}), 502
+@@ -635,4 +692,7 @@ def series():
+-        normalized, match = _requested_content(provider_name, "series")
+-        payload = {"content": _merge_node_sources(normalized)}
+-        if match:
+-            payload["match"] = match
++        def load_series():
++            normalized, match = _requested_content(provider_name, "series")
++            payload = {"content": _merge_node_sources(normalized)}
++            if match:
++                payload["match"] = match
++            return payload
++        payload = cached_response(request_cache_key("series"), 180, load_series)
+@@ -643 +703,2 @@ def series():
+-        return jsonify({"error": str(exc)}), 502
++        app.logger.exception("Content-Nexora series lookup failed")
++        return jsonify({"error": str(exc), "code": "upstream_failure"}), 502
+@@ -698 +759 @@ def main():
+-    app.run(host=os.getenv("AUTOFLIX_HOST", "127.0.0.1"), port=int(os.getenv("AUTOFLIX_PORT", "8787")), debug=False)
++    app.run(host=os.getenv("AUTOFLIX_HOST", "127.0.0.1"), port=int(os.getenv("AUTOFLIX_PORT", "8787")), debug=False, threaded=True)
+diff --git a/src/autoflix_cli/scraping/french_stream.py b/src/autoflix_cli/scraping/french_stream.py
+index 164bb58..6aa1fe6 100644
+--- a/src/autoflix_cli/scraping/french_stream.py
++++ b/src/autoflix_cli/scraping/french_stream.py
+@@ -21,0 +22 @@ scraper = cffi_requests.Session(impersonate="chrome", curl_options=DNS_OPTIONS)
++REQUEST_TIMEOUT_SECONDS = 15
+@@ -40 +41 @@ def search(query: str) -> list[SearchResult]:
+-        timeout=15,
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -95 +96,2 @@ def get_movie(url: str, content: str) -> FrenchStreamMovie:
+-        f"{website_origin}/engine/ajax/film_api.php?id={movie_id}"
++        f"{website_origin}/engine/ajax/film_api.php?id={movie_id}",
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -118 +120,2 @@ def get_series_season(url: str, content: str) -> FrenchStreamSeason:
+-        f"{website_origin}/ep-data.php?id={serie_id}"
++        f"{website_origin}/ep-data.php?id={serie_id}",
++        timeout=REQUEST_TIMEOUT_SECONDS,
+@@ -168 +171 @@ def get_content(url: str):
+-    response = scraper.get(url)
++    response = scraper.get(url, timeout=REQUEST_TIMEOUT_SECONDS)

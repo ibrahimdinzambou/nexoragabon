@@ -29,6 +29,13 @@ const DASH_MANIFEST_TIMEOUT_MS = 10000;
 const DASH_PLAY_PROMISE_TIMEOUT_MS = 7000;
 const SEARCH_DEBOUNCE_MS = 550;
 const MIN_REMOTE_SEARCH_LENGTH = 2;
+const ANIME_NEXORA_CACHE_TTL_MS = 5 * 60 * 1000;
+const CONTENT_NEXORA_CACHE_TTL_MS = 2 * 60 * 1000;
+const CONTENT_NEXORA_SEARCH_CACHE_TTL_MS = 30 * 1000;
+const EXTERNAL_API_TIMEOUT_MS = 25000;
+const CONTENT_NEXORA_RESOLVE_TIMEOUT_MS = 18000;
+const CONTENT_NEXORA_SOURCE_CONCURRENCY = 2;
+const EXTERNAL_API_CACHE_MAX_ENTRIES = 120;
 const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
 const HOME_PREVIEW_LIMIT = 30;
@@ -47,6 +54,8 @@ const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const CONTENT_NEXORA_PROVIDER = "french-stream";
 const imageRepairCache = new Map();
 const imageRepairInFlight = new Set();
+const animeNexoraResponseCache = new Map();
+const contentNexoraResponseCache = new Map();
 const launchParams = new URLSearchParams(window.location.search);
 const WATCH_REQUIRES_AUTH = launchParams.get("demo") !== "1";
 const titleCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
@@ -162,6 +171,7 @@ const state = {
     activePlayerItem: null,
     activeFrenchSourcePayload: null,
     activeFrenchSourceIndex: 0,
+    activeFrenchSourceMediaUrl: "",
     activeProxyUrl: null,
     activeEmbedUrl: null,
     activeEmbedFallbackUrl: null,
@@ -419,20 +429,79 @@ async function api(path, options = {}) {
     return body.data;
 }
 
+function pruneExternalApiCache(cache) {
+    const now = Date.now();
+    for (const [key, entry] of cache) {
+        if (!entry.promise && entry.expiresAt <= now) cache.delete(key);
+    }
+    while (cache.size >= EXTERNAL_API_CACHE_MAX_ENTRIES) {
+        cache.delete(cache.keys().next().value);
+    }
+}
+
+function cachedExternalApiResponse(cache, key, ttlMs, loader) {
+    const cached = cache.get(key);
+    if (cached?.promise) return cached.promise;
+    if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value);
+    if (cached) cache.delete(key);
+    pruneExternalApiCache(cache);
+
+    const promise = loader()
+        .then((value) => {
+            cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+            return value;
+        })
+        .catch((error) => {
+            if (cache.get(key)?.promise === promise) cache.delete(key);
+            throw error;
+        });
+    cache.set(key, { promise, expiresAt: 0 });
+    return promise;
+}
+
+async function mapWithConcurrency(values, limit, mapper) {
+    const items = Array.from(values || []);
+    const results = new Array(items.length);
+    let cursor = 0;
+    async function worker() {
+        while (cursor < items.length) {
+            const index = cursor;
+            cursor += 1;
+            results[index] = await mapper(items[index], index);
+        }
+    }
+    await Promise.all(Array.from(
+        { length: Math.min(Math.max(1, limit), items.length) },
+        () => worker()
+    ));
+    return results;
+}
+
 async function animeNexoraApi(path, options = {}) {
     const url = window.NexoraAnimeNexoraApi?.url
         ? window.NexoraAnimeNexoraApi.url(path)
         : `${ANIME_NEXORA_API_ROOT}${path.startsWith("/") ? path : `/${path}`}`;
     const headers = new Headers(options.headers || {});
     headers.set("Accept", "application/json");
-    const response = await fetchWithRetry(url, { ...options, headers });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body.success === false) {
-        const error = new Error(body.message || body.error || "Anime NexoraAPI indisponible.");
-        error.status = response.status;
-        throw error;
-    }
-    return body;
+    const method = String(options.method || "GET").toUpperCase();
+    const load = async () => {
+        const response = await fetchWithRetry(url, {
+            timeoutMs: EXTERNAL_API_TIMEOUT_MS,
+            retryDelays: [],
+            ...options,
+            headers
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || body.success === false) {
+            const error = new Error(body.message || body.error || "Anime NexoraAPI indisponible.");
+            error.status = response.status;
+            throw error;
+        }
+        return body;
+    };
+    return method === "GET" && !options.body
+        ? cachedExternalApiResponse(animeNexoraResponseCache, url, ANIME_NEXORA_CACHE_TTL_MS, load)
+        : load();
 }
 
 function animeNexoraApiEnabled() {
@@ -560,17 +629,18 @@ async function enrichAnimeNexoraPosters(items) {
 
 async function animeNexoraSeriesInfo(item) {
     const slug = item.animeNexoraSlug || animeNexoraSlug(item.id.split("~").pop());
-    const detail = await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}`);
-    const seasonsBody = item.animeNexoraSeasonSlug
-        ? { data: [{
+    const [detail, seasonsBody] = await Promise.all([
+        animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}`),
+        item.animeNexoraSeasonSlug
+            ? Promise.resolve({ data: [{
             name: item.animeNexoraVersionName || item.categoryName || "Version 1",
             url: `https://anime-sama.to/catalogue/${encodeURIComponent(slug)}/${encodeURIComponent(item.animeNexoraSeasonSlug)}`
-        }] }
-        : await animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}/seasons`);
-    const seasons = [];
-    for (const [seasonIndex, remoteSeason] of (seasonsBody.data || []).entries()) {
+        }] })
+            : animeNexoraApi(`/catalogue/${encodeURIComponent(slug)}/seasons`)
+    ]);
+    const seasons = (await mapWithConcurrency(seasonsBody.data || [], 3, async (remoteSeason, seasonIndex) => {
         const seasonSlug = animeNexoraSlug(remoteSeason.url);
-        if (!seasonSlug) continue;
+        if (!seasonSlug) return null;
         // Anime Nexora utilise parfois des noms comme "OAV", "Film" ou
         // "Baki Hanma saison 1". Le numero d'ordre de l'API est la vraie
         // cle de version ; ne le deduisons pas du texte du nom.
@@ -595,13 +665,13 @@ async function animeNexoraSeriesInfo(item) {
             animeNexoraSeasonSlug: seasonSlug,
             animeNexoraEpisode: Number(episode.index || index + 1)
         }));
-        seasons.push({
+        return {
             season: seasonNumber,
             name: remoteSeason.name || "Saison 1",
             episodeCount: episodes.length,
             episodes
-        });
-    }
+        };
+    })).filter(Boolean);
     return {
         ...item,
         name: item.animeNexoraVersionName || detail.data?.name || item.name,
@@ -762,6 +832,7 @@ async function playAnimeNexoraItem(item, options = {}) {
     saveActivePlayback(item);
     state.activeFrenchSourcePayload = null;
     state.activeFrenchSourceIndex = 0;
+    state.activeFrenchSourceMediaUrl = "";
     renderFrenchSourcePanel(null);
 
     const activeItem = {
@@ -817,14 +888,27 @@ async function contentNexoraApi(path, options = {}) {
     if (state.token) {
         headers.set("Authorization", `Bearer ${state.token}`);
     }
-    const response = await fetchWithRetry(url, { ...options, headers });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body.ok === false) {
-        const error = new Error(body.error || body.message || "API Content-Nexora indisponible.");
-        error.status = response.status;
-        throw error;
-    }
-    return body;
+    const method = String(options.method || "GET").toUpperCase();
+    const load = async () => {
+        const response = await fetchWithRetry(url, {
+            timeoutMs: EXTERNAL_API_TIMEOUT_MS,
+            retryDelays: [],
+            ...options,
+            headers
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || body.ok === false) {
+            const error = new Error(body.error || body.message || "API Content-Nexora indisponible.");
+            error.status = response.status;
+            throw error;
+        }
+        return body;
+    };
+    if (method !== "GET" || options.body) return load();
+    const ttlMs = /\/search(?:\?|$)/.test(path)
+        ? CONTENT_NEXORA_SEARCH_CACHE_TTL_MS
+        : CONTENT_NEXORA_CACHE_TTL_MS;
+    return cachedExternalApiResponse(contentNexoraResponseCache, url, ttlMs, load);
 }
 
 function resolveApiResourceUrl(value) {
@@ -883,15 +967,30 @@ async function dramaApiOrSpring(directPath, springPath) {
 
 async function fetchWithRetry(url, options) {
     const method = String(options.method || "GET").toUpperCase();
-    const retryDelays = options.retryTransient === true
-        ? STREAM_OPEN_RETRY_DELAYS
-        : NETWORK_RETRY_DELAYS;
+    const retryDelays = Array.isArray(options.retryDelays)
+        ? options.retryDelays
+        : options.retryTransient === true
+            ? STREAM_OPEN_RETRY_DELAYS
+            : NETWORK_RETRY_DELAYS;
     const canRetry = (method === "GET" && !options.body) || options.retryTransient === true;
-    const { retryTransient, ...fetchOptions } = options;
+    const { retryTransient, retryDelays: ignoredRetryDelays, timeoutMs, ...fetchOptions } = options;
 
     for (let attempt = 0; ; attempt += 1) {
+        const timeoutController = timeoutMs ? new AbortController() : null;
+        const parentSignal = fetchOptions.signal;
+        const forwardAbort = () => timeoutController?.abort(parentSignal?.reason);
+        if (timeoutController && parentSignal) {
+            if (parentSignal.aborted) forwardAbort();
+            else parentSignal.addEventListener("abort", forwardAbort, { once: true });
+        }
+        const timeoutId = timeoutController
+            ? window.setTimeout(() => timeoutController.abort(), timeoutMs)
+            : null;
+        const attemptOptions = timeoutController
+            ? { ...fetchOptions, signal: timeoutController.signal }
+            : fetchOptions;
         try {
-            const response = await fetch(url, fetchOptions);
+            const response = await fetch(url, attemptOptions);
             const transientStatus = [502, 503, 504].includes(response.status);
             if (!canRetry || !transientStatus || attempt >= retryDelays.length) {
                 return response;
@@ -900,10 +999,13 @@ async function fetchWithRetry(url, options) {
                 return response;
             }
         } catch (error) {
-            const aborted = error?.name === "AbortError" || fetchOptions.signal?.aborted;
+            const aborted = error?.name === "AbortError" || attemptOptions.signal?.aborted;
             if (!canRetry || aborted || attempt >= retryDelays.length) {
                 throw error;
             }
+        } finally {
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+            parentSignal?.removeEventListener?.("abort", forwardAbort);
         }
         await delay(retryDelays[attempt]);
     }
@@ -5841,7 +5943,9 @@ async function contentNexoraSeriesInfo(item) {
     const tmdbId = tmdbIdFromItem(item);
     if (tmdbId) parameters.set("tmdbId", String(tmdbId));
 
-    const payload = await contentNexoraApi(`/series?${parameters}`);
+    const payload = await contentNexoraApi(`/series?${parameters}`, {
+        timeoutMs: item.contentNexoraUrl ? EXTERNAL_API_TIMEOUT_MS : 12000
+    });
     const content = payload.content || payload;
     const remoteSeasons = Array.isArray(content?.seasons) ? content.seasons : [];
     if (!remoteSeasons.length) {
@@ -5902,6 +6006,7 @@ async function playContentNexoraItem(item) {
     state.activeCanFailover = false;
     state.activeFrenchSourcePayload = null;
     state.activeFrenchSourceIndex = 0;
+    state.activeFrenchSourceMediaUrl = "";
     stopHeartbeat();
     renderFrenchSourcePanel(null);
 
@@ -5935,9 +6040,22 @@ async function playContentNexoraItem(item) {
             contentParameters.set("season", String(positiveInteger(activeItem.season) || 1));
             contentParameters.set("episode", String(positiveInteger(activeItem.episode) || 1));
         }
-        const contentPayload = await contentNexoraApi(
-            `/content?${contentParameters}`
-        );
+        const inlineEpisodePlayers = activeItem.type === "series"
+            && Array.isArray(item.players)
+            && item.players.length > 0;
+        const contentPayload = inlineEpisodePlayers
+            ? {
+                content: {
+                    ...activeItem,
+                    title: item.contentNexoraTitle || query,
+                    url: item.contentNexoraUrl || "",
+                    players: item.players,
+                    sources: Array.isArray(item.sources) && item.sources.length
+                        ? item.sources
+                        : item.players
+                }
+            }
+            : await contentNexoraApi(`/content?${contentParameters}`);
         const content = contentPayload.content || contentPayload;
         const match = contentPayload.match || {
             title: item.contentNexoraTitle || item.originalTitle || query,
@@ -5946,21 +6064,25 @@ async function playContentNexoraItem(item) {
         if (activeItem.type === "movie" && !Array.isArray(content?.players)) {
             throw new Error(`Content-Nexora n'a pas fourni de lecteur pour « ${query} ».`);
         }
-        if (activeItem.type === "series" && !Array.isArray(content?.seasons)) {
+        if (activeItem.type === "series"
+            && !Array.isArray(content?.seasons)
+            && !Array.isArray(content?.players)) {
             throw new Error(`Content-Nexora n'a pas fourni les saisons de « ${query} ».`);
         }
         state.activeContentNexoraMatch = match;
         state.activeContentNexoraContent = content;
         showFrenchSourceLoadingPanel(content);
         const sources = await resolveContentNexoraSources(content, activeItem, (resolvedSources) => {
-            renderFrenchSourcePanel(content, resolvedSources);
-            setPlayerControlsBusy(true);
-        });
+            if (String(state.activePlayerItem?.id || "") === String(activeItem.id || "")) {
+                renderFrenchSourcePanel(content, resolvedSources);
+            }
+        }, { firstAvailable: true });
         renderFrenchSourcePanel(content, sources);
         if (!sources.length) {
             throw new Error("Content-Nexora n'a fourni aucun flux vidéo lisible pour ce contenu.");
         }
         state.activeFrenchSourceIndex = 0;
+        state.activeFrenchSourceMediaUrl = sources[0].mediaUrl;
         await startStreamPlayback(
             activeItem,
             sources[0].mediaUrl,
@@ -6307,6 +6429,8 @@ async function resolveContentNexoraSource(source, content, index = 0) {
     let mediaUrl = pageUrl;
     let resolution = {};
     if (initialKind !== "hls" && initialKind !== "direct") {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), CONTENT_NEXORA_RESOLVE_TIMEOUT_MS);
         try {
             resolution = await contentNexoraApi("/resolve", {
                 method: "POST",
@@ -6314,13 +6438,17 @@ async function resolveContentNexoraSource(source, content, index = 0) {
                 body: JSON.stringify({
                     player_url: pageUrl,
                     referer: contentNexoraSourceReferer(content, pageUrl)
-                })
+                }),
+                signal: controller.signal,
+                timeoutMs: CONTENT_NEXORA_RESOLVE_TIMEOUT_MS
             });
             mediaUrl = contentNexoraResolvedStreamUrl(resolution) || pageUrl;
         } catch {
             // Unsupported extractors can still be opened through the original web player.
             resolution = { kind: "embed", resolved: false };
             mediaUrl = pageUrl;
+        } finally {
+            window.clearTimeout(timeoutId);
         }
     }
 
@@ -6347,29 +6475,58 @@ async function resolveContentNexoraSource(source, content, index = 0) {
     };
 }
 
-async function resolveContentNexoraSources(content, item = state.activePlayerItem, onUpdate = null) {
-    const candidates = contentNexoraSourceCandidates(content, item);
+async function resolveContentNexoraSources(content, item = state.activePlayerItem, onUpdate = null, options = {}) {
+    const candidates = contentNexoraSourceCandidates(content, item)
+        .map((source, index) => ({ source, index }))
+        .sort((left, right) => {
+            const leftValue = typeof left.source === "object" ? left.source : { url: left.source };
+            const rightValue = typeof right.source === "object" ? right.source : { url: right.source };
+            return hosterScore(rightValue) - hosterScore(leftValue) || left.index - right.index;
+        });
     const unique = new Map();
     const sortSources = () => [...unique.values()].sort((left, right) => {
         const leftHoster = { ...left.raw, ...left.resolution, url: left.mediaUrl };
         const rightHoster = { ...right.raw, ...right.resolution, url: right.mediaUrl };
         return hosterScore(rightHoster) - hosterScore(leftHoster);
     });
-    const results = await Promise.allSettled(
-        candidates.map(async (source, index) => {
-            const resolved = await resolveContentNexoraSource(source, content, index);
-            if (resolved?.mediaUrl && !unique.has(resolved.mediaUrl)) {
-                unique.set(resolved.mediaUrl, resolved);
-                onUpdate?.(sortSources());
+    let cursor = 0;
+    let firstSettled = false;
+    let settleFirst;
+    const firstAvailable = new Promise((resolve) => { settleFirst = resolve; });
+    const worker = async () => {
+        while (cursor < candidates.length) {
+            const candidateIndex = cursor;
+            cursor += 1;
+            const candidate = candidates[candidateIndex];
+            try {
+                const resolved = await resolveContentNexoraSource(candidate.source, content, candidate.index);
+                if (resolved?.mediaUrl && !unique.has(resolved.mediaUrl)) {
+                    unique.set(resolved.mediaUrl, resolved);
+                    const sources = sortSources();
+                    onUpdate?.(sources);
+                    if (!firstSettled) {
+                        firstSettled = true;
+                        settleFirst(sources);
+                    }
+                }
+            } catch {
+                // Un lecteur indisponible ne doit pas bloquer les autres sources.
             }
-            return resolved;
-        })
-    );
-    results.forEach((result) => {
-        const source = result.status === "fulfilled" ? result.value : null;
-        if (source?.mediaUrl && !unique.has(source.mediaUrl)) unique.set(source.mediaUrl, source);
+        }
+    };
+    const completion = Promise.allSettled(Array.from(
+        { length: Math.min(CONTENT_NEXORA_SOURCE_CONCURRENCY, candidates.length) },
+        () => worker()
+    )).then(() => {
+        const sources = sortSources();
+        if (!firstSettled) {
+            firstSettled = true;
+            settleFirst(sources);
+        }
+        onUpdate?.(sources);
+        return sources;
     });
-    return sortSources();
+    return options.firstAvailable ? firstAvailable : completion;
 }
 
 function showFrenchSourceLoadingPanel(content) {
@@ -6412,7 +6569,9 @@ function renderFrenchSourcePanel(content = null, sources = []) {
     }
     elements.playerSourceList.innerHTML = sources.map((source, index) => {
         const details = [source.language, source.quality, source.kindLabel].filter(Boolean).join(" / ");
-        const active = index === state.activeFrenchSourceIndex ? " active" : "";
+        const active = state.activeFrenchSourceMediaUrl
+            ? source.mediaUrl === state.activeFrenchSourceMediaUrl ? " active" : ""
+            : index === state.activeFrenchSourceIndex ? " active" : "";
         return `
             <button class="player-source-option${active}" type="button" data-source-index="${index}" aria-label="Lire ${escapeHtml(source.label)}">
                 <span class="player-source-dot" aria-hidden="true"></span>
@@ -6437,6 +6596,7 @@ async function switchToFrenchSource(index) {
     state.playerOpening = true;
     state.playerErrorShown = false;
     state.activeFrenchSourceIndex = sourceIndex;
+    state.activeFrenchSourceMediaUrl = source.mediaUrl;
     setPlayerControlsBusy(true);
     renderFrenchSourcePanel(payload.content, payload.sources);
     setPlayerLoading(`Lecture via ${source.label}...`, "Chargement du flux video.");
@@ -6451,6 +6611,7 @@ async function switchToFrenchSource(index) {
             if (freshSource) {
                 source = freshSource;
                 payload.sources[sourceIndex] = freshSource;
+                state.activeFrenchSourceMediaUrl = freshSource.mediaUrl;
                 renderFrenchSourcePanel(payload.content, payload.sources);
                 await stopPlayer();
                 await startStreamPlayback(item, source.mediaUrl, source.kind, { visualWatch: true });

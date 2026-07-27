@@ -68,8 +68,12 @@ git clone https://github.com/ibrahimdinzambou/Content-Nexora.git /opt/nexora/con
 cd /opt/nexora/content-nexora
 python3 -m venv .venv
 . .venv/bin/activate
-pip install -e .
-git apply --unidiff-zero /opt/nexora/app/deploy/vps/content-nexora-deep-link.patch
+for patch in content-nexora-deep-link.patch content-nexora-resilience.patch; do
+  git apply --check --unidiff-zero "/opt/nexora/app/deploy/vps/$patch" \
+    && git apply --unidiff-zero "/opt/nexora/app/deploy/vps/$patch" \
+    || true
+done
+pip install -e . gunicorn
 
 # Source du catalogue anime
 git clone https://github.com/ibrahimdinzambou/anime-nexoraAPI.git /opt/nexora/anime-nexoraAPI
@@ -198,10 +202,24 @@ cd /opt/nexora/app/reelshort-api
 . .venv/bin/activate
 pip install -r requirements.txt
 cd /opt/nexora/content-nexora
+git stash push -m "nexora-patches-before-update-$(date +%Y%m%d-%H%M%S)" -- \
+  src/autoflix_api/app.py \
+  src/autoflix_api/static/app.js \
+  src/autoflix_cli/scraping/french_stream.py || true
 git pull --ff-only
 . .venv/bin/activate
-pip install -e .
+for patch in content-nexora-deep-link.patch content-nexora-resilience.patch; do
+  git apply --check --unidiff-zero "/opt/nexora/app/deploy/vps/$patch" \
+    && git apply --unidiff-zero "/opt/nexora/app/deploy/vps/$patch" \
+    || true
+done
+pip install -e . gunicorn
 sudo chown -R nexora:nexora /opt/nexora
+sudo cp /opt/nexora/app/deploy/vps/systemd/content-nexora.service /etc/systemd/system/
+sudo cp /opt/nexora/app/deploy/vps/nginx/nexora.conf /etc/nginx/sites-available/nexora.conf
+sudo systemctl daemon-reload
+sudo nginx -t
+sudo systemctl reload nginx
 sudo systemctl restart nexora-drama nexora-api content-nexora
 sudo systemctl restart nexora-anime
 ```
