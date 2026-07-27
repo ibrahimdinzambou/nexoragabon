@@ -228,7 +228,8 @@ git stash push -m "nexora-patches-before-update-$(date +%Y%m%d-%H%M%S)" -- \
   src/autoflix_api/templates/index.html \
   src/autoflix_cli/config_loader.py \
   src/autoflix_cli/scraping/french_stream.py \
-  src/autoflix_cli/scraping/player.py || true
+  src/autoflix_cli/scraping/player.py \
+  tests/test_api_contract.py || true
 git pull --ff-only
 . .venv/bin/activate
 patch=/opt/nexora/app/deploy/vps/content-nexora-resilience.patch
