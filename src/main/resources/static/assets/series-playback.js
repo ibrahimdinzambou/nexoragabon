@@ -132,19 +132,57 @@
             || positiveInteger(fallback);
     }
 
-    function episodeGroups(episodes) {
-        if (Array.isArray(episodes)) return [{ language: "", entries: episodes }];
-        if (!episodes || typeof episodes !== "object") return [];
+    function episodeGroupRank(language) {
         const preferred = ["vf", "fr", "vostfr", "vjstfr", "vastfr", "vo"];
-        return Object.entries(episodes)
-            .filter(([, entries]) => Array.isArray(entries) && entries.length)
-            .sort(([left], [right]) => {
-                const leftRank = preferred.indexOf(String(left).toLowerCase());
-                const rightRank = preferred.indexOf(String(right).toLowerCase());
-                return (leftRank < 0 ? preferred.length : leftRank)
-                    - (rightRank < 0 ? preferred.length : rightRank);
-            })
+        const rank = preferred.indexOf(String(language || "").toLowerCase());
+        return rank < 0 ? preferred.length : rank;
+    }
+
+    function groupedEpisodeCollections(value) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+        const sourceFields = new Set([
+            "players",
+            "sources",
+            "hosters",
+            "links",
+            "streams",
+            "qualities"
+        ]);
+        return Object.entries(value)
+            .filter(([language, entries]) => (
+                !sourceFields.has(String(language).toLowerCase())
+                && Array.isArray(entries)
+                && entries.length
+            ))
             .map(([language, entries]) => ({ language, entries }));
+    }
+
+    function episodeGroups(episodes) {
+        if (!episodes || typeof episodes !== "object") return [];
+
+        if (!Array.isArray(episodes)) {
+            return groupedEpisodeCollections(episodes)
+                .sort((left, right) => episodeGroupRank(left.language) - episodeGroupRank(right.language));
+        }
+
+        const groups = new Map();
+        const flatEntries = [];
+        episodes.forEach((entry) => {
+            const nestedGroups = episodeNumber(entry) ? [] : groupedEpisodeCollections(entry);
+            if (!nestedGroups.length) {
+                flatEntries.push(entry);
+                return;
+            }
+            nestedGroups.forEach(({ language, entries }) => {
+                const key = String(language || "");
+                groups.set(key, [...(groups.get(key) || []), ...entries]);
+            });
+        });
+
+        if (flatEntries.length) groups.set("", [...(groups.get("") || []), ...flatEntries]);
+        return [...groups.entries()]
+            .map(([language, entries]) => ({ language, entries }))
+            .sort((left, right) => episodeGroupRank(left.language) - episodeGroupRank(right.language));
     }
 
     function episodeNumbers(episodes) {

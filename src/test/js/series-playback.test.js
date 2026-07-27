@@ -57,3 +57,27 @@ test("ne retombe pas sur la première saison d'une réponse Content-Nexora", () 
     assert.deepEqual(series.remoteEpisodeEntries(content, 3, 2), []);
     assert.deepEqual(series.remoteEpisodeEntries(content, 2, 3), []);
 });
+
+test("déplie les groupes de langues enveloppés dans la liste d'épisodes Content-Nexora", () => {
+    const content = {
+        seasons: [{
+            season: 1,
+            episodes: [{
+                vf: [
+                    { episode: 1, players: [{ url: "https://vf.example/s1e1" }] },
+                    { episode: 2, players: [{ url: "https://vf.example/s1e2" }] }
+                ],
+                vostfr: [
+                    { episode: 1, players: [{ url: "https://vostfr.example/s1e1" }] }
+                ]
+            }]
+        }]
+    };
+
+    assert.deepEqual(series.episodeNumbers(content.seasons[0].episodes), [1, 2]);
+    const episode = series.remoteEpisodeEntries(content, 1, 1);
+    assert.equal(episode.length, 2);
+    assert.deepEqual(episode.map((entry) => entry.contentNexoraLanguage), ["vf", "vostfr"]);
+    assert.equal(episode[0].players[0].url, "https://vf.example/s1e1");
+    assert.deepEqual(series.remoteEpisodeEntries(content, 1, 3), []);
+});
