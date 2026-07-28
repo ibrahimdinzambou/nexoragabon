@@ -496,7 +496,7 @@ async function animeNexoraApi(path, options = {}) {
     const load = async () => {
         const response = await fetchWithRetry(url, {
             timeoutMs: EXTERNAL_API_TIMEOUT_MS,
-            retryDelays: [],
+            retryTransient: true,
             ...options,
             headers
         });
@@ -907,7 +907,7 @@ async function contentNexoraApi(path, options = {}) {
     const load = async () => {
         const response = await fetchWithRetry(url, {
             timeoutMs: EXTERNAL_API_TIMEOUT_MS,
-            retryDelays: [],
+            retryTransient: true,
             ...options,
             headers
         });
@@ -6496,7 +6496,8 @@ async function contentNexoraSeriesInfo(item) {
     if (tmdbId) parameters.set("tmdbId", String(tmdbId));
     appendSeriesIdentityParameters(parameters, item);
 
-    const payload = await contentNexoraApi(`/series?${parameters}`, {
+    const endpoint = isTmdbCatalogItem(item) ? "/content" : "/series";
+    const payload = await contentNexoraApi(`${endpoint}?${parameters}`, {
         timeoutMs: matchedUrl ? EXTERNAL_API_TIMEOUT_MS : 12000
     });
     const content = payload.content || payload;

@@ -150,6 +150,8 @@ test("les anciennes cards TMDB s'affichent comme sources FR avec Content en prin
     assert.match(app, /primaryPlaybackProvider:\s*"content-nexora"/);
     assert.match(app, /fallbackPlaybackProvider:\s*"videasy"/);
     assert.match(app, /contentNexoraMatchCacheKey/);
+    assert.match(app, /const endpoint = isTmdbCatalogItem\(item\) \? "\/content" : "\/series";/);
+    assert.match(app, /retryTransient:\s*true/);
     assert.match(app, /isTmdbCatalogItem\(value\)[\s\S]*?french-badge/);
     assert.doesNotMatch(app, />TMDB<|TMDB→FR/);
     assert.doesNotMatch(watch, /lecteur TMDB/i);

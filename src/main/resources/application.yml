@@ -149,6 +149,8 @@ app:
   external-api-proxy:
     content-base-url: ${CONTENT_NEXORA_INTERNAL_BASE_URL:http://127.0.0.1:8787}
     anime-base-url: ${ANIME_NEXORA_INTERNAL_BASE_URL:http://127.0.0.1:5001}
+    content-fallback-base-url: ${CONTENT_NEXORA_API_BASE_URL:}
+    anime-fallback-base-url: ${ANIME_NEXORA_BASE_URL:${CONSUMET_BASE_URL:}}
     timeout-seconds: ${EXTERNAL_API_PROXY_TIMEOUT_SECONDS:45}
     max-response-bytes: ${EXTERNAL_API_PROXY_MAX_RESPONSE_BYTES:8388608}
   eporner:
