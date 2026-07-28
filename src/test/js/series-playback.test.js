@@ -199,14 +199,21 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260728-content-catalog-1/);
+    assert.match(watch, /app\.js\?v=20260728-section-load-more-1/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
     assert.match(app, /homeVisibleCatalog:\s*\{\s*live:\s*HOME_PREVIEW_LIMIT/);
     assert.match(app, /state\.activeType === "all"\s*\? state\.homeVisibleCatalog/);
     assert.match(app, /data-load-more="\$\{shelf\.type\}"/);
+    assert.match(app, /CONTENT_NEXORA_CATALOG_MAX_ITEMS\s*=\s*240/);
+    assert.match(app, /contentNexoraCatalogSeeds\(type,\s*requestedLimit\)/);
+    assert.match(app, /parameters\.set\("limit",\s*String\(limit\)\)/);
+    assert.match(app, /mapWithConcurrency\(seeds,\s*2/);
+    assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
+    assert.match(watch, /app\.js\?v=20260728-section-load-more-1/);
 });
 
 test("le super admin n'est jamais bloqué par la date d'abonnement dans l'interface", () => {

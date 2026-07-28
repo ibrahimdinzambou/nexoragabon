@@ -39,9 +39,11 @@ const CONTENT_NEXORA_RESOLVE_TIMEOUT_MS = 18000;
 const CONTENT_NEXORA_SOURCE_CONCURRENCY = 2;
 const CONTENT_NEXORA_EMBED_FALLBACK_DELAY_MS = 8000;
 const CONTENT_NEXORA_CATALOG_TIMEOUT_MS = 8500;
+const CONTENT_NEXORA_CATALOG_MAX_ITEMS = 240;
+const CONTENT_NEXORA_CATALOG_SEED_BATCH_SIZE = 36;
 const CONTENT_NEXORA_CATALOG_SEEDS = {
-    movie: ["the", "le"],
-    series: ["saison", "the"]
+    movie: ["the", "le", "la", "les", "un", "une", "film", "love", "war", "night", "dead", "man"],
+    series: ["saison", "the", "la", "les", "serie", "love", "life", "crime", "war", "night", "family", "city"]
 };
 const TMDB_CONTENT_HYDRATION_CONCURRENCY = 2;
 const TMDB_CONTENT_HYDRATION_TIMEOUT_MS = 8000;
@@ -2117,8 +2119,13 @@ function normalizeContentNexoraSearchItem(result, index) {
 async function searchContentNexoraCatalog(query, limit, options = {}) {
     if (!query || !contentNexoraApiEnabled()) return [];
     try {
+        const parameters = new URLSearchParams({
+            provider: CONTENT_NEXORA_PROVIDER,
+            q: query
+        });
+        if (limit > 0) parameters.set("limit", String(limit));
         const payload = await contentNexoraApi(
-            `/search?provider=${encodeURIComponent(CONTENT_NEXORA_PROVIDER)}&q=${encodeURIComponent(query)}`,
+            `/search?${parameters}`,
             options
         );
         return contentNexoraSearchResults(payload)
@@ -2172,22 +2179,48 @@ function shouldLoadAnimeNexoraCatalog(type, query) {
         && (activeAnimeNexoraCategory() || Boolean(query));
 }
 
+function contentNexoraCatalogRequestLimit(limit) {
+    return Math.min(
+        Math.max(1, positiveInteger(limit) || HOME_PREVIEW_LIMIT),
+        CONTENT_NEXORA_CATALOG_MAX_ITEMS
+    );
+}
+
+function contentNexoraCatalogSeeds(type, limit) {
+    const seeds = CONTENT_NEXORA_CATALOG_SEEDS[type] || [];
+    const requestedLimit = contentNexoraCatalogRequestLimit(limit);
+    const seedCount = Math.min(
+        seeds.length,
+        Math.max(2, Math.ceil(requestedLimit / CONTENT_NEXORA_CATALOG_SEED_BATCH_SIZE))
+    );
+    return seeds.slice(0, seedCount);
+}
+
 async function browseContentNexoraCatalog(type, limit, options = {}) {
     if (!["movie", "series"].includes(type) || !contentNexoraApiEnabled()) return [];
-    const seeds = CONTENT_NEXORA_CATALOG_SEEDS[type] || [];
-    const requestedLimit = Math.min(Math.max(1, limit || HOME_PREVIEW_LIMIT), 72);
+    const requestedLimit = contentNexoraCatalogRequestLimit(limit);
+    const seeds = contentNexoraCatalogSeeds(type, requestedLimit);
     const perSeedLimit = Math.ceil(requestedLimit / Math.max(1, seeds.length)) + 8;
-    const responses = await Promise.allSettled(seeds.map((seed) => searchContentNexoraCatalog(
-        seed,
-        perSeedLimit,
-        {
-            ...options,
-            timeoutMs: Math.min(
-                positiveInteger(options.timeoutMs) || CONTENT_NEXORA_CATALOG_TIMEOUT_MS,
-                CONTENT_NEXORA_CATALOG_TIMEOUT_MS
-            )
+    const responses = await mapWithConcurrency(seeds, 2, async (seed) => {
+        try {
+            return {
+                status: "fulfilled",
+                value: await searchContentNexoraCatalog(
+                    seed,
+                    perSeedLimit,
+                    {
+                        ...options,
+                        timeoutMs: Math.min(
+                            positiveInteger(options.timeoutMs) || CONTENT_NEXORA_CATALOG_TIMEOUT_MS,
+                            CONTENT_NEXORA_CATALOG_TIMEOUT_MS
+                        )
+                    }
+                )
+            };
+        } catch (reason) {
+            return { status: "rejected", reason };
         }
-    )));
+    });
     const unique = new Map();
     responses.forEach((response) => {
         if (response.status !== "fulfilled") return;
@@ -2323,7 +2356,7 @@ async function loadCatalog() {
                 const contentNexoraItemsPromise = ["movie", "series"].includes(type) && !activeAnimeNexoraCategory()
                     ? (
                         query
-                            ? searchContentNexoraCatalog(query, Math.min(requestedLimit, 72), { signal: abortController.signal })
+                            ? searchContentNexoraCatalog(query, contentNexoraCatalogRequestLimit(requestedLimit), { signal: abortController.signal })
                             : browseContentNexoraCatalog(type, requestedLimit, { signal: abortController.signal })
                     ).catch(() => [])
                     : Promise.resolve([]);
