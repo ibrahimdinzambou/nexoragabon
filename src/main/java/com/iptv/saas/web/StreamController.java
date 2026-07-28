@@ -156,7 +156,10 @@ public class StreamController {
         return Responses.ok(ApiMappers.session(streams.close(SecurityUtils.currentUser(), sessionToken)));
     }
 
-    @GetMapping("/api/stream/proxy/{sessionToken}")
+    @GetMapping({
+            "/api/stream/proxy/{sessionToken}",
+            "/api/stream/proxy/{sessionToken}/master.m3u8"
+    })
     public ResponseEntity<StreamingResponseBody> proxy(
             @PathVariable String sessionToken,
             HttpServletRequest request
@@ -251,7 +254,7 @@ public class StreamController {
     }
 
     private void verifyDirectReadable(UserSession session) {
-        if (looksLikeHlsPlaylistUrl(session.streamUrl)) {
+        if (isHlsSession(session)) {
             verifyHlsReadable(session, session.streamUrl, 0);
             return;
         }
@@ -261,7 +264,7 @@ public class StreamController {
     private void verifyHlsReadable(UserSession session, String streamUrl, int depth) {
         var remote = openRelay(session, streamUrl, null);
         try (var ignored = remote.body()) {
-            if (!isHlsPlaylist(streamUrl, remote.contentType())) {
+            if (!isHlsPlaylist(session, streamUrl, remote.contentType())) {
                 return;
             }
             String playlist = new String(ignored.readNBytes(HLS_PREFLIGHT_MAX_BYTES), StandardCharsets.UTF_8);
@@ -336,9 +339,11 @@ public class StreamController {
             String streamUrl,
             HttpServletRequest request
     ) {
-        String requestedRange = looksLikeHlsPlaylistUrl(streamUrl) ? null : request.getHeader(HttpHeaders.RANGE);
+        String requestedRange = isDeclaredHlsRoot(session, streamUrl) || looksLikeHlsPlaylistUrl(streamUrl)
+                ? null
+                : request.getHeader(HttpHeaders.RANGE);
         var remote = openRelay(session, streamUrl, requestedRange);
-        if (isHlsPlaylist(streamUrl, remote.contentType())) {
+        if (isHlsPlaylist(session, streamUrl, remote.contentType())) {
             return rewrittenHlsResponse(session, streamUrl, remote);
         }
 
@@ -357,7 +362,7 @@ public class StreamController {
         };
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(remote.status())
-                .contentType(mediaType(remote.contentType()))
+                .contentType(mediaType(streamUrl, remote.contentType()))
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .header("X-Accel-Buffering", "no");
         if (shouldExposeContentLength(remote)) {
@@ -486,12 +491,35 @@ public class StreamController {
         return null;
     }
 
-    private MediaType mediaType(String value) {
+    private MediaType mediaType(String streamUrl, String value) {
+        MediaType upstreamType = MediaType.APPLICATION_OCTET_STREAM;
         try {
-            return MediaType.parseMediaType(value);
+            upstreamType = MediaType.parseMediaType(value);
         } catch (IllegalArgumentException exception) {
-            return MediaType.APPLICATION_OCTET_STREAM;
+            // Fall back to the file extension for providers returning a generic type.
         }
+        if (!MediaType.APPLICATION_OCTET_STREAM.includes(upstreamType)
+                && !upstreamType.includes(MediaType.APPLICATION_OCTET_STREAM)) {
+            return upstreamType;
+        }
+        String path;
+        try {
+            path = URI.create(streamUrl).getPath().toLowerCase(Locale.ROOT);
+        } catch (IllegalArgumentException exception) {
+            return upstreamType;
+        }
+        if (path.endsWith(".mp4")) return MediaType.parseMediaType("video/mp4");
+        if (path.endsWith(".m4v")) return MediaType.parseMediaType("video/x-m4v");
+        if (path.endsWith(".mov")) return MediaType.parseMediaType("video/quicktime");
+        if (path.endsWith(".ts") || path.endsWith(".m2ts") || path.endsWith(".mpegts")) {
+            return MediaType.parseMediaType("video/mp2t");
+        }
+        if (path.endsWith(".webm")) return MediaType.parseMediaType("video/webm");
+        return upstreamType;
+    }
+
+    private boolean isHlsPlaylist(UserSession session, String streamUrl, String contentType) {
+        return isDeclaredHlsRoot(session, streamUrl) || isHlsPlaylist(streamUrl, contentType);
     }
 
     private boolean isHlsPlaylist(String streamUrl, String contentType) {
@@ -551,6 +579,19 @@ public class StreamController {
         String encoded = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(targetUrl.getBytes(StandardCharsets.UTF_8));
         return absoluteApiUrl("/api/stream/hls/" + session.sessionToken + "?u=" + encoded);
+    }
+
+    private boolean isHlsSession(UserSession session) {
+        return session != null
+                && (looksLikeHlsPlaylistUrl(session.streamUrl)
+                || session.itemId != null
+                && session.itemId.startsWith("external~content-nexora~hls~"));
+    }
+
+    private boolean isDeclaredHlsRoot(UserSession session, String streamUrl) {
+        return isHlsSession(session)
+                && session.streamUrl != null
+                && session.streamUrl.equals(streamUrl);
     }
 
     private String decodeHlsUrl(String encodedUrl) {
@@ -648,12 +689,15 @@ public class StreamController {
     private Map<String, Object> sessionPayload(com.iptv.saas.domain.UserSession session) {
         String quality = effectiveQuality(session);
         boolean embed = isEmbedSession(session);
+        String mode = playbackMode(session, quality, embed);
+        String proxyPath = "/api/stream/proxy/" + session.sessionToken
+                + ("hls".equals(mode) ? "/master.m3u8" : "");
         var body = Responses.map();
         body.put("session", ApiMappers.session(session));
         body.put("token", session.sessionToken);
-        body.put("proxyUrl", embed ? session.streamUrl : absoluteApiUrl("/api/stream/proxy/" + session.sessionToken));
+        body.put("proxyUrl", embed ? session.streamUrl : absoluteApiUrl(proxyPath));
         body.put("quality", quality);
-        body.put("playbackMode", playbackMode(session, quality, embed));
+        body.put("playbackMode", mode);
         body.put("canFailover", canFailover(session));
         return body;
     }
@@ -668,8 +712,7 @@ public class StreamController {
         if (embed) {
             return "embed";
         }
-        if (looksLikeHlsPlaylistUrl(session.streamUrl)
-                || session.itemId != null && session.itemId.startsWith("external~content-nexora~hls~")) {
+        if (isHlsSession(session)) {
             return "hls";
         }
         if ("live".equals(session.contentType)

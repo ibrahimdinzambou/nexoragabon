@@ -626,7 +626,7 @@
             <main class="player-room-main">
                 <div class="player-screen" id="playerScreen">
         <button class="modal-close player-close" type="button" data-close-modal="playerModal" aria-label="Fermer">×</button>
-        <video id="streamPlayer" controls playsinline webkit-playsinline></video>
+        <video id="streamPlayer" controls preload="metadata" playsinline webkit-playsinline x-webkit-airplay="allow"></video>
         <iframe id="embedPlayer" title="Lecteur externe" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" referrerpolicy="no-referrer" hidden></iframe>
         <div class="embed-click-shield" id="embedClickShield" hidden>
             <div>
@@ -733,6 +733,6 @@
 <script src="/assets/vendor/hls.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js" defer></script>
 <script src="/assets/series-playback.js?v=20260728-tmdb-normalized-content-1" defer></script>
-<script src="/assets/app.js?v=20260728-embed-shield-off-1" defer></script>
+<script src="/assets/app.js?v=20260728-ios-hls-1" defer></script>
 </body>
 </html>

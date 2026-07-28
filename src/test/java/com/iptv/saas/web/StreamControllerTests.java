@@ -299,9 +299,77 @@ class StreamControllerTests {
 
         assertEquals(true, response.get("success"));
         assertEquals("hls", data.get("playbackMode"));
-        assertEquals("/api/stream/proxy/token", data.get("proxyUrl"));
+        assertEquals("/api/stream/proxy/token/master.m3u8", data.get("proxyUrl"));
         verify(relay).open(session.streamUrl, null);
         verify(relay).open(segmentUrl, null);
+    }
+
+    @Test
+    void exposesDeclaredContentNexoraHlsAsAnExplicitSafariManifest() throws Exception {
+        StreamingService streams = mock(StreamingService.class);
+        StreamRelayService relay = mock(StreamRelayService.class);
+        VlcRemuxService remux = mock(VlcRemuxService.class);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        StreamController controller = controller(streams, relay, remux);
+
+        UserSession session = session("token", "https://cdn.example/playback?id=42");
+        session.contentType = "movie";
+        session.itemId = "external~content-nexora~hls~iphone";
+        session.iptvAccount = null;
+        when(streams.getActiveByToken("token")).thenReturn(session);
+        when(request.getHeader(HttpHeaders.RANGE)).thenReturn("bytes=0-");
+        when(relay.open(session.streamUrl, null)).thenReturn(new StreamRelayService.RelayResponse(
+                200,
+                "application/octet-stream",
+                null,
+                null,
+                null,
+                false,
+                new ByteArrayInputStream("""
+                        #EXTM3U
+                        #EXTINF:4,
+                        chunks/segment001.ts
+                        """.getBytes(StandardCharsets.UTF_8))
+        ));
+
+        Map<String, Object> urlResponse = (Map<String, Object>) controller.url("token");
+        Map<String, Object> urlData = (Map<String, Object>) urlResponse.get("data");
+        ResponseEntity<StreamingResponseBody> response = controller.proxy("token", request);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        response.getBody().writeTo(output);
+
+        assertEquals("hls", urlData.get("playbackMode"));
+        assertEquals("/api/stream/proxy/token/master.m3u8", urlData.get("proxyUrl"));
+        assertEquals("application/vnd.apple.mpegurl", response.getHeaders().getContentType().toString());
+        assertTrue(output.toString(StandardCharsets.UTF_8).contains("/api/stream/hls/token?u="));
+        verify(relay).open(session.streamUrl, null);
+    }
+
+    @Test
+    void infersMp4MimeTypeWhenAProviderReturnsGenericBinary() {
+        StreamingService streams = mock(StreamingService.class);
+        StreamRelayService relay = mock(StreamRelayService.class);
+        VlcRemuxService remux = mock(VlcRemuxService.class);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        StreamController controller = controller(streams, relay, remux);
+
+        UserSession session = session("token", "https://cdn.example/movie.mp4?token=abc");
+        session.contentType = "movie";
+        when(streams.getActiveByToken("token")).thenReturn(session);
+        when(request.getHeader(HttpHeaders.RANGE)).thenReturn("bytes=0-");
+        when(relay.open(session.streamUrl, "bytes=0-")).thenReturn(new StreamRelayService.RelayResponse(
+                206,
+                "application/octet-stream",
+                3L,
+                "bytes 0-2/3",
+                "bytes",
+                false,
+                new ByteArrayInputStream(new byte[]{1, 2, 3})
+        ));
+
+        ResponseEntity<StreamingResponseBody> response = controller.proxy("token", request);
+
+        assertEquals("video/mp4", response.getHeaders().getContentType().toString());
     }
 
     @Test

@@ -199,7 +199,7 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260728-embed-shield-off-1/);
+    assert.match(watch, /app\.js\?v=20260728-ios-hls-1/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
@@ -215,16 +215,36 @@ test("Voir plus recharge aussi les rayons de l'accueil", () => {
     assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
     assert.match(app, /const contentRemoteMore = !searching[\s\S]*?contentNexoraApiEnabled\(\) \|\| animeNexoraApiEnabled\(\)/);
     assert.match(app, /visibleItems\.length < rowItems\.length \|\| remoteMore \|\| likelyRemoteMore \|\| contentRemoteMore/);
-    assert.match(watch, /app\.js\?v=20260728-embed-shield-off-1/);
+    assert.match(watch, /app\.js\?v=20260728-ios-hls-1/);
 });
 
-test("les pages films et series enrichissent les univers et securisent le mobile", () => {
+test("les pages films et series enrichissent les univers et privilegient le flux natif mobile", () => {
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    const openSource = app.match(/async function openContentNexoraSource[\s\S]*?\n}/)?.[0] || "";
     assert.match(app, /browseUniverses\(unique\)\.slice\(0,\s*14\)/);
     assert.match(app, /contentNexoraCatalogCategories\(\)[\s\S]*?directAnimeNexoraCategories\(\)[\s\S]*?state\.categories/);
     assert.match(app, /addUniverse\("Nouveautes"/);
-    assert.match(app, /isMobileEmbedEnvironment\(\)[\s\S]*?source\.pageUrl[\s\S]*?startStreamPlayback\(item,\s*source\.pageUrl,\s*"embed"/);
+    assert.doesNotMatch(openSource, /isMobileEmbedEnvironment/);
+    assert.match(openSource, /startStreamFromPayload\(item,\s*stream,\s*"auto",\s*\{[\s\S]*?embedFallbackUrl/);
     assert.match(app, /Lecteur Content-Nexora pret/);
+});
+
+test("le lecteur iPhone utilise HLS natif avec un lecteur web de secours", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
+    const video = watch.match(/<video\s+id="streamPlayer"[^>]+>/)?.[0] || "";
+
+    assert.match(video, /preload="metadata"/);
+    assert.match(video, /playsinline/);
+    assert.match(video, /webkit-playsinline/);
+    assert.match(video, /x-webkit-airplay="allow"/);
+    assert.match(app, /function isAppleMobilePlaybackEnvironment\(\)/);
+    assert.match(app, /video\.preload = isAppleMobilePlaybackEnvironment\(\) \? "metadata" : "auto"/);
+    assert.match(app, /canPlayType\("application\/vnd\.apple\.mpegurl"\)/);
+    assert.match(app, /state\.activeEmbedFallbackUrl = playbackMode !== "embed"/);
+    assert.match(app, /\[2, 3, 4\]\.includes\(code\) && state\.activeEmbedFallbackUrl/);
+    assert.match(app, /const webFallbacks = \[\][\s\S]*?for \(const source of webFallbacks\)/);
+    assert.match(app, /openContentNexoraWebFallback\(activeItem, source\)/);
 });
 
 test("le lecteur Content-Nexora accepte les enveloppes API et les champs de lecteurs courants", () => {

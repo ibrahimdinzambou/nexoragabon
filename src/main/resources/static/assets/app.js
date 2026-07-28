@@ -7052,6 +7052,7 @@ async function playContentNexoraItem(item) {
             throw new Error("Content-Nexora n'a fourni aucun flux vidéo lisible pour ce contenu.");
         }
         const failures = [];
+        const webFallbacks = [];
         for (let index = 0; index < sources.length; index += 1) {
             const source = sources[index];
             state.activeFrenchSourceIndex = index;
@@ -7062,7 +7063,22 @@ async function playContentNexoraItem(item) {
                 return;
             } catch (error) {
                 failures.push(error);
+                const fallbackUrl = contentNexoraEmbedFallbackUrl(source);
+                if (fallbackUrl
+                    && !webFallbacks.some((entry) => contentNexoraEmbedFallbackUrl(entry) === fallbackUrl)) {
+                    webFallbacks.push(source);
+                }
                 await stopPlayer();
+            }
+        }
+        for (const source of webFallbacks) {
+            try {
+                if (await openContentNexoraWebFallback(activeItem, source)) {
+                    elements.playerMessage.textContent = `Lecteur web de secours via ${source.label}.`;
+                    return;
+                }
+            } catch (error) {
+                failures.push(error);
             }
         }
         throw unavailableSourceError("Aucun flux Content-Nexora n'a pu démarrer.", failures);
@@ -7573,15 +7589,6 @@ async function resolveContentNexoraSources(content, item = state.activePlayerIte
 }
 
 async function openContentNexoraSource(item, source, content) {
-    if (isMobileEmbedEnvironment()
-        && source.pageUrl
-        && source.pageUrl !== source.mediaUrl
-        && ["hls", "direct"].includes(source.kind)) {
-        state.activeSessionToken = null;
-        state.activeCanFailover = false;
-        await startStreamPlayback(item, source.pageUrl, "embed", { visualWatch: false });
-        return;
-    }
     if (source.kind === "embed" || !source.verified) {
         state.activeSessionToken = null;
         state.activeCanFailover = false;
@@ -7599,7 +7606,26 @@ async function openContentNexoraSource(item, source, content) {
         }),
         retryTransient: true
     });
-    await startStreamFromPayload(item, stream, "auto");
+    const embedFallbackUrl = contentNexoraEmbedFallbackUrl(source);
+    await startStreamFromPayload(item, stream, "auto", {
+        embedFallbackUrl,
+        embedFallbackLabel: source.label
+    });
+}
+
+function contentNexoraEmbedFallbackUrl(source) {
+    return source?.pageUrl && source.pageUrl !== source.mediaUrl ? source.pageUrl : "";
+}
+
+async function openContentNexoraWebFallback(item, source) {
+    const fallbackUrl = contentNexoraEmbedFallbackUrl(source);
+    if (!fallbackUrl) return false;
+    await stopPlayer();
+    state.activePlayerItem = item;
+    state.activeSessionToken = null;
+    state.activeCanFailover = false;
+    await startStreamPlayback(item, fallbackUrl, "embed", { visualWatch: false });
+    return true;
 }
 
 function showFrenchSourceLoadingPanel(content) {
@@ -7693,6 +7719,14 @@ async function switchToFrenchSource(index) {
             }
         } catch {
             // Keep the original playback error for the user.
+        }
+        try {
+            if (await openContentNexoraWebFallback(item, source)) {
+                elements.playerMessage.textContent = `Lecteur web de secours via ${source.label}.`;
+                return;
+            }
+        } catch {
+            // Keep the native playback error when the provider page also fails.
         }
         showPlayerError(error.message || "Impossible de lire ce flux video.");
     } finally {
@@ -7980,9 +8014,7 @@ async function startStreamFromPayload(item, stream, requestedQuality, options = 
         item,
         verifiedStream.proxyUrl,
         verifiedStream.playbackMode,
-        {
-            startTime: options.startTime
-        }
+        options
     );
 }
 
@@ -8371,8 +8403,8 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     state.playerWasPausedBeforeSeek = false;
     state.activeProxyUrl = proxyUrl;
     state.activePlaybackMode = playbackMode;
-    state.activeEmbedFallbackUrl = playbackMode === "hls" ? options.embedFallbackUrl || null : null;
-    state.activeEmbedFallbackLabel = playbackMode === "hls" ? options.embedFallbackLabel || "" : "";
+    state.activeEmbedFallbackUrl = playbackMode !== "embed" ? options.embedFallbackUrl || null : null;
+    state.activeEmbedFallbackLabel = playbackMode !== "embed" ? options.embedFallbackLabel || "" : "";
     // An audio-only failure can occur with HLS, MPEG-TS, DASH, or a direct
     // source. Unless explicitly disabled, monitor every native video mode.
     state.activeVisualWatchdogEnabled = playbackMode !== "embed" && options.visualWatch !== false;
@@ -8402,7 +8434,7 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     }
     elements.embedPlayer.hidden = true;
     elements.streamPlayer.hidden = false;
-    elements.streamPlayer.preload = "auto";
+    prepareNativeStreamPlayer(playbackMode);
     schedulePlayerStartupWatchdog(generation);
     schedulePlayerVisualWatchdog(generation, true);
     const useMpegTs = playbackMode === "mpegts";
@@ -8527,6 +8559,27 @@ async function startStreamPlayback(item, proxyUrl, playbackMode, options = {}) {
     elements.streamPlayer.src = streamUrl;
     await restoreStreamPlayerTime(startTime, generation);
     await attemptStreamPlayerPlay(generation);
+}
+
+function isAppleMobilePlaybackEnvironment() {
+    const userAgent = navigator.userAgent || "";
+    const iOSDevice = /iPhone|iPad|iPod/i.test(userAgent);
+    const iPadDesktopMode = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    return iOSDevice || iPadDesktopMode;
+}
+
+function prepareNativeStreamPlayer(playbackMode) {
+    const video = elements.streamPlayer;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    video.setAttribute("x-webkit-airplay", "allow");
+    video.preload = isAppleMobilePlaybackEnvironment() ? "metadata" : "auto";
+    if (playbackMode === "hls") {
+        video.setAttribute("data-native-hls", "true");
+    } else {
+        video.removeAttribute("data-native-hls");
+    }
 }
 
 function isMobileEmbedEnvironment() {
@@ -9421,11 +9474,15 @@ async function restartCurrentPlayback(
         throw new Error("Session de lecture incomplète.");
     }
     const resumeTime = options.startTime || snapshotPlaybackResumeTime();
+    const embedFallbackUrl = state.activeEmbedFallbackUrl;
+    const embedFallbackLabel = state.activeEmbedFallbackLabel;
     detachPlayerMedia();
     state.playerHasStarted = false;
     state.playerLastProgressAt = Date.now();
     await startStreamPlayback(state.activePlayerItem, proxyUrl, playbackMode, {
-        startTime: resumeTime
+        startTime: resumeTime,
+        embedFallbackUrl,
+        embedFallbackLabel
     });
 }
 
@@ -10639,6 +10696,13 @@ elements.streamPlayer.addEventListener("pause", () => {
 elements.streamPlayer.addEventListener("error", () => {
     if (hasActivePlayback() && !state.playerOpening && !state.playerRecovering) {
         const code = elements.streamPlayer.error?.code;
+        if ([2, 3, 4].includes(code) && state.activeEmbedFallbackUrl) {
+            const reason = code === 2
+                ? "Le flux direct a ete interrompu; bascule vers le lecteur du provider."
+                : "Le format direct n'est pas lisible ici; bascule vers le lecteur du provider.";
+            void switchToEmbedFallback(reason);
+            return;
+        }
         if (code === 2 || code === 3) {
             schedulePlayerRecovery("Le flux a été interrompu, tentative de reprise.", true, code === 2);
             return;
