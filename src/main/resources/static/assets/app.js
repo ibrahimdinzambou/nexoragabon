@@ -66,6 +66,7 @@ const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
+const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const CONTENT_NEXORA_PROVIDER = "french-stream";
 const imageRepairCache = new Map();
@@ -8508,7 +8509,7 @@ function loadEmbedFrame(streamUrl) {
     if (elements.embedPlayer.src !== streamUrl) {
         elements.embedPlayer.src = streamUrl;
     }
-    unlockEmbedShield();
+    lockEmbedShield();
 }
 
 function primeContentNexoraPlayerFrame() {
@@ -8544,21 +8545,19 @@ function lockEmbedShield(forceHide = false) {
     elements.embedClickShield.hidden = !shouldShow;
 }
 
-function unlockEmbedShield(milliseconds = 0) {
+function unlockEmbedShield(milliseconds = EMBED_PLAYER_UNLOCK_MS) {
     if (!elements.embedClickShield || state.activePlaybackMode !== "embed") return;
     if (state.embedShieldTimer) {
         window.clearTimeout(state.embedShieldTimer);
         state.embedShieldTimer = null;
     }
-    state.embedShieldUnlockedUntil = milliseconds > 0 ? Date.now() + milliseconds : Number.POSITIVE_INFINITY;
+    state.embedShieldUnlockedUntil = Date.now() + milliseconds;
     elements.embedClickShield.hidden = true;
-    elements.playerMessage.textContent = "Interaction avec le lecteur autorisee.";
-    if (milliseconds > 0) {
-        state.embedShieldTimer = window.setTimeout(() => {
-            lockEmbedShield();
-            elements.playerMessage.textContent = "Protection anti-redirection reactivee.";
-        }, milliseconds);
-    }
+    elements.playerMessage.textContent = "Interaction avec le lecteur autorisee quelques secondes.";
+    state.embedShieldTimer = window.setTimeout(() => {
+        lockEmbedShield();
+        elements.playerMessage.textContent = "Protection anti-redirection reactivee.";
+    }, milliseconds);
 }
 
 function isExternalEmbedDomRemovalError(event) {

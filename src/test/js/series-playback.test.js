@@ -199,7 +199,7 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260728-browse-load-more-mobile-1/);
+    assert.match(watch, /app\.js\?v=20260728-embed-popup-shield-1/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
@@ -215,7 +215,7 @@ test("Voir plus recharge aussi les rayons de l'accueil", () => {
     assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
     assert.match(app, /const contentRemoteMore = !searching[\s\S]*?contentNexoraApiEnabled\(\) \|\| animeNexoraApiEnabled\(\)/);
     assert.match(app, /visibleItems\.length < rowItems\.length \|\| remoteMore \|\| likelyRemoteMore \|\| contentRemoteMore/);
-    assert.match(watch, /app\.js\?v=20260728-browse-load-more-mobile-1/);
+    assert.match(watch, /app\.js\?v=20260728-embed-popup-shield-1/);
 });
 
 test("les pages films et series enrichissent les univers et securisent le mobile", () => {
@@ -237,7 +237,12 @@ test("le lecteur intégré retire la sandbox incompatible avec certains flux", (
     const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
     const frame = watch.match(/<iframe\s+id="embedPlayer"[^>]+>/)?.[0] || "";
+    const unlockEmbedShieldBody = app.match(/function unlockEmbedShield[\s\S]*?\n}/)?.[0] || "";
     assert.doesNotMatch(frame, /\ssandbox(?:=|\s|>)/);
     assert.match(app, /removeAttribute\("sandbox"\)/);
     assert.doesNotMatch(app, /EMBED_PLAYER_SANDBOX/);
+    assert.match(app, /const EMBED_PLAYER_UNLOCK_MS\s*=\s*4500/);
+    assert.match(app, /function loadEmbedFrame[\s\S]*?lockEmbedShield\(\);/);
+    assert.match(app, /function unlockEmbedShield\(milliseconds = EMBED_PLAYER_UNLOCK_MS\)/);
+    assert.doesNotMatch(unlockEmbedShieldBody, /Number\.POSITIVE_INFINITY/);
 });
