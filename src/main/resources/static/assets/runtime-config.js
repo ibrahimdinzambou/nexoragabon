@@ -2,7 +2,8 @@
     const publicApiBase = "https://api.nexoragabon.com";
     // Les API Python passent par Spring sur /api/external/*, puis Spring les
     // joint en loopback. Le navigateur ne depend donc plus des blocs Nginx
-    // /anime-api et /content-api. Le lecteur Content garde son domaine dedie.
+    // /anime-api et /content-api. Le navigateur passe par Spring sur
+    // /api/external/*, puis Spring joint les API en loopback.
     const publicContentNexoraApiBase = "https://api.nexoragabon.com/api/external/content";
     const publicContentNexoraPlayerBase = "https://content.nexoragabon.com";
     const publicDramaApiBase = "https://api.nexoragabon.com/drama-api";

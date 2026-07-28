@@ -38,6 +38,11 @@ const EXTERNAL_API_TIMEOUT_MS = 25000;
 const CONTENT_NEXORA_RESOLVE_TIMEOUT_MS = 18000;
 const CONTENT_NEXORA_SOURCE_CONCURRENCY = 2;
 const CONTENT_NEXORA_EMBED_FALLBACK_DELAY_MS = 8000;
+const CONTENT_NEXORA_CATALOG_TIMEOUT_MS = 8500;
+const CONTENT_NEXORA_CATALOG_SEEDS = {
+    movie: ["the", "le"],
+    series: ["saison", "the"]
+};
 const TMDB_CONTENT_HYDRATION_CONCURRENCY = 2;
 const TMDB_CONTENT_HYDRATION_TIMEOUT_MS = 8000;
 const TMDB_CONTENT_HYDRATION_TITLE_LIMIT = 2;
@@ -944,7 +949,7 @@ function resolveApiResourceUrl(value) {
         : new URL(value, window.location.origin).href;
 }
 
-// Les films et series passent exclusivement par Content-Nexora.
+// Les films et series hors anime passent par Content-Nexora.
 
 function dramaApiUrl(path) {
     return window.NexoraDramaApi?.url ? window.NexoraDramaApi.url(path) : "";
@@ -2125,6 +2130,77 @@ async function searchContentNexoraCatalog(query, limit, options = {}) {
     }
 }
 
+function contentNexoraCatalogCategories() {
+    return [
+        {
+            id: "content-nexora~movie",
+            name: "Films francais",
+            type: "movie",
+            source: "Content-Nexora",
+            sourceCode: "content-nexora",
+            metadataAvailable: true,
+            streamAvailable: true
+        },
+        {
+            id: "content-nexora~series",
+            name: "Series francaises",
+            type: "series",
+            source: "Content-Nexora",
+            sourceCode: "content-nexora",
+            metadataAvailable: true,
+            streamAvailable: true
+        }
+    ];
+}
+
+function directAnimeNexoraCategories() {
+    return animeNexoraApiEnabled()
+        ? [
+            { id: "anime-nexora-movie", name: "Films anime", type: "movie", source: "Anime Nexora", sourceCode: "anime-nexora", metadataAvailable: true, streamAvailable: true },
+            { id: "anime-nexora-series", name: "Anime", type: "series", source: "Anime Nexora", sourceCode: "anime-nexora", metadataAvailable: true, streamAvailable: true }
+        ]
+        : [];
+}
+
+function activeAnimeNexoraCategory() {
+    return String(state.activeCategory || "").toLowerCase().startsWith("anime-nexora");
+}
+
+function shouldLoadAnimeNexoraCatalog(type, query) {
+    return animeNexoraApiEnabled()
+        && ["movie", "series"].includes(type)
+        && (activeAnimeNexoraCategory() || Boolean(query));
+}
+
+async function browseContentNexoraCatalog(type, limit, options = {}) {
+    if (!["movie", "series"].includes(type) || !contentNexoraApiEnabled()) return [];
+    const seeds = CONTENT_NEXORA_CATALOG_SEEDS[type] || [];
+    const requestedLimit = Math.min(Math.max(1, limit || HOME_PREVIEW_LIMIT), 72);
+    const perSeedLimit = Math.ceil(requestedLimit / Math.max(1, seeds.length)) + 8;
+    const responses = await Promise.allSettled(seeds.map((seed) => searchContentNexoraCatalog(
+        seed,
+        perSeedLimit,
+        {
+            ...options,
+            timeoutMs: Math.min(
+                positiveInteger(options.timeoutMs) || CONTENT_NEXORA_CATALOG_TIMEOUT_MS,
+                CONTENT_NEXORA_CATALOG_TIMEOUT_MS
+            )
+        }
+    )));
+    const unique = new Map();
+    responses.forEach((response) => {
+        if (response.status !== "fulfilled") return;
+        response.value
+            .filter((item) => item.type === type)
+            .forEach((item) => {
+                const key = item.contentNexoraUrl || `${item.type}:${normalizeSearchText(item.name)}`;
+                if (!unique.has(key)) unique.set(key, item);
+            });
+    });
+    return [...unique.values()].slice(0, requestedLimit);
+}
+
 async function loadCatalog() {
     if (state.token && !syncSubscriptionAccess()) {
         state.catalogLoading = false;
@@ -2185,11 +2261,17 @@ async function loadCatalog() {
                 api("/catalog/languages", { signal: abortController.signal })
             ]);
             if (requestId !== state.catalogRequestId) return;
-            const directAnimeCategories = animeNexoraApiEnabled() ? [
-                { id: "anime-nexora-movie", name: "Films anime", type: "movie", source: "Anime Nexora", sourceCode: "anime-nexora", metadataAvailable: true, streamAvailable: true },
-                { id: "anime-nexora-series", name: "Anime", type: "series", source: "Anime Nexora", sourceCode: "anime-nexora", metadataAvailable: true, streamAvailable: true }
-            ] : [];
-            state.categories = [...(categories || []).filter((entry) => !String(entry?.sourceCode || entry?.source || "").toLowerCase().includes("anime-nexora")), ...directAnimeCategories];
+            state.categories = [
+                ...(categories || []).filter((entry) => {
+                    const source = String(entry?.sourceCode || entry?.source || "").toLowerCase();
+                    const id = String(entry?.id || "").toLowerCase();
+                    return !source.includes("anime-nexora")
+                        && !id.startsWith("anime-nexora")
+                        && !id.startsWith("tmdb-");
+                }),
+                ...contentNexoraCatalogCategories(),
+                ...directAnimeNexoraCategories()
+            ];
             state.languages = languages || [];
             state.catalogMetaLoaded = true;
             renderCategories();
@@ -2213,13 +2295,6 @@ async function loadCatalog() {
         const types = query || state.activeType === "all"
             ? ["live", "movie", "series"]
             : [state.activeType];
-        const contentNexoraItemsPromise = query
-            ? searchContentNexoraCatalog(
-                query,
-                Math.min(searchCatalogLimit("movie"), 48),
-                { signal: abortController.signal }
-            )
-            : Promise.resolve([]);
         const resultSets = await Promise.all(
             types.map(async (type) => {
                 const movieLibrary = !query && state.activeType === "movie" && type === "movie";
@@ -2245,20 +2320,27 @@ async function loadCatalog() {
                 params.set("addonPages", query ? "3" : String(state.addonPages));
                 if (!query && state.activeLanguage) params.set("language", state.activeLanguage);
                 if (movieLibrary) params.set("sort", state.movieSort);
-                const directAnimeItemsPromise = animeNexoraApiEnabled() && ["movie", "series"].includes(type)
+                const contentNexoraItemsPromise = ["movie", "series"].includes(type) && !activeAnimeNexoraCategory()
+                    ? (
+                        query
+                            ? searchContentNexoraCatalog(query, Math.min(requestedLimit, 72), { signal: abortController.signal })
+                            : browseContentNexoraCatalog(type, requestedLimit, { signal: abortController.signal })
+                    ).catch(() => [])
+                    : Promise.resolve([]);
+                const directAnimeItemsPromise = shouldLoadAnimeNexoraCatalog(type, query)
                     ? animeNexoraItems(type, query, requestedLimit).catch(() => [])
                     : Promise.resolve([]);
-                // Spring fournit les metadonnees du catalogue. Content-Nexora
-                // est reserve a la recherche et a la lecture des films/series.
+                // Spring reste utile en arriere-plan pour enrichir les contenus
+                // Content avec un tmdbId, mais les cards affichees viennent de Content.
                 const springItemsPromise = api(`/catalog/items?${params}`, { signal: abortController.signal }).catch(() => []);
-                const [springItems, directItems, contentNexoraItems] = await Promise.all([
+                const [springItems, contentNexoraItems, directAnimeItems] = await Promise.all([
                     springItemsPromise,
-                    directAnimeItemsPromise,
-                    contentNexoraItemsPromise
+                    contentNexoraItemsPromise,
+                    directAnimeItemsPromise
                 ]);
                 const frenchItems = (contentNexoraItems || []).filter((item) => item.type === type);
                 return ["movie", "series"].includes(type)
-                    ? [...frenchItems, ...(directItems || []), ...(springItems || [])]
+                    ? [...frenchItems, ...(directAnimeItems || []), ...(springItems || [])]
                     : [...(springItems || [])];
             })
         );
@@ -2281,16 +2363,12 @@ async function loadCatalog() {
                 ? { ...item, tmdbId: relatedTmdb.tmdbId }
                 : item;
         });
-        const animeTitleKeys = new Set(
-            enrichedItems
-                .filter((item) => isAnimeNexoraItem(item))
-                .map((item) => catalogProviderTitleKey(item.name))
-                .filter(Boolean)
-        );
-        const providerSeparatedItems = enrichedItems.filter((item) => (
-            !isFrenchSource(item)
-            || !animeTitleKeys.has(catalogProviderTitleKey(item.name))
-        ));
+        const hasContentNexoraResults = enrichedItems.some((item) => isFrenchSource(item));
+        const providerSeparatedItems = enrichedItems.filter((item) => {
+            if (isAnimeNexoraItem(item) && !activeAnimeNexoraCategory() && !query) return false;
+            if (hasContentNexoraResults && isTmdbCatalogItem(item)) return false;
+            return true;
+        });
         const apiItems = [];
         providerSeparatedItems.forEach((item) => {
             if (!types.includes(item.type)) return false;
@@ -3021,6 +3099,8 @@ async function ensurePlayerSeriesContext(item) {
     try {
         const series = isAnimeNexoraItem(item)
             ? await animeNexoraSeriesInfo(item)
+            : isFrenchSource(item)
+            ? await contentNexoraSeriesInfo(item)
             : await api(
                 `/catalog/series/${encodeURIComponent(catalogSeries?.id || seriesCatalogIdFromEpisode(item))}?title=${encodeURIComponent(seriesTitleKey(item.name || "") || item.name || "")}`
             );
@@ -5611,7 +5691,7 @@ async function openMovieDetails(item) {
     openModal("detailModal");
 
     const tmdbCatalogItem = isTmdbCatalogItem(item);
-    if ((item.externalPlayback || isFrenchSource(item)) && !tmdbCatalogItem) {
+    if ((item.externalPlayback || isFrenchSource(item)) && !tmdbCatalogItem && !isAnimeNexoraItem(item)) {
         state.activeDetail = {
             ...item,
             summary: item.summary || item.description || "Ce film est disponible via les sources FR connectees a Nexora.",
@@ -5720,7 +5800,7 @@ async function loadSeriesInfo(item) {
         return animeNexoraSeriesInfo(item);
     }
     const tmdbCatalogItem = isTmdbSource(item) || isTmdbPublicId(item?.id);
-    if (isContentNexoraPlayerItem(item) && !tmdbCatalogItem) {
+    if ((isContentNexoraPlayerItem(item) || isFrenchSource(item)) && !tmdbCatalogItem) {
         return contentNexoraSeriesInfo(item);
     }
     // TMDB owns the complete season tree. Content-Nexora is queried only when

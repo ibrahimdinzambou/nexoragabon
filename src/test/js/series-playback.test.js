@@ -181,6 +181,27 @@ test("les anciennes cards TMDB s'affichent comme sources FR avec Content en prin
     assert.ok(app.indexOf("await playContentNexoraItem(playbackItem)") < app.indexOf("await playTmdbItem({"));
 });
 
+test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    const runtime = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/runtime-config.js"), "utf8");
+    const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
+    const application = fs.readFileSync(path.join(__dirname, "../../main/resources/application.yml"), "utf8");
+
+    assert.match(app, /CONTENT_NEXORA_CATALOG_SEEDS\s*=\s*\{/);
+    assert.match(app, /browseContentNexoraCatalog\(type,\s*requestedLimit/);
+    assert.match(app, /contentNexoraCatalogCategories\(\)/);
+    assert.match(app, /directAnimeNexoraCategories\(\)/);
+    assert.match(app, /function animeNexoraApiEnabled\(\)\s*\{\s*return Boolean\(ANIME_NEXORA_API_ROOT\);/);
+    assert.match(app, /directAnimeItemsPromise/);
+    assert.match(app, /shouldLoadAnimeNexoraCatalog\(type,\s*query\)/);
+    assert.match(app, /isAnimeNexoraItem\(item\) && !activeAnimeNexoraCategory\(\) && !query/);
+    assert.match(app, /hasContentNexoraResults && isTmdbCatalogItem\(item\)/);
+    assert.match(runtime, /\/api\/external\/anime/);
+    assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
+    assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
+    assert.match(watch, /app\.js\?v=20260728-content-catalog-1/);
+});
+
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
     assert.match(app, /homeVisibleCatalog:\s*\{\s*live:\s*HOME_PREVIEW_LIMIT/);
