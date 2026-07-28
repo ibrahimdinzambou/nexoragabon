@@ -6704,6 +6704,36 @@ function contentNexoraSearchResults(payload) {
     return Array.isArray(payload) ? payload : [];
 }
 
+function contentNexoraPayloadData(payload) {
+    if (payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data)) return payload.data;
+    if (payload?.result && typeof payload.result === "object" && !Array.isArray(payload.result)) return payload.result;
+    return payload && typeof payload === "object" ? payload : {};
+}
+
+function contentNexoraPayloadContent(payload, fallback = {}) {
+    const data = contentNexoraPayloadData(payload);
+    return [
+        payload?.content,
+        payload?.episode,
+        payload?.movie,
+        payload?.series,
+        data?.content,
+        data?.episode,
+        data?.movie,
+        data?.series,
+        data
+    ].find((value) => value && typeof value === "object" && !Array.isArray(value)) || fallback;
+}
+
+function contentNexoraPayloadMatch(payload) {
+    const data = contentNexoraPayloadData(payload);
+    return [
+        payload?.match,
+        payload?.result?.match,
+        data?.match
+    ].find((value) => value && typeof value === "object" && !Array.isArray(value)) || null;
+}
+
 function contentNexoraPlayerParameters(item, query) {
     const parameters = {
         provider: CONTENT_NEXORA_PROVIDER,
@@ -6819,7 +6849,7 @@ async function hydrateContentNexoraSeasons(remoteSeasons) {
                 url: remoteSeason.url
             });
             const payload = await contentNexoraApi(`/season?${parameters}`);
-            hydrated.push({ ...remoteSeason, ...(payload.season || payload) });
+            hydrated.push({ ...remoteSeason, ...contentNexoraPayloadContent(payload) });
         } catch {
             hydrated.push(remoteSeason);
         }
@@ -6857,8 +6887,9 @@ async function contentNexoraSeriesInfo(item) {
     const payload = await contentNexoraApi(`${endpoint}?${parameters}`, {
         timeoutMs: matchedUrl ? EXTERNAL_API_TIMEOUT_MS : 12000
     });
-    const content = payload.content || payload;
-    assertContentNexoraSeriesIdentity(item, payload.match, content);
+    const content = contentNexoraPayloadContent(payload);
+    const match = contentNexoraPayloadMatch(payload);
+    assertContentNexoraSeriesIdentity(item, match, content);
     const initialSeasons = Array.isArray(content?.seasons) ? content.seasons : [];
     const remoteSeasons = await hydrateContentNexoraSeasons(initialSeasons);
     if (!remoteSeasons.length) {
@@ -6866,8 +6897,8 @@ async function contentNexoraSeriesInfo(item) {
     }
     const resolvedItem = {
         ...item,
-        contentNexoraUrl: matchedUrl || payload.match?.url || content.url,
-        contentNexoraTitle: matchedTitle || payload.match?.title || content.title || item.name
+        contentNexoraUrl: matchedUrl || match?.url || content.url,
+        contentNexoraTitle: matchedTitle || match?.title || content.title || item.name
     };
     const baseSeason = positiveInteger(item.season) || 1;
     const seasons = remoteSeasons.map((remoteSeason, index) => {
@@ -6988,20 +7019,20 @@ async function playContentNexoraItem(item) {
             })}`).then((payload) => ({
                 ...payload,
                 content: {
-                    ...(payload.episode || payload),
+                    ...contentNexoraPayloadContent(payload),
                     type: "episode",
                     season: positiveInteger(activeItem.season),
                     episode: positiveInteger(activeItem.episode)
                 }
             }))
             : await contentNexoraApi(`/content?${contentParameters}`);
-        const content = contentPayload.content || contentPayload;
-        const match = contentPayload.match || {
+        const content = contentNexoraPayloadContent(contentPayload);
+        const match = contentNexoraPayloadMatch(contentPayload) || {
             title: matchedTitle || item.originalTitle || query,
             url: matchedUrl || content?.url || ""
         };
         assertContentNexoraSeriesIdentity(activeItem, match, content);
-        if (activeItem.type === "movie" && !Array.isArray(content?.players)) {
+        if (activeItem.type === "movie" && !contentNexoraSourceCandidates(content, activeItem).length) {
             throw new Error(`Content-Nexora n'a pas fourni de lecteur pour « ${query} ».`);
         }
         if (activeItem.type === "series" && !contentNexoraSourceCandidates(content, activeItem).length) {
@@ -7140,10 +7171,19 @@ function contentNexoraSourceUrl(source) {
         source.url,
         source.link,
         source.href,
+        source.src,
+        source.file,
+        source.fileUrl,
+        source.file_url,
         source.playerUrl,
         source.embedUrl,
+        source.iframe,
+        source.iframeUrl,
+        source.iframe_url,
         source.directUrl,
+        source.direct_url,
         source.videoUrl,
+        source.video_url,
         source.streamUrl,
         source.m3u8,
         source.proxyM3U8,
@@ -7199,9 +7239,26 @@ function appendContentNexoraSourceValue(target, value, fallbackLabel = "") {
 
 function appendContentNexoraSourceFields(target, node) {
     if (!node || typeof node !== "object") return;
-    ["players", "sources", "hosters", "links", "streams", "player", "source"].forEach((field) => {
+    [
+        "players",
+        "sources",
+        "hosters",
+        "links",
+        "streams",
+        "servers",
+        "lecteurs",
+        "embeds",
+        "videos",
+        "files",
+        "qualities",
+        "player",
+        "source",
+        "server",
+        "embed",
+        "video",
+        "file"
+    ].forEach((field) => {
         if (node[field] !== undefined && node[field] !== null) {
-            if (["player", "source"].includes(field) && typeof node[field] === "string") return;
             appendContentNexoraSourceValue(target, node[field], field);
         }
     });

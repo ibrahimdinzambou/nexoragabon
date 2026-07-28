@@ -125,6 +125,9 @@ public class ExternalApiProxyService {
                 if (responseBody.length > maxResponseBytes) {
                     throw new IOException("Reponse du service interne trop volumineuse");
                 }
+                if (shouldTryFallback(response.statusCode(), baseUrl, baseUrls)) {
+                    continue;
+                }
                 return new ProxyResponse(
                         response.statusCode(),
                         response.headers().firstValue("Content-Type").orElse("application/json"),
@@ -136,6 +139,13 @@ public class ExternalApiProxyService {
             }
         }
         throw lastException == null ? new IOException("Service interne indisponible") : lastException;
+    }
+
+    private boolean shouldTryFallback(int status, URI currentBaseUrl, List<URI> baseUrls) {
+        if (baseUrls.indexOf(currentBaseUrl) >= baseUrls.size() - 1) {
+            return false;
+        }
+        return status == 404 || status == 429 || status >= 500;
     }
 
     URI upstreamUri(Target target, String requestPath, String queryString) {

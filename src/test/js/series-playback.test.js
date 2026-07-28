@@ -199,7 +199,7 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260728-embed-popup-shield-1/);
+    assert.match(watch, /app\.js\?v=20260728-content-api-player-1/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
@@ -215,7 +215,7 @@ test("Voir plus recharge aussi les rayons de l'accueil", () => {
     assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
     assert.match(app, /const contentRemoteMore = !searching[\s\S]*?contentNexoraApiEnabled\(\) \|\| animeNexoraApiEnabled\(\)/);
     assert.match(app, /visibleItems\.length < rowItems\.length \|\| remoteMore \|\| likelyRemoteMore \|\| contentRemoteMore/);
-    assert.match(watch, /app\.js\?v=20260728-embed-popup-shield-1/);
+    assert.match(watch, /app\.js\?v=20260728-content-api-player-1/);
 });
 
 test("les pages films et series enrichissent les univers et securisent le mobile", () => {
@@ -225,6 +225,18 @@ test("les pages films et series enrichissent les univers et securisent le mobile
     assert.match(app, /addUniverse\("Nouveautes"/);
     assert.match(app, /isMobileEmbedEnvironment\(\)[\s\S]*?source\.pageUrl[\s\S]*?startStreamPlayback\(item,\s*source\.pageUrl,\s*"embed"/);
     assert.match(app, /Lecteur Content-Nexora pret/);
+});
+
+test("le lecteur Content-Nexora accepte les enveloppes API et les champs de lecteurs courants", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    assert.match(app, /function contentNexoraPayloadContent\(payload, fallback = \{\}\)/);
+    assert.match(app, /data\?\.content/);
+    assert.match(app, /data\?\.episode/);
+    assert.match(app, /const content = contentNexoraPayloadContent\(contentPayload\)/);
+    assert.match(app, /const match = contentNexoraPayloadMatch\(contentPayload\)/);
+    assert.match(app, /activeItem\.type === "movie" && !contentNexoraSourceCandidates\(content, activeItem\)\.length/);
+    assert.match(app, /"servers"[\s\S]*"lecteurs"[\s\S]*"embeds"[\s\S]*"files"/);
+    assert.doesNotMatch(app, /\["player", "source"\]\.includes\(field\) && typeof node\[field\] === "string"/);
 });
 
 test("le super admin n'est jamais bloqué par la date d'abonnement dans l'interface", () => {
