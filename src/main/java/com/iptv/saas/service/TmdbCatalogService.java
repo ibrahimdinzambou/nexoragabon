@@ -19,22 +19,23 @@ public class TmdbCatalogService {
     private static final String ITEM_PREFIX = "tmdb";
     private static final String TYPE_MOVIE = "movie";
     private static final String TYPE_SERIES = "series";
-    private static final String SOURCE = "TMDB";
+    private static final String SOURCE = "Content-Nexora";
+    private static final String SOURCE_CODE = "content-nexora";
     private static final String PLAYBACK_PROVIDER = "content-nexora";
     private static final String PLAYBACK_PROVIDER_NAME = "Content-Nexora";
     private static final String FALLBACK_PLAYBACK_PROVIDER = "videasy";
     private static final String FALLBACK_PLAYBACK_PROVIDER_NAME = "Videasy";
     private static final int TMDB_PAGE_SIZE = 20;
     private static final List<Category> CATEGORIES = List.of(
-            new Category("tmdb-movie-trending", "TMDB - Films tendances", TYPE_MOVIE, Kind.TRENDING, "trending"),
-            new Category("tmdb-movie-popular", "TMDB - Films populaires", TYPE_MOVIE, Kind.MOVIE_LIST, "popular"),
-            new Category("tmdb-movie-now-playing", "TMDB - Au cinema", TYPE_MOVIE, Kind.MOVIE_LIST, "now_playing"),
-            new Category("tmdb-movie-top-rated", "TMDB - Films les mieux notes", TYPE_MOVIE, Kind.MOVIE_LIST, "top_rated"),
-            new Category("tmdb-movie-upcoming", "TMDB - Prochainement", TYPE_MOVIE, Kind.MOVIE_LIST, "upcoming"),
-            new Category("tmdb-series-trending", "TMDB - Series tendances", TYPE_SERIES, Kind.TRENDING, "trending"),
-            new Category("tmdb-series-popular", "TMDB - Series populaires", TYPE_SERIES, Kind.TV_LIST, "popular"),
-            new Category("tmdb-series-on-the-air", "TMDB - En diffusion", TYPE_SERIES, Kind.TV_LIST, "on_the_air"),
-            new Category("tmdb-series-top-rated", "TMDB - Series les mieux notees", TYPE_SERIES, Kind.TV_LIST, "top_rated"),
+            new Category("tmdb-movie-trending", "Films FR tendances", TYPE_MOVIE, Kind.TRENDING, "trending"),
+            new Category("tmdb-movie-popular", "Films FR populaires", TYPE_MOVIE, Kind.MOVIE_LIST, "popular"),
+            new Category("tmdb-movie-now-playing", "Films FR au cinema", TYPE_MOVIE, Kind.MOVIE_LIST, "now_playing"),
+            new Category("tmdb-movie-top-rated", "Films FR les mieux notes", TYPE_MOVIE, Kind.MOVIE_LIST, "top_rated"),
+            new Category("tmdb-movie-upcoming", "Films FR prochainement", TYPE_MOVIE, Kind.MOVIE_LIST, "upcoming"),
+            new Category("tmdb-series-trending", "Series FR tendances", TYPE_SERIES, Kind.TRENDING, "trending"),
+            new Category("tmdb-series-popular", "Series FR populaires", TYPE_SERIES, Kind.TV_LIST, "popular"),
+            new Category("tmdb-series-on-the-air", "Series FR en diffusion", TYPE_SERIES, Kind.TV_LIST, "on_the_air"),
+            new Category("tmdb-series-top-rated", "Series FR les mieux notees", TYPE_SERIES, Kind.TV_LIST, "top_rated"),
             new Category("tmdb-series-korean-drama", "Drama coreens", TYPE_SERIES, Kind.DISCOVER_TV, "korean_drama")
     );
 
@@ -101,7 +102,7 @@ public class TmdbCatalogService {
     public Map<String, Object> seriesInfo(String publicItemId, String titleHint) {
         TmdbItemId itemId = parseItemId(publicItemId);
         if (!TYPE_SERIES.equals(itemId.type())) {
-            throw ApiException.validation("Cet element TMDB n'est pas une serie");
+            throw ApiException.validation("Cet element n'est pas une serie");
         }
         JsonNode details = tmdb.details("tv", itemId.tmdbId(), "credits,content_ratings,external_ids");
         Map<String, Object> payload = detailPayload(details, TYPE_SERIES, seriesCategory("tmdb-series-popular"));
@@ -227,7 +228,7 @@ public class TmdbCatalogService {
         payload.put("releaseYear", releaseYear(releaseDate(item, type)));
         payload.put("rating", rating(item.path("vote_average").asDouble(0)));
         payload.put("source", SOURCE);
-        payload.put("sourceCode", "tmdb");
+        payload.put("sourceCode", SOURCE_CODE);
         payload.put("provider", SOURCE);
         payload.put("metadataAvailable", true);
         payload.put("streamAvailable", true);
@@ -246,7 +247,7 @@ public class TmdbCatalogService {
     private Map<String, Object> detailPayload(JsonNode details, String type, Category category) {
         long id = details.path("id").asLong(0);
         if (id <= 0) {
-            throw ApiException.notFound("Contenu TMDB introuvable");
+            throw ApiException.notFound("Contenu de reference introuvable");
         }
         Map<String, Object> payload = itemPayload(details, type, category);
         payload.put("duration", duration(details, type));
@@ -365,7 +366,7 @@ public class TmdbCatalogService {
         payload.put("episode", episode);
         payload.put("isEpisode", true);
         payload.put("source", SOURCE);
-        payload.put("sourceCode", "tmdb");
+        payload.put("sourceCode", SOURCE_CODE);
         payload.put("provider", SOURCE);
         payload.put("streamAvailable", true);
         payload.put("externalPlayback", true);
@@ -390,7 +391,8 @@ public class TmdbCatalogService {
                 "name", category.name(),
                 "type", category.type(),
                 "source", SOURCE,
-                "sourceCode", "tmdb",
+                "sourceCode", SOURCE_CODE,
+                "metadataProvider", "tmdb",
                 "metadataAvailable", true,
                 "streamAvailable", true,
                 "adult", false
@@ -406,8 +408,8 @@ public class TmdbCatalogService {
 
     private Category searchCategory(String type) {
         return TYPE_SERIES.equals(type)
-                ? new Category("tmdb-series-search", "TMDB - Recherche series", TYPE_SERIES, Kind.TV_LIST, "popular")
-                : new Category("tmdb-movie-search", "TMDB - Recherche films", TYPE_MOVIE, Kind.MOVIE_LIST, "popular");
+                ? new Category("tmdb-series-search", "Recherche series FR", TYPE_SERIES, Kind.TV_LIST, "popular")
+                : new Category("tmdb-movie-search", "Recherche films FR", TYPE_MOVIE, Kind.MOVIE_LIST, "popular");
     }
 
     private Category movieCategory(String id) {
@@ -491,16 +493,16 @@ public class TmdbCatalogService {
     private TmdbItemId parseItemId(String publicItemId) {
         String[] parts = String.valueOf(publicItemId).split("~");
         if (parts.length < 3 || !ITEM_PREFIX.equals(parts[0])) {
-            throw ApiException.validation("Identifiant TMDB invalide");
+            throw ApiException.validation("Identifiant interne invalide");
         }
         String type = catalogType(parts[1]);
         if (type == null) {
-            throw ApiException.validation("Type TMDB non pris en charge");
+            throw ApiException.validation("Type de contenu non pris en charge");
         }
         try {
             return new TmdbItemId(type, Long.parseLong(parts[2]));
         } catch (NumberFormatException exception) {
-            throw ApiException.validation("Identifiant TMDB invalide");
+            throw ApiException.validation("Identifiant interne invalide");
         }
     }
 

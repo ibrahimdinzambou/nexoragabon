@@ -2546,7 +2546,7 @@ function renderDramaApiRail() {
             <div class="row-heading">
                 <div class="row-heading-copy">
                     <h3 id="drama-api-rail-title">Kdramas & dramas courts</h3>
-                    <span>Catalogue ReelShort via l'API Dramas, pas via TMDB</span>
+                    <span>Catalogue ReelShort via l'API Dramas dédiée</span>
                 </div>
                 <button class="row-see-more" type="button" data-filter-shortcut="drama">Ouvrir Dramas</button>
             </div>
@@ -4311,8 +4311,7 @@ function sourceClass(value) {
     if (isAsaAddon(value)) return "asa-category";
     if (isAnimeNexoraItem(value)) return "anime-nexora-category";
     if (isEpornerSource(value)) return "adult-category";
-    if (isFrenchSource(value)) return "french-category";
-    if (isTmdbSource(value)) return "tmdb-category";
+    if (isFrenchSource(value) || isTmdbCatalogItem(value) || isTmdbSource(value)) return "french-category";
     return "";
 }
 
@@ -4326,7 +4325,7 @@ function sourceBadge(value, placement = "inline") {
     }
     if (isTmdbCatalogItem(value)
         && String(value?.primaryPlaybackProvider || value?.playbackProvider || "").toLowerCase() === "content-nexora") {
-        return `<span class="addon-badge tmdb-content-badge ${placementClass}" aria-label="Fiche TMDB, lecture Content-Nexora prioritaire puis Videasy en secours">TMDB→FR</span>`;
+        return `<span class="addon-badge french-badge ${placementClass}" aria-label="Source française Content-Nexora, Videasy en secours">FR</span>`;
     }
     if (isFrenchSource(value)) {
         return `<span class="addon-badge french-badge ${placementClass}" aria-label="Contenu français via Content-Nexora">FR</span>`;
@@ -4335,7 +4334,7 @@ function sourceBadge(value, placement = "inline") {
         return `<span class="addon-badge adult-badge ${placementClass}" aria-label="Provider Adults restreint">18+</span>`;
     }
     if (isTmdbSource(value)) {
-        return `<span class="addon-badge tmdb-badge ${placementClass}" aria-label="Contenu provenant de TMDB">TMDB</span>`;
+        return `<span class="addon-badge french-badge ${placementClass}" aria-label="Source française Content-Nexora, Videasy en secours">FR</span>`;
     }
     return "";
 }
@@ -5957,7 +5956,7 @@ async function playVideoWithProviderFallback(item, options = {}) {
 
     const tmdbId = tmdbIdFromItem(playbackItem);
     if (tmdbId && isTmdbPlayable(playbackItem)) {
-        showToast("Aucun flux prioritaire valide, bascule vers TMDB/Videasy.");
+        showToast("Aucun flux FR valide, bascule vers Videasy.");
         await playTmdbItem({
             ...playbackItem,
             tmdbId,
@@ -7408,7 +7407,7 @@ async function switchToConsumetAnimeFallback(reason) {
 
 async function playTmdbItem(item) {
     if (!state.token) {
-        requestLogin("Connectez-vous pour lancer un programme TMDB.", () => playTmdbItem(item));
+        requestLogin("Connectez-vous pour lancer le lecteur de secours.", () => playTmdbItem(item));
         return;
     }
     if (!syncSubscriptionAccess({ scroll: true })) {
@@ -7418,7 +7417,7 @@ async function playTmdbItem(item) {
 
     const playerUrl = videasyUrlForItem(item);
     if (!playerUrl) {
-        showToast("Choisissez un episode TMDB pour lancer cette serie.", true);
+        showToast("Choisissez un épisode pour lancer cette série.", true);
         return;
     }
     if (state.playerOpening) return;
@@ -7442,16 +7441,16 @@ async function playTmdbItem(item) {
         await ensurePlayerContext(item);
 
         openModal("playerModal");
-        elements.playerTitle.textContent = item.name || "Programme TMDB";
-        elements.playerBadge.textContent = "TMDB";
-        refreshPlayerRoom(item, "TMDB");
+        elements.playerTitle.textContent = item.name || "Programme vidéo";
+        elements.playerBadge.textContent = "VIDEASY";
+        refreshPlayerRoom(item, "VIDEASY");
         setPlayerLoading(
-            "Ouverture du lecteur TMDB...",
-            "Injection automatique du code TMDB dans Videasy."
+            "Ouverture du lecteur de secours...",
+            "Chargement automatique du programme dans Videasy."
         );
         await startStreamPlayback(item, playerUrl, "embed");
         if (state.embedRequiresUserLaunch) {
-            elements.playerMessage.textContent = "Lecteur TMDB pret. Lancez-le depuis le bouton affiche.";
+            elements.playerMessage.textContent = "Lecteur Videasy prêt. Lancez-le depuis le bouton affiché.";
         } else {
             elements.playerMessage.textContent = "Lecture Videasy ouverte. Si le lecteur affiche une erreur, la source n'est pas disponible chez Videasy.";
         }
@@ -8244,7 +8243,7 @@ function embedLaunchPrompt(item = state.activePlayerItem) {
     if (isEpornerSource(item)) {
         return "Appuyez pour lancer le lecteur Adults.";
     }
-    return "Appuyez pour lancer le lecteur TMDB.";
+    return "Appuyez pour lancer le lecteur vidéo de secours.";
 }
 
 function showNativePlaybackLaunchPanel() {
@@ -8280,7 +8279,7 @@ function embedOpenedMessage() {
     if (isEpornerSource(state.activePlayerItem)) {
         return "Lecteur Adults ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
     }
-    return "Lecteur TMDB ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
+    return "Lecteur Videasy ouvert dans Nexora. Si le chargement bloque, utilisez Réessayer ici.";
 }
 
 function confirmNonFrenchPlayback(source) {
@@ -8422,7 +8421,7 @@ function embedRetryMessage() {
     if (isEpornerSource(state.activePlayerItem)) {
         return "Relance du lecteur Adults dans Nexora...";
     }
-    return "Relance du lecteur TMDB dans Nexora...";
+    return "Relance du lecteur Videasy dans Nexora...";
 }
 
 function embedAssistMessage() {
@@ -8432,7 +8431,7 @@ function embedAssistMessage() {
     if (isEpornerSource(state.activePlayerItem)) {
         return "Si le lecteur Adults tourne encore, ouvrez-le dans un onglet separe.";
     }
-    return "Si le lecteur TMDB tourne encore, la source Videasy est probablement indisponible pour ce titre.";
+    return "Si le lecteur tourne encore, la source Videasy est probablement indisponible pour ce titre.";
 }
 
 async function requestPlayerFullscreen() {
@@ -8506,7 +8505,7 @@ function embedAwaitingMessage() {
     if (isEpornerSource(state.activePlayerItem)) {
         return "Lecteur Adults pret. Lancez-le depuis le bouton affiche.";
     }
-    return "Lecteur TMDB pret. Lancez-le depuis le bouton affiche.";
+    return "Lecteur Videasy prêt. Lancez-le depuis le bouton affiché.";
 }
 
 function setEmbedPlayerOpened(message = "Lecteur externe ouvert.") {

@@ -143,13 +143,16 @@ test("rapproche aussi une affiche TMDB brute d'une image Content proxifiée", ()
     ), true);
 });
 
-test("les cards TMDB déclarent Content en principal et Videasy en secours", () => {
+test("les anciennes cards TMDB s'affichent comme sources FR avec Content en principal", () => {
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
     assert.match(app, /playbackProvider:\s*"content-nexora"/);
     assert.match(app, /primaryPlaybackProvider:\s*"content-nexora"/);
     assert.match(app, /fallbackPlaybackProvider:\s*"videasy"/);
     assert.match(app, /contentNexoraMatchCacheKey/);
-    assert.match(app, /TMDB→FR/);
+    assert.match(app, /isTmdbCatalogItem\(value\)[\s\S]*?french-badge/);
+    assert.doesNotMatch(app, />TMDB<|TMDB→FR/);
+    assert.doesNotMatch(watch, /lecteur TMDB/i);
     assert.ok(app.indexOf("await playContentNexoraItem(playbackItem)") < app.indexOf("await playTmdbItem({"));
 });
 

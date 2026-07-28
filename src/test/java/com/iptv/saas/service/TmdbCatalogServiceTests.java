@@ -39,8 +39,9 @@ class TmdbCatalogServiceTests {
         List<Map<String, Object>> categories = service.categories("movie");
 
         assertFalse(categories.isEmpty());
-        assertEquals("TMDB", categories.get(0).get("source"));
-        assertEquals("tmdb", categories.get(0).get("sourceCode"));
+        assertEquals("Content-Nexora", categories.get(0).get("source"));
+        assertEquals("content-nexora", categories.get(0).get("sourceCode"));
+        assertEquals("tmdb", categories.get(0).get("metadataProvider"));
         assertEquals("movie", categories.get(0).get("type"));
     }
 
@@ -90,15 +91,16 @@ class TmdbCatalogServiceTests {
         Map<String, Object> item = items.get(0);
         assertEquals("tmdb~movie~603", item.get("id"));
         assertEquals("The Matrix", item.get("name"));
-        assertEquals("TMDB", item.get("source"));
-        assertEquals("tmdb", item.get("sourceCode"));
+        assertEquals("Content-Nexora", item.get("source"));
+        assertEquals("content-nexora", item.get("sourceCode"));
+        assertEquals("tmdb", item.get("metadataProvider"));
         assertEquals(true, item.get("streamAvailable"));
         assertEquals(true, item.get("externalPlayback"));
         assertEquals("content-nexora", item.get("playbackProvider"));
         assertEquals("videasy", item.get("fallbackPlaybackProvider"));
         assertEquals(List.of("content-nexora", "videasy"), item.get("availablePlaybackProviders"));
         assertEquals("/matrix.jpg", item.get("tmdbPosterPath"));
-        assertTrue(String.valueOf(item.get("categoryName")).contains("TMDB"));
+        assertTrue(String.valueOf(item.get("categoryName")).contains("FR"));
     }
 
     @Test
