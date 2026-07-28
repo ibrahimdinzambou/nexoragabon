@@ -66,6 +66,7 @@ const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
+const EMBED_REDIRECT_SHIELD_ENABLED = false;
 const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const CONTENT_NEXORA_PROVIDER = "french-stream";
@@ -8595,6 +8596,10 @@ function lockEmbedShield(forceHide = false) {
         state.embedShieldTimer = null;
     }
     state.embedShieldUnlockedUntil = 0;
+    if (!EMBED_REDIRECT_SHIELD_ENABLED) {
+        elements.embedClickShield.hidden = true;
+        return;
+    }
     const shouldShow = !forceHide
         && state.activePlaybackMode === "embed"
         && !elements.embedPlayer.hidden
@@ -8604,6 +8609,10 @@ function lockEmbedShield(forceHide = false) {
 
 function unlockEmbedShield(milliseconds = EMBED_PLAYER_UNLOCK_MS) {
     if (!elements.embedClickShield || state.activePlaybackMode !== "embed") return;
+    if (!EMBED_REDIRECT_SHIELD_ENABLED) {
+        elements.embedClickShield.hidden = true;
+        return;
+    }
     if (state.embedShieldTimer) {
         window.clearTimeout(state.embedShieldTimer);
         state.embedShieldTimer = null;
