@@ -38,6 +38,12 @@ const EXTERNAL_API_TIMEOUT_MS = 25000;
 const CONTENT_NEXORA_RESOLVE_TIMEOUT_MS = 18000;
 const CONTENT_NEXORA_SOURCE_CONCURRENCY = 2;
 const CONTENT_NEXORA_EMBED_FALLBACK_DELAY_MS = 8000;
+const TMDB_CONTENT_HYDRATION_CONCURRENCY = 2;
+const TMDB_CONTENT_HYDRATION_TIMEOUT_MS = 8000;
+const TMDB_CONTENT_HYDRATION_TITLE_LIMIT = 2;
+const TMDB_CONTENT_HYDRATION_FALLBACK_LIMIT = 24;
+const TMDB_CONTENT_HYDRATION_COOLDOWN_MS = 5 * 60 * 1000;
+const TMDB_CONTENT_HYDRATION_ROOT_MARGIN = "640px 180px";
 const EXTERNAL_API_CACHE_MAX_ENTRIES = 120;
 const HERO_AUTO_ADVANCE_MS = 6500;
 const HERO_MAX_SLIDES = 6;
@@ -208,6 +214,12 @@ const state = {
     searchResultQuery: "",
     searchSuggestions: [],
     searchActiveIndex: -1,
+    tmdbContentHydrationObserver: null,
+    tmdbContentHydrationQueue: [],
+    tmdbContentHydrationQueued: new Set(),
+    tmdbContentHydrationActive: 0,
+    tmdbContentHydrationDone: new Set(),
+    tmdbContentHydrationRetryAfter: new Map(),
     heroSlides: [],
     heroIndex: 0,
     heroTimer: null,
@@ -2517,6 +2529,7 @@ function renderCatalog() {
     updateCatalogHeading(items.length, loading);
     renderHeroCarousel(items);
     renderHomeForYou(items);
+    observeVisibleTmdbCardsForContentHydration();
 }
 
 function syncCatalogMode() {
@@ -3729,6 +3742,147 @@ function findCatalogItem(id, type) {
     const pool = [...state.catalog, ...state.browseCatalog, ...state.searchResults, ...state.recentlyWatched];
     return pool.find((entry) => `${entry.type}:${entry.id}` === key)
         || pool.find((entry) => String(entry.id) === String(id));
+}
+
+function catalogItemMatches(left, right) {
+    return left && right
+        && String(left.type) === String(right.type)
+        && String(left.id) === String(right.id);
+}
+
+function tmdbContentHydrationKey(item) {
+    return [
+        item?.type || "",
+        tmdbIdFromItem(item) || item?.id || "",
+        requireSeriesPlayback().normalizeSeriesTitle(contentNexoraSearchTitle(item))
+    ].join(":");
+}
+
+function tmdbContentHydrationNeeded(item) {
+    if (!contentNexoraApiEnabled() || !isTmdbCatalogItem(item)) return false;
+    if (!["movie", "series"].includes(item?.type)) return false;
+    if (item.contentNexoraUrl) return false;
+    const key = tmdbContentHydrationKey(item);
+    if (state.tmdbContentHydrationDone.has(key)) return false;
+    const retryAfter = state.tmdbContentHydrationRetryAfter.get(key) || 0;
+    return Date.now() >= retryAfter;
+}
+
+function observeVisibleTmdbCardsForContentHydration() {
+    if (state.tmdbContentHydrationObserver) {
+        state.tmdbContentHydrationObserver.disconnect();
+        state.tmdbContentHydrationObserver = null;
+    }
+    if (!contentNexoraApiEnabled()) return;
+
+    const cards = [...document.querySelectorAll(
+        "#catalogRows [data-item-id][data-item-type], #homeForYouPanel [data-item-id][data-item-type]"
+    )].filter((card) => tmdbContentHydrationNeeded(findCatalogItem(card.dataset.itemId, card.dataset.itemType)));
+    if (!cards.length) return;
+
+    if (!("IntersectionObserver" in window)) {
+        cards.slice(0, TMDB_CONTENT_HYDRATION_FALLBACK_LIMIT).forEach((card) => {
+            enqueueTmdbContentHydration(card.dataset.itemId, card.dataset.itemType);
+        });
+        return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            const card = entry.target;
+            observer.unobserve(card);
+            enqueueTmdbContentHydration(card.dataset.itemId, card.dataset.itemType);
+        });
+    }, {
+        root: null,
+        rootMargin: TMDB_CONTENT_HYDRATION_ROOT_MARGIN,
+        threshold: 0
+    });
+    state.tmdbContentHydrationObserver = observer;
+    cards.forEach((card) => observer.observe(card));
+}
+
+function enqueueTmdbContentHydration(id, type) {
+    const item = findCatalogItem(id, type);
+    if (!tmdbContentHydrationNeeded(item)) return;
+    const key = tmdbContentHydrationKey(item);
+    if (state.tmdbContentHydrationQueued.has(key)) return;
+    state.tmdbContentHydrationQueued.add(key);
+    state.tmdbContentHydrationQueue.push({ id: String(id), type: String(type), key });
+    scheduleTmdbContentHydrationWork();
+}
+
+function scheduleTmdbContentHydrationWork() {
+    const run = () => processTmdbContentHydrationQueue();
+    if ("requestIdleCallback" in window) {
+        window.requestIdleCallback(run, { timeout: 1200 });
+    } else {
+        window.setTimeout(run, 250);
+    }
+}
+
+function processTmdbContentHydrationQueue() {
+    while (
+        state.tmdbContentHydrationActive < TMDB_CONTENT_HYDRATION_CONCURRENCY
+        && state.tmdbContentHydrationQueue.length
+    ) {
+        const job = state.tmdbContentHydrationQueue.shift();
+        state.tmdbContentHydrationQueued.delete(job.key);
+        const item = findCatalogItem(job.id, job.type);
+        if (!tmdbContentHydrationNeeded(item)) continue;
+        state.tmdbContentHydrationActive += 1;
+        hydrateTmdbContentItem(item, job.key)
+            .catch(() => null)
+            .finally(() => {
+                state.tmdbContentHydrationActive = Math.max(0, state.tmdbContentHydrationActive - 1);
+                if (state.tmdbContentHydrationQueue.length) {
+                    scheduleTmdbContentHydrationWork();
+                }
+            });
+    }
+}
+
+async function hydrateTmdbContentItem(item, key) {
+    try {
+        const normalized = normalizeTmdbPlaybackItem(item);
+        const match = await resolveContentNexoraSearchMatch(normalized, {
+            timeoutMs: TMDB_CONTENT_HYDRATION_TIMEOUT_MS,
+            maxQueries: TMDB_CONTENT_HYDRATION_TITLE_LIMIT
+        });
+        mergeTmdbContentHydration(normalized, match, match ? "matched" : "not-found");
+        state.tmdbContentHydrationDone.add(key);
+    } catch {
+        state.tmdbContentHydrationRetryAfter.set(key, Date.now() + TMDB_CONTENT_HYDRATION_COOLDOWN_MS);
+    }
+}
+
+function mergeTmdbContentHydration(item, match, matchStatus) {
+    const hydrated = normalizeTmdbPlaybackItem(item, match, matchStatus);
+    const patch = {
+        metadataProvider: hydrated.metadataProvider,
+        playbackProvider: hydrated.playbackProvider,
+        playbackProviderName: hydrated.playbackProviderName,
+        primaryPlaybackProvider: hydrated.primaryPlaybackProvider,
+        primaryPlaybackProviderName: hydrated.primaryPlaybackProviderName,
+        fallbackPlaybackProvider: hydrated.fallbackPlaybackProvider,
+        fallbackPlaybackProviderName: hydrated.fallbackPlaybackProviderName,
+        availablePlaybackProviders: hydrated.availablePlaybackProviders,
+        contentMatchStatus: hydrated.contentMatchStatus,
+        contentNexoraUrl: hydrated.contentNexoraUrl,
+        contentNexoraTitle: hydrated.contentNexoraTitle
+    };
+    [state.catalog, state.browseCatalog, state.searchResults, state.recentlyWatched]
+        .forEach((items) => {
+            (items || []).forEach((entry) => {
+                if (catalogItemMatches(entry, hydrated)) Object.assign(entry, patch);
+            });
+        });
+    state.heroSlides.forEach((slide) => {
+        if (catalogItemMatches(slide.item, hydrated)) Object.assign(slide.item, patch);
+    });
+    if (catalogItemMatches(state.activeDetail, hydrated)) Object.assign(state.activeDetail, patch);
+    if (catalogItemMatches(state.activeSeries, hydrated)) Object.assign(state.activeSeries, patch);
 }
 
 function isAnimeNexoraItem(item) {
@@ -6292,7 +6446,8 @@ async function resolveContentNexoraSearchMatchUncached(item, options = {}) {
             contentNexoraTitle: item.contentNexoraTitle || contentNexoraSearchTitle(item)
         };
     }
-    const queries = contentNexoraSearchTitles(item).slice(0, 4);
+    const queryLimit = positiveInteger(options.maxQueries) || 4;
+    const queries = contentNexoraSearchTitles(item).slice(0, queryLimit);
     if (!queries.length || !contentNexoraApiEnabled()) return null;
 
     const responses = await Promise.allSettled(queries.map((query) => contentNexoraApi(

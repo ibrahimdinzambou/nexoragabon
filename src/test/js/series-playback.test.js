@@ -152,6 +152,10 @@ test("les anciennes cards TMDB s'affichent comme sources FR avec Content en prin
     assert.match(app, /contentNexoraMatchCacheKey/);
     assert.match(app, /const endpoint = isTmdbCatalogItem\(item\) \? "\/content" : "\/series";/);
     assert.match(app, /retryTransient:\s*true/);
+    assert.match(app, /TMDB_CONTENT_HYDRATION_CONCURRENCY\s*=\s*2/);
+    assert.match(app, /IntersectionObserver/);
+    assert.match(app, /maxQueries:\s*TMDB_CONTENT_HYDRATION_TITLE_LIMIT/);
+    assert.match(app, /observeVisibleTmdbCardsForContentHydration\(\)/);
     assert.match(app, /isTmdbCatalogItem\(value\)[\s\S]*?french-badge/);
     assert.doesNotMatch(app, />TMDB<|TMDB→FR/);
     assert.doesNotMatch(watch, /lecteur TMDB/i);
