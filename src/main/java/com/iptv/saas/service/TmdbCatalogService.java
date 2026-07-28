@@ -20,8 +20,10 @@ public class TmdbCatalogService {
     private static final String TYPE_MOVIE = "movie";
     private static final String TYPE_SERIES = "series";
     private static final String SOURCE = "TMDB";
-    private static final String PLAYBACK_PROVIDER = "videasy";
-    private static final String PLAYBACK_PROVIDER_NAME = "Videasy";
+    private static final String PLAYBACK_PROVIDER = "content-nexora";
+    private static final String PLAYBACK_PROVIDER_NAME = "Content-Nexora";
+    private static final String FALLBACK_PLAYBACK_PROVIDER = "videasy";
+    private static final String FALLBACK_PLAYBACK_PROVIDER_NAME = "Videasy";
     private static final int TMDB_PAGE_SIZE = 20;
     private static final List<Category> CATEGORIES = List.of(
             new Category("tmdb-movie-trending", "TMDB - Films tendances", TYPE_MOVIE, Kind.TRENDING, "trending"),
@@ -117,8 +119,7 @@ public class TmdbCatalogService {
         payload.put("seasons", seasons);
         payload.put("streamAvailable", true);
         payload.put("externalPlayback", true);
-        payload.put("playbackProvider", PLAYBACK_PROVIDER);
-        payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
+        applyPlaybackPriority(payload);
         images.rewrite(payload);
         return payload;
     }
@@ -216,6 +217,8 @@ public class TmdbCatalogService {
         payload.put("type", type);
         payload.put("categoryId", category.id());
         payload.put("categoryName", category.name());
+        payload.put("tmdbPosterPath", text(item, "poster_path"));
+        payload.put("tmdbBackdropPath", text(item, "backdrop_path"));
         payload.put("poster", imageUrl(text(item, "poster_path"), "w500"));
         payload.put("logo", imageUrl(text(item, "poster_path"), "w500"));
         payload.put("backdrop", imageUrl(text(item, "backdrop_path"), "w1280"));
@@ -229,8 +232,7 @@ public class TmdbCatalogService {
         payload.put("metadataAvailable", true);
         payload.put("streamAvailable", true);
         payload.put("externalPlayback", true);
-        payload.put("playbackProvider", PLAYBACK_PROVIDER);
-        payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
+        applyPlaybackPriority(payload);
         payload.put("adult", item.path("adult").asBoolean(false));
         if (TYPE_SERIES.equals(type)) {
             payload.put("isSeries", true);
@@ -262,8 +264,7 @@ public class TmdbCatalogService {
         }
         payload.put("streamAvailable", true);
         payload.put("externalPlayback", true);
-        payload.put("playbackProvider", PLAYBACK_PROVIDER);
-        payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
+        applyPlaybackPriority(payload);
         return payload;
     }
 
@@ -284,6 +285,7 @@ public class TmdbCatalogService {
             payload.put("season", seasonNumber);
             payload.put("name", textOrDefault(season, "Saison " + seasonNumber, "name"));
             payload.put("episodeCount", episodeCount);
+            payload.put("tmdbPosterPath", text(season, "poster_path"));
             payload.put("poster", imageUrl(text(season, "poster_path"), "w500"));
             payload.put("episodes", episodes);
             seasons.add(payload);
@@ -367,9 +369,19 @@ public class TmdbCatalogService {
         payload.put("provider", SOURCE);
         payload.put("streamAvailable", true);
         payload.put("externalPlayback", true);
+        applyPlaybackPriority(payload);
+        return payload;
+    }
+
+    private void applyPlaybackPriority(Map<String, Object> payload) {
+        payload.put("metadataProvider", "tmdb");
         payload.put("playbackProvider", PLAYBACK_PROVIDER);
         payload.put("playbackProviderName", PLAYBACK_PROVIDER_NAME);
-        return payload;
+        payload.put("primaryPlaybackProvider", PLAYBACK_PROVIDER);
+        payload.put("primaryPlaybackProviderName", PLAYBACK_PROVIDER_NAME);
+        payload.put("fallbackPlaybackProvider", FALLBACK_PLAYBACK_PROVIDER);
+        payload.put("fallbackPlaybackProviderName", FALLBACK_PLAYBACK_PROVIDER_NAME);
+        payload.put("availablePlaybackProviders", List.of(PLAYBACK_PROVIDER, FALLBACK_PLAYBACK_PROVIDER));
     }
 
     private Map<String, Object> categoryPayload(Category category) {

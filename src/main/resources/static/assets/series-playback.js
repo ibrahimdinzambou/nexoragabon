@@ -74,6 +74,11 @@
 
     function tmdbImageKey(value) {
         if (!value || typeof value !== "object") return "";
+        for (const field of ["tmdbPosterPath", "seriesTmdbPosterPath", "tmdbBackdropPath"]) {
+            const direct = String(value[field] || "").trim();
+            const filename = direct.match(/([^/?#]+)(?:[?#].*)?$/)?.[1];
+            if (filename) return filename.toLowerCase();
+        }
         const fields = ["poster", "image", "backdrop", "image_url", "img"];
         for (const field of fields) {
             const source = String(value[field] || "").trim();

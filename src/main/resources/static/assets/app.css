@@ -1120,6 +1120,14 @@ button {
     box-shadow: 0 4px 14px rgba(85, 167, 255, 0.24);
 }
 
+.tmdb-content-badge {
+    color: #07110d;
+    border-color: rgba(125, 238, 175, 0.72);
+    background: linear-gradient(135deg, #8edcff 0 45%, #f7f8fb 45% 62%, #48d989 62% 100%);
+    box-shadow: 0 4px 16px rgba(72, 217, 137, 0.25), 0 0 0 1px rgba(85, 167, 255, 0.12);
+    letter-spacing: 0.06em;
+}
+
 .french-badge {
     color: #111319;
     border-color: rgba(255, 255, 255, 0.78);

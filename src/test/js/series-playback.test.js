@@ -126,11 +126,31 @@ test("rapproche une card TMDB de son résultat Content par l'affiche officielle"
     ), true);
 });
 
+test("rapproche aussi une affiche TMDB brute d'une image Content proxifiée", () => {
+    assert.equal(series.sameContent(
+        {
+            type: "series",
+            name: "Titre TMDB",
+            releaseYear: 2024,
+            tmdbPosterPath: "/season-poster.jpg"
+        },
+        {
+            type: "series",
+            title: "Titre Content différent - Saison 1 (2024)",
+            image: "https://image.tmdb.org/t/p/w400/season-poster.jpg"
+        },
+        "series"
+    ), true);
+});
+
 test("les cards TMDB déclarent Content en principal et Videasy en secours", () => {
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    assert.match(app, /playbackProvider:\s*"content-nexora"/);
     assert.match(app, /primaryPlaybackProvider:\s*"content-nexora"/);
     assert.match(app, /fallbackPlaybackProvider:\s*"videasy"/);
-    assert.ok(app.indexOf("await playContentNexoraItem(item)") < app.indexOf("await playTmdbItem({"));
+    assert.match(app, /contentNexoraMatchCacheKey/);
+    assert.match(app, /TMDB→FR/);
+    assert.ok(app.indexOf("await playContentNexoraItem(playbackItem)") < app.indexOf("await playTmdbItem({"));
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {

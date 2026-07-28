@@ -59,7 +59,7 @@ class TmdbCatalogServiceTests {
     }
 
     @Test
-    void loadsMovieCategoryItemsMarkedAsTmdbAndVideasyPlayable() throws Exception {
+    void loadsMovieCategoryItemsWithContentPrimaryAndVideasyFallback() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/movie/popular", exchange -> json(exchange, """
                 {"page":1,"results":[
@@ -94,7 +94,10 @@ class TmdbCatalogServiceTests {
         assertEquals("tmdb", item.get("sourceCode"));
         assertEquals(true, item.get("streamAvailable"));
         assertEquals(true, item.get("externalPlayback"));
-        assertEquals("videasy", item.get("playbackProvider"));
+        assertEquals("content-nexora", item.get("playbackProvider"));
+        assertEquals("videasy", item.get("fallbackPlaybackProvider"));
+        assertEquals(List.of("content-nexora", "videasy"), item.get("availablePlaybackProviders"));
+        assertEquals("/matrix.jpg", item.get("tmdbPosterPath"));
         assertTrue(String.valueOf(item.get("categoryName")).contains("TMDB"));
     }
 
@@ -190,7 +193,8 @@ class TmdbCatalogServiceTests {
         assertTrue(query.get().contains("with_original_language=ko"));
         assertEquals(1, items.size());
         assertEquals("tmdb~series~96102", items.get(0).get("id"));
-        assertEquals("videasy", items.get(0).get("playbackProvider"));
+        assertEquals("content-nexora", items.get(0).get("playbackProvider"));
+        assertEquals("videasy", items.get(0).get("fallbackPlaybackProvider"));
         assertEquals("Drama coreens", items.get(0).get("categoryName"));
     }
 
@@ -228,11 +232,12 @@ class TmdbCatalogServiceTests {
         assertEquals(List.of("Science-fiction"), details.get("genres"));
         assertEquals(List.of("Keanu Reeves"), details.get("cast"));
         assertEquals(true, details.get("streamAvailable"));
-        assertEquals("videasy", details.get("playbackProvider"));
+        assertEquals("content-nexora", details.get("playbackProvider"));
+        assertEquals("videasy", details.get("fallbackPlaybackProvider"));
     }
 
     @Test
-    void mapsSeriesDetailsAsVideasyPlayableEpisodes() throws Exception {
+    void mapsSeriesDetailsWithContentPrimaryAndVideasyFallback() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/tv/1399", exchange -> json(exchange, """
                 {
@@ -289,9 +294,11 @@ class TmdbCatalogServiceTests {
         assertEquals(1, series.get("seasonCount"));
         assertEquals(2, series.get("episodeCount"));
         assertEquals(true, series.get("streamAvailable"));
-        assertEquals("videasy", series.get("playbackProvider"));
+        assertEquals("content-nexora", series.get("playbackProvider"));
+        assertEquals("videasy", series.get("fallbackPlaybackProvider"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> seasons = (List<Map<String, Object>>) series.get("seasons");
+        assertEquals("/s1.jpg", seasons.get(0).get("tmdbPosterPath"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> episodes = (List<Map<String, Object>>) seasons.get(0).get("episodes");
         assertEquals("tmdb~series~1399~s~1~e~1", episodes.get(0).get("id"));
@@ -300,7 +307,8 @@ class TmdbCatalogServiceTests {
         assertEquals("2011-04-17", episodes.get(0).get("releaseDate"));
         assertEquals(1399L, episodes.get(0).get("tmdbId"));
         assertEquals(true, episodes.get(0).get("streamAvailable"));
-        assertEquals("videasy", episodes.get(0).get("playbackProvider"));
+        assertEquals("content-nexora", episodes.get(0).get("playbackProvider"));
+        assertEquals("videasy", episodes.get(0).get("fallbackPlaybackProvider"));
     }
 
     private TmdbCatalogService service() {

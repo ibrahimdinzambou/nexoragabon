@@ -33,6 +33,7 @@ const MIN_REMOTE_SEARCH_LENGTH = 2;
 const ANIME_NEXORA_CACHE_TTL_MS = 5 * 60 * 1000;
 const CONTENT_NEXORA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CONTENT_NEXORA_SEARCH_CACHE_TTL_MS = 30 * 1000;
+const CONTENT_NEXORA_MATCH_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const EXTERNAL_API_TIMEOUT_MS = 25000;
 const CONTENT_NEXORA_RESOLVE_TIMEOUT_MS = 18000;
 const CONTENT_NEXORA_SOURCE_CONCURRENCY = 2;
@@ -58,6 +59,8 @@ const imageRepairCache = new Map();
 const imageRepairInFlight = new Set();
 const animeNexoraResponseCache = new Map();
 const contentNexoraResponseCache = new Map();
+const contentNexoraMatchCache = new Map();
+const contentNexoraMatchInFlight = new Map();
 const launchParams = new URLSearchParams(window.location.search);
 const WATCH_REQUIRES_AUTH = launchParams.get("demo") !== "1";
 const titleCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
@@ -1982,18 +1985,7 @@ function normalizeItem(item, type, index) {
     if (!tmdbCatalogItem || !["movie", "series"].includes(itemType)) {
         return normalized;
     }
-    return {
-        ...normalized,
-        primaryPlaybackProvider: "content-nexora",
-        primaryPlaybackProviderName: "Content-Nexora",
-        fallbackPlaybackProvider: "videasy",
-        fallbackPlaybackProviderName: "Videasy",
-        availablePlaybackProviders: [...new Set([
-            "content-nexora",
-            ...(normalized.availablePlaybackProviders || normalized.availableProviders || []),
-            "videasy"
-        ])]
-    };
+    return normalizeTmdbPlaybackItem(normalized);
 }
 
 
@@ -4262,7 +4254,37 @@ function isTmdbSource(value) {
     return value?.sourceCode === "tmdb" || value?.source === "TMDB";
 }
 
+function isTmdbCatalogItem(value) {
+    return isTmdbSource(value) || isTmdbPublicId(value?.id);
+}
+
+function normalizeTmdbPlaybackItem(item, match = null, matchStatus = "pending") {
+    if (!isTmdbCatalogItem(item) || !["movie", "series"].includes(item?.type)) {
+        return item;
+    }
+    const availableProviders = item.availablePlaybackProviders || item.availableProviders || [];
+    return {
+        ...item,
+        metadataProvider: "tmdb",
+        playbackProvider: "content-nexora",
+        playbackProviderName: "Content-Nexora",
+        primaryPlaybackProvider: "content-nexora",
+        primaryPlaybackProviderName: "Content-Nexora",
+        fallbackPlaybackProvider: "videasy",
+        fallbackPlaybackProviderName: "Videasy",
+        availablePlaybackProviders: [...new Set([
+            "content-nexora",
+            ...availableProviders,
+            "videasy"
+        ])],
+        contentMatchStatus: match ? "matched" : matchStatus,
+        contentNexoraUrl: match?.contentNexoraUrl || item.contentNexoraUrl || undefined,
+        contentNexoraTitle: match?.contentNexoraTitle || item.contentNexoraTitle || undefined
+    };
+}
+
 function isFrenchSource(value) {
+    if (isTmdbCatalogItem(value)) return false;
     const sourceCode = String(value?.sourceCode || "").toLowerCase();
     const playbackProvider = String(value?.playbackProvider || "").toLowerCase();
     const categoryId = String(value?.categoryId || value?.id || "").toLowerCase();
@@ -4301,6 +4323,10 @@ function sourceBadge(value, placement = "inline") {
     }
     if (isAnimeNexoraItem(value)) {
         return `<span class="addon-badge anime-nexora-badge ${placementClass}" aria-label="Contenu fourni par Anime NexoraAPI">NEXORA</span>`;
+    }
+    if (isTmdbCatalogItem(value)
+        && String(value?.primaryPlaybackProvider || value?.playbackProvider || "").toLowerCase() === "content-nexora") {
+        return `<span class="addon-badge tmdb-content-badge ${placementClass}" aria-label="Fiche TMDB, lecture Content-Nexora prioritaire puis Videasy en secours">TMDB→FR</span>`;
     }
     if (isFrenchSource(value)) {
         return `<span class="addon-badge french-badge ${placementClass}" aria-label="Contenu français via Content-Nexora">FR</span>`;
@@ -5429,7 +5455,8 @@ async function openMovieDetails(item) {
     renderMovieDetails(item, true);
     openModal("detailModal");
 
-    if (item.externalPlayback || isFrenchSource(item)) {
+    const tmdbCatalogItem = isTmdbCatalogItem(item);
+    if ((item.externalPlayback || isFrenchSource(item)) && !tmdbCatalogItem) {
         state.activeDetail = {
             ...item,
             summary: item.summary || item.description || "Ce film est disponible via les sources FR connectees a Nexora.",
@@ -5440,14 +5467,25 @@ async function openMovieDetails(item) {
     }
 
     try {
-        const details = isAnimeNexoraItem(item)
-            ? await animeNexoraInfo(item)
-            : await api(`/catalog/items/${encodeURIComponent(item.id)}`);
-        state.activeDetail = {
+        const detailsPromise = isAnimeNexoraItem(item)
+            ? animeNexoraInfo(item)
+            : api(`/catalog/items/${encodeURIComponent(item.id)}`);
+        const matchPromise = tmdbCatalogItem
+            ? resolveContentNexoraSearchMatch(item, { timeoutMs: 12000 }).catch(() => null)
+            : Promise.resolve(null);
+        const [details, contentMatch] = await Promise.all([detailsPromise, matchPromise]);
+        const mergedDetail = {
             ...item,
             ...details,
             image: details.poster || item.image
         };
+        state.activeDetail = tmdbCatalogItem
+            ? normalizeTmdbPlaybackItem(
+                mergedDetail,
+                contentMatch,
+                contentMatch ? "matched" : "not-found"
+            )
+            : mergedDetail;
         renderMovieDetails(state.activeDetail, false);
     } catch (error) {
         const reason = error.message || "La fiche détaillée est indisponible.";
@@ -5472,7 +5510,8 @@ function renderMovieDetails(item, loading) {
         item.releaseYear || releaseYearFromDate(item.releaseDate),
         item.duration,
         item.rating ? `★ ${item.rating}/10` : "",
-        item.ageRating
+        item.ageRating,
+        isTmdbCatalogItem(item) ? "Lecture Content-Nexora · secours Videasy" : ""
     ].filter(Boolean);
     elements.detailMeta.innerHTML = metadata.map((value) => (
         `<span>${escapeHtml(value)}</span>`
@@ -5559,9 +5598,25 @@ async function openSeries(item) {
     openModal("seriesModal");
 
     try {
-        const series = await loadSeriesInfo(item);
-        state.activeSeries = series;
-        renderSeriesDetails(series, item.image);
+        const contentMatchPromise = isTmdbCatalogItem(item)
+            ? resolveContentNexoraSearchMatch(
+                { ...item, season: positiveInteger(item.season) || 1 },
+                { timeoutMs: 12000 }
+            ).catch(() => null)
+            : Promise.resolve(null);
+        const [series, contentMatch] = await Promise.all([
+            loadSeriesInfo(item),
+            contentMatchPromise
+        ]);
+        const mergedSeries = { ...item, ...series };
+        state.activeSeries = isTmdbCatalogItem(mergedSeries)
+            ? normalizeTmdbPlaybackItem(
+                mergedSeries,
+                contentMatch,
+                contentMatch ? "matched" : "not-found"
+            )
+            : mergedSeries;
+        renderSeriesDetails(state.activeSeries, item.image);
     } catch (error) {
         elements.seriesLoading.hidden = true;
         elements.seriesContent.hidden = true;
@@ -5682,6 +5737,8 @@ function playSeriesEpisode(episodeId) {
         seriesOriginalTitle: series.originalTitle || series.originalName || "",
         originalTitle: episode.originalTitle || series.originalTitle || series.originalName || "",
         seriesReleaseYear: series.releaseYear || releaseYearFromDate(series.releaseDate) || "",
+        tmdbPosterPath: episode.tmdbPosterPath || season.tmdbPosterPath || series.tmdbPosterPath || "",
+        seriesTmdbPosterPath: season.tmdbPosterPath || series.tmdbPosterPath || "",
         type: "series",
         isEpisode: true,
         season: seasonNumber,
@@ -5855,11 +5912,16 @@ async function nativeSeriesEpisodeFallbacks(item) {
 
 async function playVideoWithProviderFallback(item, options = {}) {
     const failures = [];
-    if (isTmdbPlayable(item)) {
-        showToast("Recherche du flux via Content-Nexora en priorité.");
+    const playbackItem = isTmdbCatalogItem(item)
+        ? await normalizeTmdbCardForContent(item, { timeoutMs: 12000 })
+        : item;
+    if (isTmdbPlayable(playbackItem)) {
+        showToast(playbackItem.contentNexoraUrl
+            ? "Correspondance Content-Nexora trouvée, recherche du flux FR."
+            : "Recherche du flux via Content-Nexora en priorité.");
     }
     try {
-        await playContentNexoraItem(item);
+        await playContentNexoraItem(playbackItem);
         return true;
     } catch (error) {
         failures.push(error);
@@ -5870,10 +5932,10 @@ async function playVideoWithProviderFallback(item, options = {}) {
     }
 
     let nativeCandidates = [];
-    if (item.type === "series") {
-        nativeCandidates = await nativeSeriesEpisodeFallbacks(item);
-    } else if (isNativeCatalogPlaybackItem(item)) {
-        nativeCandidates = [item];
+    if (playbackItem.type === "series") {
+        nativeCandidates = await nativeSeriesEpisodeFallbacks(playbackItem);
+    } else if (isNativeCatalogPlaybackItem(playbackItem)) {
+        nativeCandidates = [playbackItem];
     }
 
     for (const family of ["french-nexora", "api-node"]) {
@@ -5893,11 +5955,11 @@ async function playVideoWithProviderFallback(item, options = {}) {
         }
     }
 
-    const tmdbId = tmdbIdFromItem(item);
-    if (tmdbId && isTmdbPlayable(item)) {
+    const tmdbId = tmdbIdFromItem(playbackItem);
+    if (tmdbId && isTmdbPlayable(playbackItem)) {
         showToast("Aucun flux prioritaire valide, bascule vers TMDB/Videasy.");
         await playTmdbItem({
-            ...item,
+            ...playbackItem,
             tmdbId,
             playbackProvider: "videasy",
             playbackProviderName: "Videasy"
@@ -6182,7 +6244,49 @@ function contentNexoraMatchScore(item, candidate, queryIndex) {
     return score;
 }
 
+function contentNexoraMatchCacheKey(item) {
+    const type = String(item?.type || "").toLowerCase();
+    const title = requireSeriesPlayback().normalizeSeriesTitle(contentNexoraSearchTitle(item));
+    const tmdbId = tmdbIdFromItem(item);
+    const imdbId = String(item?.imdbId || item?.imdb_id || "").trim().toLowerCase();
+    const year = requireSeriesPlayback().releaseYear(item);
+    const season = type === "series" ? positiveInteger(item?.season) || 1 : 0;
+    return [type, tmdbId || "-", imdbId || "-", title, year || "-", season].join("|");
+}
+
 async function resolveContentNexoraSearchMatch(item, options = {}) {
+    if (item?.contentNexoraUrl) {
+        return {
+            contentNexoraUrl: item.contentNexoraUrl,
+            contentNexoraTitle: item.contentNexoraTitle || contentNexoraSearchTitle(item)
+        };
+    }
+    const cacheKey = contentNexoraMatchCacheKey(item);
+    const cached = contentNexoraMatchCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < CONTENT_NEXORA_MATCH_CACHE_TTL_MS) {
+        return cached.match;
+    }
+    if (contentNexoraMatchInFlight.has(cacheKey)) {
+        return contentNexoraMatchInFlight.get(cacheKey);
+    }
+
+    const lookup = resolveContentNexoraSearchMatchUncached(item, options);
+    contentNexoraMatchInFlight.set(cacheKey, lookup);
+    try {
+        const match = await lookup;
+        if (match) {
+            contentNexoraMatchCache.set(cacheKey, { match, cachedAt: Date.now() });
+            if (contentNexoraMatchCache.size > EXTERNAL_API_CACHE_MAX_ENTRIES) {
+                contentNexoraMatchCache.delete(contentNexoraMatchCache.keys().next().value);
+            }
+        }
+        return match;
+    } finally {
+        contentNexoraMatchInFlight.delete(cacheKey);
+    }
+}
+
+async function resolveContentNexoraSearchMatchUncached(item, options = {}) {
     if (item?.contentNexoraUrl) {
         return {
             contentNexoraUrl: item.contentNexoraUrl,
@@ -6223,6 +6327,19 @@ async function resolveContentNexoraSearchMatch(item, options = {}) {
         }
     });
     return [...unique.values()].sort((left, right) => right.matchScore - left.matchScore)[0] || null;
+}
+
+async function normalizeTmdbCardForContent(item, options = {}) {
+    const normalized = normalizeTmdbPlaybackItem(item);
+    if (!isTmdbCatalogItem(normalized) || !contentNexoraApiEnabled()) {
+        return normalized;
+    }
+    try {
+        const match = await resolveContentNexoraSearchMatch(normalized, options);
+        return normalizeTmdbPlaybackItem(normalized, match, match ? "matched" : "not-found");
+    } catch {
+        return normalizeTmdbPlaybackItem(normalized, null, "unavailable");
+    }
 }
 
 function contentNexoraSearchResults(payload) {
