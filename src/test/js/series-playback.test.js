@@ -109,12 +109,11 @@ test("refuse un homonyme Content-Nexora d'une autre année", () => {
     ), false);
 });
 
-test("le lecteur intégré interdit les popups par sandbox", () => {
+test("le lecteur intégré retire la sandbox incompatible avec certains flux", () => {
     const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
     const frame = watch.match(/<iframe\s+id="embedPlayer"[^>]+>/)?.[0] || "";
-    assert.match(frame, /sandbox="[^"]*allow-scripts[^"]*"/);
-    assert.doesNotMatch(frame, /allow-popups/);
-    assert.match(app, /setAttribute\("sandbox",\s*EMBED_PLAYER_SANDBOX\)/);
-    assert.doesNotMatch(app, /removeAttribute\("sandbox"\)/);
+    assert.doesNotMatch(frame, /\ssandbox(?:=|\s|>)/);
+    assert.match(app, /removeAttribute\("sandbox"\)/);
+    assert.doesNotMatch(app, /EMBED_PLAYER_SANDBOX/);
 });
