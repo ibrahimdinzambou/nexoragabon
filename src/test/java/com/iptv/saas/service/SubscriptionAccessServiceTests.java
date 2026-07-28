@@ -86,6 +86,17 @@ class SubscriptionAccessServiceTests {
         assertFalse(access.permits(user, subscription, "live", "live-news", "News", false));
     }
 
+    @Test
+    void superAdminKeepsCatalogAccessWithoutAUsableSubscription() {
+        UserEntity user = new UserEntity();
+        user.role = Enums.UserRole.SUPER_ADMIN;
+        Subscription expired = activeSubscription(typeEntitlement("all"));
+        expired.currentPeriodEnd = Instant.now().minusSeconds(3600);
+
+        assertTrue(access.permits(user, expired, "movie", "tmdb-movie-popular", "Films", false));
+        assertTrue(access.permits(user, null, "series", "tmdb-series-popular", "Series", false));
+    }
+
     private Subscription activeSubscription(PlanEntitlement entitlement) {
         Plan plan = new Plan();
         plan.entitlements.add(entitlement);

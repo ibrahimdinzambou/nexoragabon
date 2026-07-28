@@ -105,7 +105,7 @@ public class StreamingService {
     @Transactional
     public synchronized UserSession open(UserEntity user, String type, String itemId, String quality) {
         Organization organization = organizationService.currentOrganization(user);
-        Subscription subscription = requireActiveSubscription(organization);
+        Subscription subscription = requirePlaybackSubscription(user, organization);
         String normalizedQuality = VlcRemuxService.normalizeQuality(quality);
         String normalizedType = type == null || type.isBlank() ? "live" : type;
         String requestedItemId = itemId;
@@ -166,7 +166,7 @@ public class StreamingService {
             return sessions.save(existing);
         }
 
-        int maxStreams = subscription.plan == null ? 1 : subscription.plan.maxConcurrentStreams;
+        int maxStreams = maxConcurrentStreams(user, subscription);
         if (activeForUser.size() >= maxStreams && maxStreams == 1) {
             activeForUser.forEach(session -> closeSession(session, Enums.SessionStatus.CLOSED));
             activeForUser = List.of();
@@ -234,7 +234,7 @@ public class StreamingService {
             Map<String, String> headers
     ) {
         Organization organization = organizationService.currentOrganization(user);
-        Subscription subscription = requireActiveSubscription(organization);
+        Subscription subscription = requirePlaybackSubscription(user, organization);
         String normalizedType = "series".equalsIgnoreCase(type) ? "series" : "movie";
         String normalizedKind = "hls".equalsIgnoreCase(kind) ? "hls" : "video";
         String validatedUrl = requireExternalStreamUrl(streamUrl);
@@ -253,7 +253,7 @@ public class StreamingService {
             return sessions.save(existing);
         }
 
-        int maxStreams = subscription.plan == null ? 1 : subscription.plan.maxConcurrentStreams;
+        int maxStreams = maxConcurrentStreams(user, subscription);
         if (activeForUser.size() >= maxStreams && maxStreams == 1) {
             activeForUser.forEach(session -> closeSession(session, Enums.SessionStatus.CLOSED));
             activeForUser = List.of();
@@ -535,6 +535,25 @@ public class StreamingService {
             throw ApiException.paymentRequired("Abonnement inactif ou expire");
         }
         return subscription;
+    }
+
+    private Subscription requirePlaybackSubscription(UserEntity user, Organization organization) {
+        if (!SecurityUtils.isSuperAdmin(user)) {
+            return requireActiveSubscription(organization);
+        }
+        if (organization.status != Enums.OrganizationStatus.ACTIVE) {
+            throw ApiException.paymentRequired("Organisation suspendue");
+        }
+        // Une date d'abonnement ne doit jamais couper la lecture du super admin.
+        // Sa formule reste utilisee uniquement pour les limites techniques.
+        return subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(organization).orElse(null);
+    }
+
+    private int maxConcurrentStreams(UserEntity user, Subscription subscription) {
+        if (subscription != null && subscription.plan != null) {
+            return Math.max(1, subscription.plan.maxConcurrentStreams);
+        }
+        return SecurityUtils.isSuperAdmin(user) ? Integer.MAX_VALUE : 1;
     }
 
     private void closeSession(UserSession session, Enums.SessionStatus status) {

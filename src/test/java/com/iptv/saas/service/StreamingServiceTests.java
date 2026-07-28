@@ -871,4 +871,54 @@ class StreamingServiceTests {
         assertEquals(null, opened.iptvAccount);
         assertTrue(opened.streamHeaders.contains("Referer="));
     }
+
+    @Test
+    void superAdminOpensContentNexoraAfterSubscriptionExpiry() {
+        UserSessionRepository sessions = mock(UserSessionRepository.class);
+        IptvAccountRepository accounts = mock(IptvAccountRepository.class);
+        SubscriptionRepository subscriptions = mock(SubscriptionRepository.class);
+        OrganizationService organizations = mock(OrganizationService.class);
+        IptvCatalogService catalog = mock(IptvCatalogService.class);
+        CommunityAddonService addons = mock(CommunityAddonService.class);
+        SubscriptionAccessService access = mock(SubscriptionAccessService.class);
+        TelegramAlertService telegram = mock(TelegramAlertService.class);
+        AuditService audit = mock(AuditService.class);
+        StreamingService service = new StreamingService(
+                sessions, accounts, subscriptions, organizations, catalog, addons, access, telegram, audit, 90
+        );
+        Organization organization = new Organization();
+        organization.status = Enums.OrganizationStatus.ACTIVE;
+        UserEntity superAdmin = new UserEntity();
+        superAdmin.id = 1L;
+        superAdmin.role = Enums.UserRole.SUPER_ADMIN;
+        Plan plan = new Plan();
+        plan.maxConcurrentStreams = 2;
+        Subscription expired = new Subscription();
+        expired.plan = plan;
+        expired.status = Enums.SubscriptionStatus.ACTIVE;
+        expired.currentPeriodEnd = Instant.now().minusSeconds(3600);
+
+        when(organizations.currentOrganization(superAdmin)).thenReturn(organization);
+        when(subscriptions.findFirstByOrganizationOrderByCreatedAtDesc(organization))
+                .thenReturn(Optional.of(expired));
+        when(sessions.findByOrganizationAndStatusAndLastHeartbeatAtBefore(
+                eq(organization),
+                eq(Enums.SessionStatus.ACTIVE),
+                any(Instant.class)
+        )).thenReturn(List.of());
+        when(sessions.findByUserAndStatus(superAdmin, Enums.SessionStatus.ACTIVE)).thenReturn(List.of());
+        when(sessions.save(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserSession opened = service.openContentNexora(
+                superAdmin,
+                "movie",
+                "tmdb~movie~438631",
+                "https://cdn.example/dune.m3u8",
+                "hls",
+                Map.of()
+        );
+
+        assertEquals("https://cdn.example/dune.m3u8", opened.streamUrl);
+        assertEquals(Enums.SessionStatus.ACTIVE, opened.status);
+    }
 }

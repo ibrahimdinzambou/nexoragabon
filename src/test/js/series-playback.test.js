@@ -109,6 +109,43 @@ test("refuse un homonyme Content-Nexora d'une autre année", () => {
     ), false);
 });
 
+test("rapproche une card TMDB de son résultat Content par l'affiche officielle", () => {
+    assert.equal(series.sameContent(
+        {
+            type: "movie",
+            name: "Titre localisé TMDB",
+            releaseYear: 2024,
+            poster: "https://image.tmdb.org/t/p/w500/abc123poster.jpg"
+        },
+        {
+            type: "movie",
+            title: "Titre français Content (2024)",
+            image: "https://image.tmdb.org/t/p/w300/abc123poster.jpg"
+        },
+        "movie"
+    ), true);
+});
+
+test("les cards TMDB déclarent Content en principal et Videasy en secours", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    assert.match(app, /primaryPlaybackProvider:\s*"content-nexora"/);
+    assert.match(app, /fallbackPlaybackProvider:\s*"videasy"/);
+    assert.ok(app.indexOf("await playContentNexoraItem(item)") < app.indexOf("await playTmdbItem({"));
+});
+
+test("Voir plus recharge aussi les rayons de l'accueil", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    assert.match(app, /homeVisibleCatalog:\s*\{\s*live:\s*HOME_PREVIEW_LIMIT/);
+    assert.match(app, /state\.activeType === "all"\s*\? state\.homeVisibleCatalog/);
+    assert.match(app, /data-load-more="\$\{shelf\.type\}"/);
+});
+
+test("le super admin n'est jamais bloqué par la date d'abonnement dans l'interface", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    assert.match(app, /function subscriptionIsUsable[\s\S]*?if \(isSuperAdminUser\(\)\) return true;/);
+    assert.match(app, /"Accès illimité"/);
+});
+
 test("le lecteur intégré retire la sandbox incompatible avec certains flux", () => {
     const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");

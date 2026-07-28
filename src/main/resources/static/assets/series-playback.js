@@ -72,6 +72,17 @@
         return "";
     }
 
+    function tmdbImageKey(value) {
+        if (!value || typeof value !== "object") return "";
+        const fields = ["poster", "image", "backdrop", "image_url", "img"];
+        for (const field of fields) {
+            const source = String(value[field] || "").trim();
+            const match = source.match(/image\.tmdb\.org\/t\/p\/[^/]+\/([^?#/]+)/i);
+            if (match?.[1]) return match[1].toLowerCase();
+        }
+        return "";
+    }
+
     function tokenSimilarity(left, right) {
         const leftTokens = new Set(String(left || "").split(" ").filter(Boolean));
         const rightTokens = new Set(String(right || "").split(" ").filter(Boolean));
@@ -110,6 +121,9 @@
         if (requestedYear && candidateYear && requestedYear !== candidateYear) return false;
 
         if (requestedTmdb && candidateTmdb || requestedImdb && candidateImdb) return true;
+        const requestedImage = tmdbImageKey(requested);
+        const candidateImage = tmdbImageKey(candidate);
+        if (requestedImage && candidateImage && requestedImage === candidateImage) return true;
 
         const requestedTitles = titleValues(requested);
         const candidateTitles = titleValues(candidate);
@@ -249,6 +263,7 @@
         normalizeSeriesTitle,
         titleValues,
         releaseYear,
+        tmdbImageKey,
         sameContent,
         sameSeries,
         seasonNumber,

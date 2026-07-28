@@ -122,6 +122,7 @@ const state = {
     addonHasMore: false,
     activeLanguage: "",
     visibleCatalog: { ...DEFAULT_VISIBLE_CATALOG },
+    homeVisibleCatalog: { live: HOME_PREVIEW_LIMIT, movie: HOME_PREVIEW_LIMIT, series: HOME_PREVIEW_LIMIT },
     recentlyWatched: loadRecentlyWatched(),
     notifications: [],
     notificationReadIds: loadNotificationReadIds(),
@@ -1594,7 +1595,12 @@ function subscriptionPeriodEnd(subscription = state.subscription) {
         : subscription?.currentPeriodEnd;
 }
 
+function isSuperAdminUser(user = state.user) {
+    return String(user?.role || "").replace(/^ROLE_/, "").toUpperCase() === "SUPER_ADMIN";
+}
+
 function subscriptionIsUsable(subscription = state.subscription) {
+    if (isSuperAdminUser()) return true;
     if (subscription === state.subscription
         && state.organization?.status
         && String(state.organization.status).toUpperCase() !== "ACTIVE") {
@@ -1960,7 +1966,7 @@ function normalizeItem(item, type, index) {
     const image = normalizeImageSource(rawPoster, posterFallback);
     const backdrop = normalizeImageSource(rawBackdrop, landscapeFallback);
 
-    return {
+    const normalized = {
         ...matched,
         ...item,
         id: String(item.id),
@@ -1969,6 +1975,24 @@ function normalizeItem(item, type, index) {
         image,
         poster: image,
         backdrop
+    };
+    const tmdbCatalogItem = normalized.sourceCode === "tmdb"
+        || normalized.source === "TMDB"
+        || /^tmdb~(?:movie|series)~\d+/.test(normalized.id);
+    if (!tmdbCatalogItem || !["movie", "series"].includes(itemType)) {
+        return normalized;
+    }
+    return {
+        ...normalized,
+        primaryPlaybackProvider: "content-nexora",
+        primaryPlaybackProviderName: "Content-Nexora",
+        fallbackPlaybackProvider: "videasy",
+        fallbackPlaybackProviderName: "Videasy",
+        availablePlaybackProviders: [...new Set([
+            "content-nexora",
+            ...(normalized.availablePlaybackProviders || normalized.availableProviders || []),
+            "videasy"
+        ])]
     };
 }
 
@@ -2195,14 +2219,17 @@ async function loadCatalog() {
         const resultSets = await Promise.all(
             types.map(async (type) => {
                 const movieLibrary = !query && state.activeType === "movie" && type === "movie";
-                const baseVisible = state.visibleCatalog[type] || defaultCatalogLimit(type);
+                const homeLibrary = !query && state.activeType === "all";
+                const baseVisible = homeLibrary
+                    ? state.homeVisibleCatalog[type] || HOME_PREVIEW_LIMIT
+                    : state.visibleCatalog[type] || defaultCatalogLimit(type);
                 const initialVisible = INITIAL_VISIBLE_CATALOG[type] || baseVisible;
                 const requestedLimit = query
                     ? searchCatalogLimit(type)
                     : movieLibrary
                         ? Math.max(baseVisible, defaultCatalogLimit("movie"))
-                        : state.activeType === "all"
-                            ? Math.min(baseVisible, initialVisible)
+                        : homeLibrary
+                            ? Math.max(baseVisible, initialVisible)
                             : baseVisible;
                 const params = new URLSearchParams({
                     type,
@@ -2455,35 +2482,33 @@ function renderCatalog() {
 
         const homePreview = !searching && state.activeType === "all";
         const visibleLimit = homePreview
-            ? HOME_PREVIEW_LIMIT
+            ? state.homeVisibleCatalog[row.type] || HOME_PREVIEW_LIMIT
             : searching
                 ? Math.max(searchCatalogLimit(row.type), state.visibleCatalog[row.type])
                 : state.visibleCatalog[row.type];
         const visibleItems = (homePreview ? balancedHomeItems(rowItems, visibleLimit, ["anime", row.type]) : rowItems.slice(0, visibleLimit));
-        const shelves = buildCatalogShelves(rowDefinition, rowItems, visibleItems, searching)
-            .map((shelf) => ({ ...shelf, homePreview }));
         const remoteMore = state.addonHasMore
             && row.type === state.activeType
             && Boolean(state.activeCategory);
         const likelyRemoteMore = !searching
-            && state.activeType === row.type
+            && (state.activeType === row.type || state.activeType === "all")
             && visibleItems.length >= visibleLimit;
-        let loadMoreLabel = `Afficher plus · ${Math.max(0, rowItems.length - visibleItems.length)} restants`;
+        let loadMoreLabel = `Voir plus · ${Math.max(0, rowItems.length - visibleItems.length)} restants`;
         if (likelyRemoteMore && visibleItems.length >= rowItems.length) {
-            loadMoreLabel = "Afficher plus";
+            loadMoreLabel = "Voir plus";
         }
-        let loadMore = visibleItems.length < rowItems.length || remoteMore || likelyRemoteMore
-            ? `<button class="button button-outline catalog-more" type="button" data-load-more="${row.type}">
-                    ${loadMoreLabel}
-               </button>`
-            : "";
-        if (homePreview) {
-            loadMore = "";
-        }
+        const canLoadMore = visibleItems.length < rowItems.length || remoteMore || likelyRemoteMore;
         if (remoteMore) {
-            loadMore = loadMore.replace(/Afficher plus[^<]+/, "Charger la suite de l'add-on");
+            loadMoreLabel = "Charger la suite de l'add-on";
         }
-        return `${shelves.map(renderCatalogShelf).join("")}${loadMore}`;
+        const shelves = buildCatalogShelves(rowDefinition, rowItems, visibleItems, searching)
+            .map((shelf) => ({
+                ...shelf,
+                homePreview,
+                canLoadMore,
+                loadMoreLabel
+            }));
+        return shelves.map(renderCatalogShelf).join("");
     }).join("");
 
     const homeDashboard = !searching && state.activeType === "all"
@@ -4110,6 +4135,11 @@ function renderCatalogShelf(shelf, index) {
     const rowId = `catalog-row-${shelf.type}-${index}`;
     const posterLayout = shelf.posterLayout ?? ["movie", "series"].includes(shelf.type);
     const hasShortcut = Boolean(shelf.homePreview);
+    const moreControl = shelf.canLoadMore
+        ? `<button class="row-see-more" type="button" data-load-more="${shelf.type}">${escapeHtml(shelf.loadMoreLabel || "Voir plus")}</button>`
+        : hasShortcut
+            ? `<button class="row-see-more" type="button" data-filter-shortcut="${shelf.type}">Voir tout</button>`
+            : "";
     const endCard = hasShortcut ? renderShelfMoreCard(shelf.type) : "";
     const trackItems = posterLayout
         ? shelf.items.map(posterMediaCard).join("")
@@ -4134,7 +4164,7 @@ function renderCatalogShelf(shelf, index) {
                     <h3 id="${rowId}-title">${escapeHtml(shelf.title)}</h3>
                     <span>${escapeHtml(shelf.label)}</span>
                 </div>
-                ${hasShortcut ? `<button class="row-see-more" type="button" data-filter-shortcut="${shelf.type}">Voir plus ${escapeHtml(typeLabel(shelf.type).toLowerCase())}</button>` : ""}
+                ${moreControl}
                 ${controls}
             </div>
             <div class="card-track ${posterLayout ? "poster-card-track" : ""} card-track-${shelf.type}" id="${rowId}">
@@ -4997,8 +5027,12 @@ function updateAccountUi() {
     elements.profileName.textContent = state.user.name;
     elements.profileEmail.textContent = state.user.email;
     elements.profileOrganization.textContent = state.organization?.name || "Espace personnel";
-    elements.profilePlan.textContent = state.subscription?.plan?.name || "Aucune formule";
-    elements.profileStatus.textContent = statusLabel(state.subscription?.status);
+    elements.profilePlan.textContent = isSuperAdminUser()
+        ? "Accès illimité"
+        : state.subscription?.plan?.name || "Aucune formule";
+    elements.profileStatus.textContent = isSuperAdminUser()
+        ? "Super administrateur"
+        : statusLabel(state.subscription?.status);
     fillSettingsForms();
     renderBillingSettings();
     syncSubscriptionAccess();
@@ -5078,7 +5112,9 @@ function buildNotifications(payments = [], tickets = [], adminNotifications = []
         });
     const subscription = state.subscription || {};
     const planName = subscription.plan?.name || "Aucune formule";
-    if (!subscription.status) {
+    if (isSuperAdminUser()) {
+        // Le super admin n'a ni alerte d'expiration ni blocage de lecture.
+    } else if (!subscription.status) {
         items.push(notificationItem("subscription-none", "Aucune formule active", "Choisissez une formule pour debloquer tout le catalogue.", "Abonnement", "A", "billing"));
     } else if (String(subscription.status).toUpperCase() !== "ACTIVE") {
         items.push(notificationItem(`subscription-${subscription.status}`, `Abonnement ${statusLabel(subscription.status)}`, `${planName}: verifiez votre statut pour eviter une coupure.`, "Abonnement", "A", "billing"));
@@ -5819,6 +5855,9 @@ async function nativeSeriesEpisodeFallbacks(item) {
 
 async function playVideoWithProviderFallback(item, options = {}) {
     const failures = [];
+    if (isTmdbPlayable(item)) {
+        showToast("Recherche du flux via Content-Nexora en priorité.");
+    }
     try {
         await playContentNexoraItem(item);
         return true;
@@ -5857,7 +5896,12 @@ async function playVideoWithProviderFallback(item, options = {}) {
     const tmdbId = tmdbIdFromItem(item);
     if (tmdbId && isTmdbPlayable(item)) {
         showToast("Aucun flux prioritaire valide, bascule vers TMDB/Videasy.");
-        await playTmdbItem({ ...item, tmdbId });
+        await playTmdbItem({
+            ...item,
+            tmdbId,
+            playbackProvider: "videasy",
+            playbackProviderName: "Videasy"
+        });
         return true;
     }
 
@@ -9520,13 +9564,17 @@ elements.catalogRows.addEventListener("click", async (event) => {
 
     const loadMore = event.target.closest("[data-load-more]");
     if (loadMore) {
+        const type = loadMore.dataset.loadMore;
+        const visibleCatalog = state.activeType === "all"
+            ? state.homeVisibleCatalog
+            : state.visibleCatalog;
         if (state.addonHasMore && state.activeCategory) {
             state.addonPages += 1;
-            state.visibleCatalog[loadMore.dataset.loadMore] += LOAD_MORE_INCREMENT;
+            visibleCatalog[type] = (visibleCatalog[type] || HOME_PREVIEW_LIMIT) + LOAD_MORE_INCREMENT;
             await loadCatalog();
             return;
         }
-        state.visibleCatalog[loadMore.dataset.loadMore] += LOAD_MORE_INCREMENT;
+        visibleCatalog[type] = (visibleCatalog[type] || HOME_PREVIEW_LIMIT) + LOAD_MORE_INCREMENT;
         await loadCatalog();
         return;
     }

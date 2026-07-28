@@ -8,6 +8,7 @@ import com.iptv.saas.domain.SubscriptionPeriods;
 import com.iptv.saas.domain.UserEntity;
 import com.iptv.saas.repository.SubscriptionRepository;
 import com.iptv.saas.security.CatalogCategoryAccess;
+import com.iptv.saas.security.SecurityUtils;
 import com.iptv.saas.web.ApiException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +35,9 @@ public class SubscriptionAccessService {
         if (user == null) {
             return CatalogCategoryAccess.filter(null, values);
         }
+        if (SecurityUtils.isSuperAdmin(user)) {
+            return values;
+        }
         Subscription subscription = currentUsableSubscription(user);
         return values.stream()
                 .filter(value -> hasPrivateAccess(value) || permits(user, subscription, value))
@@ -44,6 +48,9 @@ public class SubscriptionAccessService {
     public boolean permits(UserEntity user, Map<String, Object> value) {
         if (user == null) {
             return permitsWithoutSubscription(null, value);
+        }
+        if (SecurityUtils.isSuperAdmin(user)) {
+            return true;
         }
         return hasPrivateAccess(value) || permits(user, currentUsableSubscription(user), value);
     }
@@ -60,6 +67,9 @@ public class SubscriptionAccessService {
             return adult
                     ? CatalogCategoryAccess.permitsExplicitly(null, categoryId)
                     : CatalogCategoryAccess.permits(null, categoryId);
+        }
+        if (SecurityUtils.isSuperAdmin(user)) {
+            return true;
         }
         if (!isUsable(subscription)) {
             return false;

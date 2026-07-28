@@ -25,4 +25,8 @@ public final class SecurityUtils {
                 || user.role == Enums.UserRole.SUPPORT
                 || user.role == Enums.UserRole.OPS);
     }
+
+    public static boolean isSuperAdmin(UserEntity user) {
+        return user != null && user.role == Enums.UserRole.SUPER_ADMIN;
+    }
 }
