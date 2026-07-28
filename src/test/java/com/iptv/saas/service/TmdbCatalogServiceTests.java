@@ -91,6 +91,8 @@ class TmdbCatalogServiceTests {
         Map<String, Object> item = items.get(0);
         assertEquals("tmdb~movie~603", item.get("id"));
         assertEquals("The Matrix", item.get("name"));
+        assertEquals("The Matrix", item.get("tmdbTitle"));
+        assertEquals(List.of("The Matrix"), item.get("contentSearchTitles"));
         assertEquals("Content-Nexora", item.get("source"));
         assertEquals("content-nexora", item.get("sourceCode"));
         assertEquals("tmdb", item.get("metadataProvider"));

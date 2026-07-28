@@ -143,6 +143,22 @@ test("rapproche aussi une affiche TMDB brute d'une image Content proxifiée", ()
     ), true);
 });
 
+test("normalise les titres TMDB avant rapprochement Content-Nexora", () => {
+    assert.equal(series.sameContent(
+        {
+            type: "series",
+            name: "Que ça vous serve de leçon !",
+            releaseYear: 2026,
+            tmdbId: 276161
+        },
+        {
+            type: "series",
+            title: "Que a vous serve de leon - Saison 1 2026"
+        },
+        "series"
+    ), true);
+});
+
 test("les anciennes cards TMDB s'affichent comme sources FR avec Content en principal", () => {
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
     const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
@@ -156,6 +172,9 @@ test("les anciennes cards TMDB s'affichent comme sources FR avec Content en prin
     assert.match(app, /IntersectionObserver/);
     assert.match(app, /maxQueries:\s*TMDB_CONTENT_HYDRATION_TITLE_LIMIT/);
     assert.match(app, /observeVisibleTmdbCardsForContentHydration\(\)/);
+    assert.match(app, /contentSearchTitles/);
+    assert.match(app, /tmdbContentSearchTitleVariants/);
+    assert.match(app, /metadataProvider/);
     assert.match(app, /isTmdbCatalogItem\(value\)[\s\S]*?french-badge/);
     assert.doesNotMatch(app, />TMDB<|TMDB→FR/);
     assert.doesNotMatch(watch, /lecteur TMDB/i);

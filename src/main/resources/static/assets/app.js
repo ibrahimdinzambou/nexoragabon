@@ -4405,7 +4405,9 @@ function isAddonSource(value) {
 }
 
 function isTmdbSource(value) {
-    return value?.sourceCode === "tmdb" || value?.source === "TMDB";
+    return value?.sourceCode === "tmdb"
+        || value?.source === "TMDB"
+        || String(value?.metadataProvider || "").toLowerCase() === "tmdb";
 }
 
 function isTmdbCatalogItem(value) {
@@ -6350,26 +6352,70 @@ function cleanContentNexoraSearchTitle(value, seriesEpisode = false) {
         .trim();
 }
 
+function appendContentSearchTitleValue(values, value) {
+    if (Array.isArray(value)) {
+        value.forEach((entry) => appendContentSearchTitleValue(values, entry));
+        return;
+    }
+    if (value && typeof value === "object") {
+        appendContentSearchTitleValue(values, value.title || value.name || value.value);
+        return;
+    }
+    const title = String(value || "").trim();
+    if (title) values.push(title);
+}
+
+function tmdbContentSearchTitleVariants(title) {
+    const raw = String(title || "").trim();
+    if (!raw) return [];
+    const noYear = raw.replace(/\s*\((?:19|20)\d{2}\)\s*$/i, "").trim();
+    const ascii = noYear.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const punctuationNormalized = ascii
+        .replace(/[''`]/g, " ")
+        .replace(/&/g, " et ")
+        .replace(/\s+/g, " ")
+        .trim();
+    const withoutTrailingSubtitle = punctuationNormalized
+        .replace(/\s+[-\u2013\u2014|]\s+(?:film|vf|vostfr|streaming|complet).*$/i, "")
+        .trim();
+    return [raw, noYear, ascii, punctuationNormalized, withoutTrailingSubtitle]
+        .map((value) => value.trim())
+        .filter(Boolean);
+}
+
 function contentNexoraSearchTitles(item) {
     const seriesEpisode = item?.type === "series"
         && (item?.isEpisode || (positiveInteger(item?.season) && positiveInteger(item?.episode)));
-    const values = [
+    const values = [];
+    [
         item?.seriesName,
         item?.parentTitle,
         item?.contentNexoraTitle,
+        item?.contentSearchTitles,
+        item?.tmdbTitle,
+        item?.tmdbOriginalTitle,
         item?.name,
         item?.title,
         item?.originalTitle,
         item?.seriesOriginalTitle,
         item?.originalName,
-        item?.original_name
-    ];
+        item?.original_name,
+        item?.localizedTitle,
+        item?.frenchTitle,
+        item?.englishTitle,
+        item?.alternativeTitle,
+        item?.alternativeTitles,
+        item?.aliases,
+        item?.aka
+    ].forEach((value) => appendContentSearchTitleValue(values, value));
     const unique = new Map();
     values.forEach((value) => {
-        const title = cleanContentNexoraSearchTitle(value, seriesEpisode);
-        if (!title) return;
-        const key = requireSeriesPlayback().normalizeSeriesTitle(title) || normalizeSearchText(title);
-        if (key && !unique.has(key)) unique.set(key, title);
+        tmdbContentSearchTitleVariants(value).forEach((variant) => {
+            const title = cleanContentNexoraSearchTitle(variant, seriesEpisode);
+            if (!title) return;
+            const key = requireSeriesPlayback().normalizeSeriesTitle(title) || normalizeSearchText(title);
+            if (key && !unique.has(key)) unique.set(key, title);
+        });
     });
     return [...unique.values()];
 }

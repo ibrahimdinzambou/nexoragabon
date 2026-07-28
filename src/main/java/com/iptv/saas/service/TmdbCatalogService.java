@@ -209,12 +209,15 @@ public class TmdbCatalogService {
         payload.put("id", publicItemId(type, id));
         payload.put("tmdbId", id);
         payload.put("name", title);
+        payload.put("tmdbTitle", title);
         String originalTitle = TYPE_SERIES.equals(type)
                 ? text(item, "original_name")
                 : text(item, "original_title");
         if (originalTitle != null && !originalTitle.isBlank()) {
             payload.put("originalTitle", originalTitle);
+            payload.put("tmdbOriginalTitle", originalTitle);
         }
+        payload.put("contentSearchTitles", contentSearchTitles(title, originalTitle));
         payload.put("type", type);
         payload.put("categoryId", category.id());
         payload.put("categoryName", category.name());
@@ -383,6 +386,23 @@ public class TmdbCatalogService {
         payload.put("fallbackPlaybackProvider", FALLBACK_PLAYBACK_PROVIDER);
         payload.put("fallbackPlaybackProviderName", FALLBACK_PLAYBACK_PROVIDER_NAME);
         payload.put("availablePlaybackProviders", List.of(PLAYBACK_PROVIDER, FALLBACK_PLAYBACK_PROVIDER));
+    }
+
+    private List<String> contentSearchTitles(String title, String originalTitle) {
+        List<String> values = new ArrayList<>();
+        addSearchTitle(values, title);
+        addSearchTitle(values, originalTitle);
+        return List.copyOf(values);
+    }
+
+    private void addSearchTitle(List<String> values, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String normalized = value.strip();
+        if (!values.contains(normalized)) {
+            values.add(normalized);
+        }
     }
 
     private Map<String, Object> categoryPayload(Category category) {

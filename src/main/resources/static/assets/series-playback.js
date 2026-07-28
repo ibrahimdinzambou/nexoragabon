@@ -97,6 +97,74 @@
         return union ? intersection / union : 0;
     }
 
+    const WEAK_TITLE_TOKENS = new Set([
+        "a", "an", "and", "au", "aux", "ca", "ce", "ces", "de", "des", "du", "en",
+        "et", "la", "le", "les", "of", "que", "sa", "se", "ses", "son", "the", "to",
+        "un", "une"
+    ]);
+
+    function titleTokens(value) {
+        return normalizeSeriesTitle(value)
+            .split(" ")
+            .filter((token) => token.length > 2 && !WEAK_TITLE_TOKENS.has(token));
+    }
+
+    function editDistanceAtMostOne(left, right) {
+        if (left === right) return true;
+        if (Math.abs(left.length - right.length) > 1) return false;
+        let mismatches = 0;
+        let leftIndex = 0;
+        let rightIndex = 0;
+        while (leftIndex < left.length && rightIndex < right.length) {
+            if (left[leftIndex] === right[rightIndex]) {
+                leftIndex += 1;
+                rightIndex += 1;
+                continue;
+            }
+            mismatches += 1;
+            if (mismatches > 1) return false;
+            if (left.length > right.length) {
+                leftIndex += 1;
+            } else if (right.length > left.length) {
+                rightIndex += 1;
+            } else {
+                leftIndex += 1;
+                rightIndex += 1;
+            }
+        }
+        return true;
+    }
+
+    function tokenMatches(left, right) {
+        return left === right
+            || left.length >= 4 && right.length >= 4 && editDistanceAtMostOne(left, right);
+    }
+
+    function tokenCoverage(left, right) {
+        const leftTokens = titleTokens(left);
+        const rightTokens = titleTokens(right);
+        if (!leftTokens.length || !rightTokens.length) return 0;
+        const matched = leftTokens.filter((leftToken) => (
+            rightTokens.some((rightToken) => tokenMatches(leftToken, rightToken))
+        )).length;
+        return matched / leftTokens.length;
+    }
+
+    function relaxedTitleMatch(left, right, hasYearGuard) {
+        const leftTokens = titleTokens(left);
+        const rightTokens = titleTokens(right);
+        const shortest = Math.min(leftTokens.length, rightTokens.length);
+        if (!shortest) return false;
+        if (shortest === 1) {
+            return hasYearGuard
+                && leftTokens.some((leftToken) => rightTokens.some((rightToken) => tokenMatches(leftToken, rightToken)));
+        }
+        const leftCoverage = tokenCoverage(left, right);
+        const rightCoverage = tokenCoverage(right, left);
+        const threshold = hasYearGuard ? 0.66 : 0.82;
+        return leftCoverage >= threshold && rightCoverage >= threshold;
+    }
+
     function contentType(value) {
         const type = String(value?.type || value?.contentType || "").toLowerCase();
         if (["series", "tv", "season", "episode"].includes(type)) return "series";
@@ -135,10 +203,11 @@
         if (!requestedTitles.length || !candidateTitles.length) return false;
         if (requestedTitles.some((title) => candidateTitles.includes(title))) return true;
 
+        const hasYearGuard = Boolean(requestedYear && candidateYear);
         return requestedTitles.some((left) => candidateTitles.some((right) => (
             left.length >= 8
             && right.length >= 8
-            && tokenSimilarity(left, right) >= 0.86
+            && (tokenSimilarity(left, right) >= 0.86 || relaxedTitleMatch(left, right, hasYearGuard))
         )));
     }
 
