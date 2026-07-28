@@ -2605,14 +2605,20 @@ function renderCatalog() {
         const remoteMore = state.addonHasMore
             && row.type === state.activeType
             && Boolean(state.activeCategory);
+        const contentRemoteMore = !searching
+            && ["movie", "series"].includes(row.type)
+            && (state.activeType === row.type || state.activeType === "all")
+            && (contentNexoraApiEnabled() || animeNexoraApiEnabled());
         const likelyRemoteMore = !searching
             && (state.activeType === row.type || state.activeType === "all")
             && visibleItems.length >= visibleLimit;
         let loadMoreLabel = `Voir plus · ${Math.max(0, rowItems.length - visibleItems.length)} restants`;
-        if (likelyRemoteMore && visibleItems.length >= rowItems.length) {
-            loadMoreLabel = "Voir plus";
+        if ((likelyRemoteMore || contentRemoteMore) && visibleItems.length >= rowItems.length) {
+            loadMoreLabel = ["movie", "series"].includes(row.type)
+                ? "Charger plus de contenus"
+                : "Voir plus";
         }
-        const canLoadMore = visibleItems.length < rowItems.length || remoteMore || likelyRemoteMore;
+        const canLoadMore = visibleItems.length < rowItems.length || remoteMore || likelyRemoteMore || contentRemoteMore;
         if (remoteMore) {
             loadMoreLabel = "Charger la suite de l'add-on";
         }
@@ -3671,7 +3677,7 @@ function renderBrowseDashboard(items) {
     const recommended = balancedHomeItems(unique.filter((item) => item.streamAvailable !== false), 12, [type, "tmdb"]);
     const recent = recentlyWatchedItems(unique).slice(0, 10);
     const continueItems = uniqueCatalogItems([...recent, ...balancedHomeItems(unique, 10, [type])]).slice(0, 10);
-    const universes = browseUniverses(unique).slice(0, 8);
+    const universes = browseUniverses(unique).slice(0, 14);
     const featured = originals[0] || recommended[0] || unique[0];
     const title = type === "movie" ? "Films originaux Nexora" : "Series originales Nexora";
     const subtitle = type === "movie" ? "Des histoires uniques. Des emotions vraies." : "Des saisons a enchainer, selectionnees pour vous.";
@@ -3711,19 +3717,55 @@ function renderBrowseRail(title, id, items, renderer) {
 
 function browseUniverses(items) {
     const seen = new Set();
-    return items.reduce((values, item) => {
-        const label = item.categoryName || typeLabel(item.type);
-        const key = normalizeSearchText(label);
-        if (!key || seen.has(key)) return values;
+    const values = [];
+    const addUniverse = (label, type, categoryId, image) => {
+        const key = `${type}:${categoryId || normalizeSearchText(label)}`;
+        if (!label || seen.has(key)) return;
         seen.add(key);
         values.push({
             label,
-            type: item.type,
-            categoryId: item.categoryId || "",
-            image: homeImage(item, "/assets/images/landscape-4.jpg")
+            type,
+            categoryId: categoryId || "",
+            image: normalizeImageSource(image, "/assets/images/landscape-4.jpg")
         });
-        return values;
-    }, []);
+    };
+    const featuredImage = (predicate, fallback = "/assets/images/landscape-4.jpg") => (
+        items.find(predicate)?.backdrop
+        || items.find(predicate)?.image
+        || fallback
+    );
+
+    contentNexoraCatalogCategories()
+        .filter((category) => category.type === state.activeType)
+        .forEach((category) => addUniverse(
+            category.name,
+            category.type,
+            category.id,
+            featuredImage((item) => item.categoryId === category.id)
+        ));
+    directAnimeNexoraCategories()
+        .filter((category) => category.type === state.activeType)
+        .forEach((category) => addUniverse(
+            category.name,
+            category.type,
+            category.id,
+            featuredImage((item) => item.categoryId === category.id)
+        ));
+    state.categories
+        .filter((category) => category.type === state.activeType)
+        .forEach((category) => addUniverse(
+            category.name,
+            category.type,
+            category.id,
+            featuredImage((item) => item.categoryId === category.id)
+        ));
+    items.forEach((item) => {
+        const label = item.categoryName || typeLabel(item.type);
+        addUniverse(label, item.type, item.categoryId || "", homeImage(item, "/assets/images/landscape-4.jpg"));
+    });
+    addUniverse("Nouveautes", state.activeType, "", featuredImage((item) => item.releaseYear || item.releaseDate));
+    addUniverse("Les mieux notes", state.activeType, "", featuredImage((item) => Number(item.rating) > 0));
+    return values;
 }
 
 function renderUniverseRail(universes) {
@@ -7472,6 +7514,15 @@ async function resolveContentNexoraSources(content, item = state.activePlayerIte
 }
 
 async function openContentNexoraSource(item, source, content) {
+    if (isMobileEmbedEnvironment()
+        && source.pageUrl
+        && source.pageUrl !== source.mediaUrl
+        && ["hls", "direct"].includes(source.kind)) {
+        state.activeSessionToken = null;
+        state.activeCanFailover = false;
+        await startStreamPlayback(item, source.pageUrl, "embed", { visualWatch: false });
+        return;
+    }
     if (source.kind === "embed" || !source.verified) {
         state.activeSessionToken = null;
         state.activeCanFailover = false;
@@ -8819,6 +8870,9 @@ function setEmbedPlayerAwaitingLaunch() {
 function embedAwaitingMessage() {
     if (isEpornerSource(state.activePlayerItem)) {
         return "Lecteur Adults pret. Lancez-le depuis le bouton affiche.";
+    }
+    if (isContentNexoraPlayerItem()) {
+        return "Lecteur Content-Nexora pret. Lancez-le depuis le bouton affiche.";
     }
     return "Lecteur Videasy prêt. Lancez-le depuis le bouton affiché.";
 }

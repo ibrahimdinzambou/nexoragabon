@@ -199,7 +199,7 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260728-section-load-more-1/);
+    assert.match(watch, /app\.js\?v=20260728-browse-load-more-mobile-1/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
@@ -213,7 +213,18 @@ test("Voir plus recharge aussi les rayons de l'accueil", () => {
     assert.match(app, /parameters\.set\("limit",\s*String\(limit\)\)/);
     assert.match(app, /mapWithConcurrency\(seeds,\s*2/);
     assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
-    assert.match(watch, /app\.js\?v=20260728-section-load-more-1/);
+    assert.match(app, /const contentRemoteMore = !searching[\s\S]*?contentNexoraApiEnabled\(\) \|\| animeNexoraApiEnabled\(\)/);
+    assert.match(app, /visibleItems\.length < rowItems\.length \|\| remoteMore \|\| likelyRemoteMore \|\| contentRemoteMore/);
+    assert.match(watch, /app\.js\?v=20260728-browse-load-more-mobile-1/);
+});
+
+test("les pages films et series enrichissent les univers et securisent le mobile", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    assert.match(app, /browseUniverses\(unique\)\.slice\(0,\s*14\)/);
+    assert.match(app, /contentNexoraCatalogCategories\(\)[\s\S]*?directAnimeNexoraCategories\(\)[\s\S]*?state\.categories/);
+    assert.match(app, /addUniverse\("Nouveautes"/);
+    assert.match(app, /isMobileEmbedEnvironment\(\)[\s\S]*?source\.pageUrl[\s\S]*?startStreamPlayback\(item,\s*source\.pageUrl,\s*"embed"/);
+    assert.match(app, /Lecteur Content-Nexora pret/);
 });
 
 test("le super admin n'est jamais bloqué par la date d'abonnement dans l'interface", () => {
