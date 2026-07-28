@@ -12,6 +12,7 @@
         "name",
         "title",
         "originalTitle",
+        "seriesOriginalTitle",
         "original_name",
         "originalName",
         "contentNexoraTitle"
@@ -80,10 +81,21 @@
         return union ? intersection / union : 0;
     }
 
-    function sameSeries(requested, candidate) {
+    function contentType(value) {
+        const type = String(value?.type || value?.contentType || "").toLowerCase();
+        if (["series", "tv", "season", "episode"].includes(type)) return "series";
+        if (["movie", "film"].includes(type)) return "movie";
+        return "";
+    }
+
+    function sameContent(requested, candidate, expectedType = "") {
         if (!requested || !candidate) return false;
-        const candidateType = String(candidate.type || candidate.contentType || "").toLowerCase();
-        if (candidateType && !["series", "tv", "season", "episode"].includes(candidateType)) return false;
+        const requestedType = contentType(requested);
+        const candidateType = contentType(candidate);
+        const requiredType = contentType({ type: expectedType });
+        if (requiredType && requestedType && requestedType !== requiredType) return false;
+        if (requiredType && candidateType && candidateType !== requiredType) return false;
+        if (requestedType && candidateType && requestedType !== candidateType) return false;
 
         const requestedTmdb = positiveInteger(requested.tmdbId || requested.tmdb_id);
         const candidateTmdb = positiveInteger(candidate.tmdbId || candidate.tmdb_id);
@@ -109,6 +121,10 @@
             && right.length >= 8
             && tokenSimilarity(left, right) >= 0.86
         )));
+    }
+
+    function sameSeries(requested, candidate) {
+        return sameContent(requested, candidate, "series");
     }
 
     function seasonNumber(value, fallback = 0) {
@@ -233,6 +249,7 @@
         normalizeSeriesTitle,
         titleValues,
         releaseYear,
+        sameContent,
         sameSeries,
         seasonNumber,
         episodeNumber,

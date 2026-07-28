@@ -151,7 +151,7 @@ public class TmdbCatalogService {
         if (categories.isEmpty()) {
             return List.of();
         }
-        int pages = categoryId == null || categoryId.isBlank() ? 1 : pageCount(requestedLimit, 5);
+        int pages = browsePageCount(requestedLimit, categories.size());
         List<Map<String, Object>> result = new ArrayList<>();
         for (Category category : categories) {
             for (int page = 1; page <= pages; page++) {
@@ -453,6 +453,14 @@ public class TmdbCatalogService {
             return 1;
         }
         return Math.max(1, Math.min(maxPages, (int) Math.ceil((double) requestedLimit / TMDB_PAGE_SIZE)));
+    }
+
+    private int browsePageCount(int requestedLimit, int categoryCount) {
+        if (requestedLimit <= 0) {
+            return 1;
+        }
+        int resultsPerRound = TMDB_PAGE_SIZE * Math.max(1, categoryCount);
+        return Math.max(1, Math.min(10, (int) Math.ceil((double) requestedLimit / resultsPerRound)));
     }
 
     private String catalogType(String type) {

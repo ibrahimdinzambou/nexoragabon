@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const series = require("../../main/resources/static/assets/series-playback.js");
 
 test("normalise les accents, variantes de ponctuation et suffixes de saison", () => {
@@ -80,4 +82,39 @@ test("déplie les groupes de langues enveloppés dans la liste d'épisodes Conte
     assert.deepEqual(episode.map((entry) => entry.contentNexoraLanguage), ["vf", "vostfr"]);
     assert.equal(episode[0].players[0].url, "https://vf.example/s1e1");
     assert.deepEqual(series.remoteEpisodeEntries(content, 1, 3), []);
+});
+
+test("fait correspondre un titre TMDB original avec le résultat Content-Nexora", () => {
+    assert.equal(series.sameContent(
+        {
+            type: "movie",
+            name: "Le Voyage de Chihiro",
+            originalTitle: "Sen to Chihiro no kamikakushi",
+            releaseYear: 2001,
+            tmdbId: 129
+        },
+        {
+            type: "movie",
+            title: "Sen to Chihiro no kamikakushi (2001)"
+        },
+        "movie"
+    ), true);
+});
+
+test("refuse un homonyme Content-Nexora d'une autre année", () => {
+    assert.equal(series.sameContent(
+        { type: "movie", name: "Gladiator", releaseYear: 2024 },
+        { type: "movie", title: "Gladiator (2000)" },
+        "movie"
+    ), false);
+});
+
+test("le lecteur intégré interdit les popups par sandbox", () => {
+    const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    const frame = watch.match(/<iframe\s+id="embedPlayer"[^>]+>/)?.[0] || "";
+    assert.match(frame, /sandbox="[^"]*allow-scripts[^"]*"/);
+    assert.doesNotMatch(frame, /allow-popups/);
+    assert.match(app, /setAttribute\("sandbox",\s*EMBED_PLAYER_SANDBOX\)/);
+    assert.doesNotMatch(app, /removeAttribute\("sandbox"\)/);
 });

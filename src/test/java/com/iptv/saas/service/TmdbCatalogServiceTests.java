@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -95,6 +96,31 @@ class TmdbCatalogServiceTests {
         assertEquals(true, item.get("externalPlayback"));
         assertEquals("videasy", item.get("playbackProvider"));
         assertTrue(String.valueOf(item.get("categoryName")).contains("TMDB"));
+    }
+
+    @Test
+    void loadsAdditionalTmdbPagesWhenTheCatalogLimitIncreases() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicInteger highestPage = new AtomicInteger();
+        server.createContext("/trending/movie/week", exchange -> pagedResults(exchange, 10_000, highestPage));
+        server.createContext("/movie/popular", exchange -> pagedResults(exchange, 20_000, highestPage));
+        server.createContext("/movie/now_playing", exchange -> pagedResults(exchange, 30_000, highestPage));
+        server.createContext("/movie/top_rated", exchange -> pagedResults(exchange, 40_000, highestPage));
+        server.createContext("/movie/upcoming", exchange -> pagedResults(exchange, 50_000, highestPage));
+        server.start();
+        TmdbCatalogService service = service();
+
+        List<Map<String, Object>> items = service.items(
+                "movie",
+                null,
+                null,
+                null,
+                "default",
+                120
+        );
+
+        assertEquals(120, items.size());
+        assertEquals(2, highestPage.get());
     }
 
     @Test
@@ -304,5 +330,30 @@ class TmdbCatalogServiceTests {
         exchange.sendResponseHeaders(200, bytes.length);
         exchange.getResponseBody().write(bytes);
         exchange.close();
+    }
+
+    private void pagedResults(HttpExchange exchange, int seed, AtomicInteger highestPage) throws IOException {
+        int page = 1;
+        String query = exchange.getRequestURI().getQuery();
+        if (query != null) {
+            for (String parameter : query.split("&")) {
+                if (parameter.startsWith("page=")) {
+                    page = Integer.parseInt(parameter.substring("page=".length()));
+                }
+            }
+        }
+        highestPage.accumulateAndGet(page, Math::max);
+        StringBuilder body = new StringBuilder("{\"page\":").append(page).append(",\"results\":[");
+        for (int index = 0; index < 20; index++) {
+            if (index > 0) {
+                body.append(',');
+            }
+            int id = seed + page * 100 + index;
+            body.append("{\"id\":").append(id)
+                    .append(",\"title\":\"Film ").append(id)
+                    .append("\",\"release_date\":\"2026-01-01\"}");
+        }
+        body.append("]}");
+        json(exchange, body.toString());
     }
 }
