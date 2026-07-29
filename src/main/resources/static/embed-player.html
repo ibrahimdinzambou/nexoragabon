@@ -310,7 +310,7 @@
         allowfullscreen
         webkitallowfullscreen
         referrerpolicy="strict-origin-when-cross-origin"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
     ></iframe>
     <div class="empty" id="emptyState" aria-hidden="true">
         <p>Lecteur externe indisponible.</p>
@@ -340,6 +340,7 @@
     const launchCopy = document.querySelector("#launchCopy");
     const title = document.querySelector("#playerTitle");
     const nativeOpen = window.open?.bind(window);
+    const allowedNavigationHosts = new Set(["nexoragabon.com", "www.nexoragabon.com"]);
     let episodeEntries = [];
     let activeEpisodeIndex = -1;
     let frameStarted = false;
@@ -377,9 +378,30 @@
         const href = validExternalUrl(value);
         if (!href) return null;
         const url = new URL(href);
-        if (url.origin !== window.location.origin) return null;
+        if (!isAllowedNavigationUrl(url)) return null;
         if (nativeOpen) return nativeOpen(href, target || "_self", features);
         return null;
+    }
+
+    function isAllowedNavigationUrl(value) {
+        try {
+            const url = value instanceof URL ? value : new URL(value, window.location.href);
+            if (!["http:", "https:"].includes(url.protocol)) return true;
+            const host = url.hostname.toLowerCase();
+            if (allowedNavigationHosts.has(host)) return true;
+            const currentHost = window.location.hostname.toLowerCase();
+            const localDevelopment = ["localhost", "127.0.0.1", "::1"].includes(currentHost);
+            return localDevelopment && host === currentHost;
+        } catch {
+            return false;
+        }
+    }
+
+    function blockExternalNavigation(value, event) {
+        if (isAllowedNavigationUrl(value)) return false;
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        return true;
     }
 
     function installRedirectGuard() {
@@ -390,14 +412,15 @@
         }
         document.addEventListener("click", (event) => {
             const link = event.target.closest?.("a[href]");
-            if (!link || link === directLink) return;
+            if (!link) return;
             const href = validExternalUrl(link.href);
             if (!href) return;
-            const url = new URL(href);
-            if (url.origin !== window.location.origin && !link.target) {
-                event.preventDefault();
-                guardedOpen(href, "_blank");
-            }
+            blockExternalNavigation(href, event);
+        }, true);
+        document.addEventListener("submit", (event) => {
+            const form = event.target;
+            if (!(form instanceof HTMLFormElement) || !form.action) return;
+            blockExternalNavigation(form.action, event);
         }, true);
         try {
             const originalPushState = history.pushState.bind(history);
@@ -417,7 +440,7 @@
         if (!value) return value;
         try {
             const url = new URL(value, window.location.href);
-            return url.origin === window.location.origin ? url.href : window.location.href;
+            return isAllowedNavigationUrl(url) ? url.href : window.location.href;
         } catch {
             return window.location.href;
         }
@@ -511,7 +534,7 @@
             return;
         }
         title.textContent = safeTitle(activeTitle);
-        directLink.href = src;
+        directLink.href = "/watch.html";
         frame.hidden = false;
         empty.setAttribute("aria-hidden", "true");
         frame.src = "about:blank";
@@ -536,7 +559,7 @@
     prevEpisodeButton?.addEventListener("click", () => playEpisodeAt(activeEpisodeIndex - 1));
     nextEpisodeButton?.addEventListener("click", () => playEpisodeAt(activeEpisodeIndex + 1));
     title.textContent = safeTitle(activeTitle);
-    directLink.href = validExternalUrl(activeSrc) || "#";
+    directLink.href = "/watch.html";
     frame.hidden = true;
 })();
 </script>
