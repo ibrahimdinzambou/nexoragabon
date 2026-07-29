@@ -265,16 +265,21 @@ test("le super admin n'est jamais bloqué par la date d'abonnement dans l'interf
     assert.match(app, /"Accès illimité"/);
 });
 
-test("le lecteur intégré retire la sandbox incompatible avec certains flux", () => {
+test("le lecteur integre bloque les redirections externes", () => {
     const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
     const frame = watch.match(/<iframe\s+id="embedPlayer"[^>]+>/)?.[0] || "";
     const unlockEmbedShieldBody = app.match(/function unlockEmbedShield[\s\S]*?\n}/)?.[0] || "";
-    assert.doesNotMatch(frame, /\ssandbox(?:=|\s|>)/);
-    assert.match(app, /removeAttribute\("sandbox"\)/);
-    assert.doesNotMatch(app, /EMBED_PLAYER_SANDBOX/);
+    assert.match(frame, /sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"/);
+    assert.match(app, /const EMBED_PLAYER_SANDBOX\s*=\s*"allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"/);
+    assert.match(app, /setAttribute\("sandbox",\s*EMBED_PLAYER_SANDBOX\)/);
+    assert.doesNotMatch(frame, /allow-top-navigation|allow-popups/);
     assert.match(app, /const EMBED_REDIRECT_SHIELD_ENABLED\s*=\s*false/);
     assert.match(app, /const EMBED_PLAYER_UNLOCK_MS\s*=\s*4500/);
+    assert.match(app, /ALLOWED_PAGE_NAVIGATION_HOSTS\s*=\s*new Set\(\[[\s\S]*?"nexoragabon\.com"[\s\S]*?"www\.nexoragabon\.com"/);
+    assert.match(app, /function installPageNavigationGuard\(\)/);
+    assert.match(app, /window\.open = function guardedWindowOpen/);
+    assert.match(app, /installPageNavigationGuard\(\);/);
     assert.match(app, /function loadEmbedFrame[\s\S]*?lockEmbedShield\(\);/);
     assert.match(app, /if \(!EMBED_REDIRECT_SHIELD_ENABLED\)[\s\S]*?elements\.embedClickShield\.hidden = true;[\s\S]*?return;/);
     assert.match(app, /function unlockEmbedShield\(milliseconds = EMBED_PLAYER_UNLOCK_MS\)/);

@@ -66,10 +66,15 @@ const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
+const EMBED_PLAYER_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock";
 const EMBED_REDIRECT_SHIELD_ENABLED = false;
 const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const CONTENT_NEXORA_PROVIDER = "french-stream";
+const ALLOWED_PAGE_NAVIGATION_HOSTS = new Set([
+    "nexoragabon.com",
+    "www.nexoragabon.com"
+]);
 const imageRepairCache = new Map();
 const imageRepairInFlight = new Set();
 const animeNexoraResponseCache = new Map();
@@ -951,6 +956,60 @@ function resolveApiResourceUrl(value) {
     return window.NexoraApi?.resolve
         ? window.NexoraApi.resolve(value)
         : new URL(value, window.location.origin).href;
+}
+
+function isPageNavigationUrlAllowed(value) {
+    let url;
+    try {
+        url = new URL(String(value || ""), window.location.href);
+    } catch {
+        return true;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+        return true;
+    }
+    const host = url.hostname.toLowerCase();
+    if (ALLOWED_PAGE_NAVIGATION_HOSTS.has(host)) {
+        return true;
+    }
+    const currentHost = String(window.location.hostname || "").toLowerCase();
+    const isLocalDevelopment = ["localhost", "127.0.0.1", "::1"].includes(currentHost);
+    return Boolean(isLocalDevelopment && host === currentHost);
+}
+
+function blockExternalPageNavigation(value, event) {
+    if (isPageNavigationUrlAllowed(value)) {
+        return false;
+    }
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    showToast("Navigation externe bloquee.", true);
+    return true;
+}
+
+function installPageNavigationGuard() {
+    document.addEventListener("click", (event) => {
+        const link = event.target.closest?.("a[href]");
+        if (!link) return;
+        const href = link.getAttribute("href") || "";
+        if (!href || href.startsWith("#")) return;
+        blockExternalPageNavigation(href, event);
+    }, true);
+
+    document.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || !form.action) return;
+        blockExternalPageNavigation(form.action, event);
+    }, true);
+
+    const originalOpen = window.open?.bind(window);
+    if (!originalOpen) return;
+    window.open = function guardedWindowOpen(url, ...args) {
+        if (url && blockExternalPageNavigation(url)) {
+            return null;
+        }
+        return originalOpen(url, ...args);
+    };
 }
 
 // Les films et series hors anime passent par Content-Nexora.
@@ -8596,7 +8655,7 @@ function shouldGateEmbedLaunch(item) {
 }
 
 function configureEmbedFrame() {
-    elements.embedPlayer.removeAttribute("sandbox");
+    elements.embedPlayer.setAttribute("sandbox", EMBED_PLAYER_SANDBOX);
     elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
     elements.embedPlayer.removeAttribute("allowfullscreen");
     elements.embedPlayer.removeAttribute("webkitallowfullscreen");
@@ -10717,6 +10776,7 @@ elements.playerSourceList?.addEventListener("click", (event) => {
 });
 elements.playerQuality.addEventListener("change", changePlayerQuality);
 
+installPageNavigationGuard();
 state.notifications = buildNotifications();
 renderNotifications();
 renderCatalog();
