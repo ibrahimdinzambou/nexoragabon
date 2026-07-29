@@ -66,7 +66,6 @@ const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
-const EMBED_PLAYER_MOBILE_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation";
 const EMBED_REDIRECT_SHIELD_ENABLED = true;
 const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
@@ -978,6 +977,9 @@ function isPageNavigationUrlAllowed(value) {
 }
 
 function blockExternalPageNavigation(value, event) {
+    if (isMobileEmbedEnvironment()) {
+        return false;
+    }
     if (isPageNavigationUrlAllowed(value)) {
         return false;
     }
@@ -8655,11 +8657,7 @@ function shouldGateEmbedLaunch(item) {
 }
 
 function configureEmbedFrame() {
-    if (isMobileEmbedEnvironment()) {
-        elements.embedPlayer.setAttribute("sandbox", EMBED_PLAYER_MOBILE_SANDBOX);
-    } else {
-        elements.embedPlayer.removeAttribute("sandbox");
-    }
+    elements.embedPlayer.removeAttribute("sandbox");
     elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
     elements.embedPlayer.setAttribute("allowfullscreen", "");
     elements.embedPlayer.setAttribute("webkitallowfullscreen", "");
@@ -8712,7 +8710,7 @@ function lockEmbedShield(forceHide = false) {
         state.embedShieldTimer = null;
     }
     state.embedShieldUnlockedUntil = 0;
-    if (!EMBED_REDIRECT_SHIELD_ENABLED) {
+    if (!EMBED_REDIRECT_SHIELD_ENABLED || isMobileEmbedEnvironment()) {
         elements.embedClickShield.hidden = true;
         return;
     }
@@ -8725,7 +8723,7 @@ function lockEmbedShield(forceHide = false) {
 
 function unlockEmbedShield(milliseconds = EMBED_PLAYER_UNLOCK_MS) {
     if (!elements.embedClickShield || state.activePlaybackMode !== "embed") return;
-    if (!EMBED_REDIRECT_SHIELD_ENABLED) {
+    if (!EMBED_REDIRECT_SHIELD_ENABLED || isMobileEmbedEnvironment()) {
         elements.embedClickShield.hidden = true;
         return;
     }
