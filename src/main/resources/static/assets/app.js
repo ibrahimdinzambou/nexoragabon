@@ -67,6 +67,7 @@ const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const DEDICATED_EMBED_PLAYER_PATH = "/embed-player.html";
+const DEDICATED_EMBED_PLAYER_STORAGE_PREFIX = "nexora:embedEpisodeSet:";
 const EMBED_REDIRECT_SHIELD_ENABLED = true;
 const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
@@ -202,6 +203,7 @@ const state = {
     activeEmbedUrl: null,
     activeEmbedFallbackUrl: null,
     activeEmbedFallbackLabel: "",
+    activeDedicatedEmbedKey: "",
     activeVisualWatchdogEnabled: false,
     activeCanFailover: false,
     embedRequiresUserLaunch: false,
@@ -8662,8 +8664,7 @@ function isVidzyEmbedUrl(value) {
 
 function shouldUseDedicatedEmbedPlayer(streamUrl, item = state.activePlayerItem) {
     return isMobileEmbedEnvironment()
-        && isVidzyEmbedUrl(streamUrl)
-        && !isContentNexoraPlayerItem(item);
+        && isVidzyEmbedUrl(streamUrl);
 }
 
 function dedicatedEmbedPlayerUrl(streamUrl, item = state.activePlayerItem) {
@@ -8673,6 +8674,7 @@ function dedicatedEmbedPlayerUrl(streamUrl, item = state.activePlayerItem) {
     if (title) {
         url.searchParams.set("title", title);
     }
+    appendDedicatedEmbedMetadata(url, streamUrl, item);
     return url.href;
 }
 
@@ -8686,6 +8688,73 @@ function embedActionUrl(streamUrl, item = state.activePlayerItem) {
     return shouldUseDedicatedEmbedPlayer(streamUrl, item)
         ? dedicatedEmbedPlayerUrl(streamUrl, item)
         : streamUrl;
+}
+
+function appendDedicatedEmbedMetadata(url, streamUrl, item = state.activePlayerItem) {
+    const tmdbId = tmdbIdFromItem(item);
+    if (tmdbId) url.searchParams.set("tmdbId", String(tmdbId));
+    if (item?.type) url.searchParams.set("type", item.type);
+    if (positiveInteger(item?.season)) url.searchParams.set("season", String(positiveInteger(item.season)));
+    if (positiveInteger(item?.episode)) url.searchParams.set("episode", String(positiveInteger(item.episode)));
+    const episodeSetKey = dedicatedEmbedEpisodeSetKey(streamUrl, item);
+    if (episodeSetKey) url.searchParams.set("episodeSet", episodeSetKey);
+}
+
+function dedicatedEmbedEpisodeSetKey(streamUrl, item = state.activePlayerItem) {
+    if (!item || item.type !== "series" || !state.activeContentNexoraContent) return "";
+    const entries = dedicatedEmbedEpisodeEntries(state.activeContentNexoraContent, item, streamUrl);
+    if (entries.length < 2) return "";
+    const reusableKey = state.activeDedicatedEmbedKey;
+    const key = reusableKey && sessionStorage.getItem(reusableKey)
+        ? reusableKey
+        : `${DEDICATED_EMBED_PLAYER_STORAGE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+        sessionStorage.setItem(key, JSON.stringify({
+            title: item.seriesName || item.parentTitle || item.name || "Serie",
+            currentSrc: streamUrl,
+            episodes: entries
+        }));
+        state.activeDedicatedEmbedKey = key;
+        return key;
+    } catch {
+        return "";
+    }
+}
+
+function dedicatedEmbedEpisodeEntries(content, item, currentUrl) {
+    const seasons = Array.isArray(content?.seasons) ? content.seasons : [];
+    if (!seasons.length) return [];
+    const entries = [];
+    seasons.forEach((season, seasonIndex) => {
+        const seasonNumber = requireSeriesPlayback().seasonNumber(season, seasonIndex + 1);
+        const episodeNumbers = requireSeriesPlayback().episodeNumbers(season?.episodes || []);
+        episodeNumbers.forEach((episodeNumber) => {
+            const episodeItem = {
+                ...item,
+                type: "series",
+                season: seasonNumber,
+                episode: episodeNumber
+            };
+            const source = normalizeContentNexoraSources(content, episodeItem)
+                .find((candidate) => isVidzyEmbedUrl(candidate.url));
+            if (!source?.url) return;
+            entries.push({
+                title: `Saison ${seasonNumber} - Episode ${episodeNumber}`,
+                season: seasonNumber,
+                episode: episodeNumber,
+                src: source.url,
+                active: source.url === currentUrl
+                    || (positiveInteger(item.season) === seasonNumber && positiveInteger(item.episode) === episodeNumber)
+            });
+        });
+    });
+    return entries.slice(0, 90);
+}
+
+function openDedicatedEmbedPage(streamUrl, item = state.activePlayerItem) {
+    if (!shouldUseDedicatedEmbedPlayer(streamUrl, item)) return false;
+    window.location.href = dedicatedEmbedPlayerUrl(streamUrl, item);
+    return true;
 }
 
 function shouldGateEmbedLaunch(item) {
@@ -8849,6 +8918,9 @@ function showNativePlaybackLaunchPanel() {
 
 function launchEmbedInline() {
     if (!state.activeEmbedUrl) return;
+    if (openDedicatedEmbedPage(state.activeEmbedUrl)) {
+        return;
+    }
     state.embedRequiresUserLaunch = false;
     elements.embedLaunchPanel.hidden = true;
     loadEmbedFrame(state.activeEmbedUrl);
@@ -8967,14 +9039,17 @@ function syncPlayerEmbedMode(isEmbed) {
 function syncEmbedActionLinks() {
     const hasEmbed = state.activePlaybackMode === "embed" && Boolean(state.activeEmbedUrl);
     const mobileEmbed = hasEmbed && isMobileEmbedEnvironment();
+    const dedicatedEmbed = hasEmbed && shouldUseDedicatedEmbedPlayer(state.activeEmbedUrl);
     const externalHref = hasEmbed ? embedActionUrl(state.activeEmbedUrl) : "#";
     elements.embedOpenExternalLink.href = externalHref;
+    elements.embedOpenExternalLink.target = dedicatedEmbed ? "_self" : "_blank";
     elements.embedOpenExternalLink.hidden = !hasEmbed || !state.embedRequiresUserLaunch;
     elements.embedOpenExternalLink.setAttribute(
         "aria-disabled",
         String(!hasEmbed || !state.embedRequiresUserLaunch)
     );
     elements.playerEmbedOpenLink.href = externalHref;
+    elements.playerEmbedOpenLink.target = dedicatedEmbed ? "_self" : "_blank";
     elements.playerEmbedOpenLink.hidden = !hasEmbed || !(state.embedAssistShown || mobileEmbed);
     elements.playerEmbedOpenLink.setAttribute("aria-disabled", String(!hasEmbed || !(state.embedAssistShown || mobileEmbed)));
     elements.playerEmbedRetryButton.hidden = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
@@ -9890,6 +9965,7 @@ async function stopPlayer() {
     state.activePreferredAudioLanguage = null;
     state.activePreferredSubtitleLanguage = null;
     state.activeCanFailover = false;
+    state.activeDedicatedEmbedKey = "";
     stopHeartbeat();
     detachPlayerMedia();
 
@@ -9919,6 +9995,7 @@ function releasePlayerSession() {
     state.activeEmbedFallbackLabel = "";
     state.activeVisualWatchdogEnabled = false;
     state.activeCanFailover = false;
+    state.activeDedicatedEmbedKey = "";
     clearPlayerRecoveryTimer();
     clearPlayerStartupTimer();
     clearPlayerVisualWatchdog();

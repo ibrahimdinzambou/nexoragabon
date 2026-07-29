@@ -34,7 +34,7 @@
 
         body {
             display: grid;
-            grid-template-rows: auto minmax(0, 1fr);
+            grid-template-rows: auto auto minmax(0, 1fr);
         }
 
         .topbar {
@@ -105,6 +105,40 @@
             stroke-width: 2;
         }
 
+        .episode-nav {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            grid-template-columns: 42px minmax(0, 1fr) 42px;
+            gap: 8px;
+            align-items: center;
+            padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+            background: rgba(5, 5, 5, .94);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .episode-nav[hidden] {
+            display: none;
+        }
+
+        .episode-select {
+            min-width: 0;
+            width: 100%;
+            min-height: 42px;
+            padding: 0 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, .08);
+            color: var(--text);
+            font: inherit;
+            font-size: 14px;
+        }
+
+        .action:disabled {
+            opacity: .38;
+            cursor: not-allowed;
+        }
+
         .frame-shell {
             position: relative;
             min-width: 0;
@@ -155,6 +189,15 @@
                 grid-template-rows: minmax(0, 1fr);
             }
 
+            .episode-nav {
+                position: absolute;
+                right: 0;
+                bottom: 0;
+                left: 0;
+                background: linear-gradient(0deg, rgba(0, 0, 0, .76), transparent);
+                border-bottom: 0;
+            }
+
             .frame-shell {
                 grid-row: 1;
             }
@@ -183,6 +226,19 @@
         </a>
     </div>
 </header>
+<nav class="episode-nav" id="episodeNav" aria-label="Episodes" hidden>
+    <button class="action" id="prevEpisodeButton" type="button" aria-label="Episode precedent">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m15 18-6-6 6-6"></path>
+        </svg>
+    </button>
+    <select class="episode-select" id="episodeSelect" aria-label="Changer d'episode"></select>
+    <button class="action" id="nextEpisodeButton" type="button" aria-label="Episode suivant">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m9 18 6-6-6-6"></path>
+        </svg>
+    </button>
+</nav>
 <main class="frame-shell">
     <iframe
         id="externalFrame"
@@ -200,13 +256,20 @@
 <script>
 (() => {
     const params = new URLSearchParams(window.location.search);
-    const rawSrc = params.get("src") || "";
-    const rawTitle = params.get("title") || "Lecteur externe";
+    let activeSrc = params.get("src") || "";
+    let activeTitle = params.get("title") || "Lecteur externe";
     const frame = document.querySelector("#externalFrame");
     const empty = document.querySelector("#emptyState");
     const directLink = document.querySelector("#directLink");
     const reloadButton = document.querySelector("#reloadButton");
+    const episodeNav = document.querySelector("#episodeNav");
+    const episodeSelect = document.querySelector("#episodeSelect");
+    const prevEpisodeButton = document.querySelector("#prevEpisodeButton");
+    const nextEpisodeButton = document.querySelector("#nextEpisodeButton");
     const title = document.querySelector("#playerTitle");
+    const nativeOpen = window.open?.bind(window);
+    let episodeEntries = [];
+    let activeEpisodeIndex = -1;
 
     function validExternalUrl(value) {
         try {
@@ -217,6 +280,142 @@
         }
     }
 
+    function safeTitle(value) {
+        return String(value || "Lecteur externe").slice(0, 90);
+    }
+
+    function escapeHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function guardedOpen(value, target = "_blank", features) {
+        const href = validExternalUrl(value);
+        if (!href) return null;
+        if (nativeOpen) return nativeOpen(href, target || "_blank", features);
+        return null;
+    }
+
+    function installRedirectGuard() {
+        if (nativeOpen) {
+            window.open = function guardedWindowOpen(value, target, features) {
+                return guardedOpen(value, target || "_blank", features);
+            };
+        }
+        document.addEventListener("click", (event) => {
+            const link = event.target.closest?.("a[href]");
+            if (!link || link === directLink) return;
+            const href = validExternalUrl(link.href);
+            if (!href) return;
+            const url = new URL(href);
+            if (url.origin !== window.location.origin && !link.target) {
+                event.preventDefault();
+                guardedOpen(href, "_blank");
+            }
+        }, true);
+        try {
+            const originalPushState = history.pushState.bind(history);
+            const originalReplaceState = history.replaceState.bind(history);
+            history.pushState = function guardedPushState(state, unused, url) {
+                return originalPushState(state, unused, sameOriginHistoryUrl(url));
+            };
+            history.replaceState = function guardedReplaceState(state, unused, url) {
+                return originalReplaceState(state, unused, sameOriginHistoryUrl(url));
+            };
+        } catch {
+            // Some browsers expose history methods as non-writable.
+        }
+    }
+
+    function sameOriginHistoryUrl(value) {
+        if (!value) return value;
+        try {
+            const url = new URL(value, window.location.href);
+            return url.origin === window.location.origin ? url.href : window.location.href;
+        } catch {
+            return window.location.href;
+        }
+    }
+
+    function episodeStorageKey() {
+        return params.get("episodeSet") || "";
+    }
+
+    function loadEpisodeEntries() {
+        const key = episodeStorageKey();
+        if (!key) return [];
+        try {
+            const payload = JSON.parse(sessionStorage.getItem(key) || "{}");
+            const entries = Array.isArray(payload.episodes) ? payload.episodes : [];
+            return entries
+                .map((entry, index) => ({
+                    title: safeTitle(entry.title || `Episode ${index + 1}`),
+                    season: Number(entry.season || 0),
+                    episode: Number(entry.episode || index + 1),
+                    src: validExternalUrl(entry.src),
+                    active: Boolean(entry.active)
+                }))
+                .filter((entry) => entry.src);
+        } catch {
+            return [];
+        }
+    }
+
+    function findActiveEpisodeIndex() {
+        const current = validExternalUrl(activeSrc);
+        const bySrc = episodeEntries.findIndex((entry) => entry.src === current);
+        if (bySrc >= 0) return bySrc;
+        const season = Number(params.get("season") || 0);
+        const episode = Number(params.get("episode") || 0);
+        const byNumber = episodeEntries.findIndex((entry) => (
+            entry.season === season && entry.episode === episode
+        ));
+        if (byNumber >= 0) return byNumber;
+        return episodeEntries.findIndex((entry) => entry.active);
+    }
+
+    function syncAddress() {
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set("src", activeSrc);
+            url.searchParams.set("title", activeTitle);
+            const active = episodeEntries[activeEpisodeIndex];
+            if (active?.season) url.searchParams.set("season", String(active.season));
+            if (active?.episode) url.searchParams.set("episode", String(active.episode));
+            history.replaceState({}, "", url.href);
+        } catch {
+            // The player can keep working even when the visible URL is unchanged.
+        }
+    }
+
+    function renderEpisodeNav() {
+        if (!episodeNav || episodeEntries.length < 2) return;
+        activeEpisodeIndex = findActiveEpisodeIndex();
+        if (activeEpisodeIndex < 0) activeEpisodeIndex = 0;
+        episodeNav.hidden = false;
+        episodeSelect.innerHTML = episodeEntries.map((entry, index) => (
+            `<option value="${index}">${escapeHtml(entry.title)}</option>`
+        )).join("");
+        episodeSelect.value = String(activeEpisodeIndex);
+        prevEpisodeButton.disabled = activeEpisodeIndex <= 0;
+        nextEpisodeButton.disabled = activeEpisodeIndex >= episodeEntries.length - 1;
+    }
+
+    function playEpisodeAt(index) {
+        const entry = episodeEntries[index];
+        if (!entry) return;
+        activeEpisodeIndex = index;
+        activeSrc = entry.src;
+        activeTitle = entry.title;
+        syncAddress();
+        renderEpisodeNav();
+        loadFrame();
+    }
+
     function showEmpty() {
         frame.hidden = true;
         empty.setAttribute("aria-hidden", "false");
@@ -224,12 +423,12 @@
     }
 
     function loadFrame() {
-        const src = validExternalUrl(rawSrc);
+        const src = validExternalUrl(activeSrc);
         if (!src) {
             showEmpty();
             return;
         }
-        title.textContent = rawTitle.slice(0, 90);
+        title.textContent = safeTitle(activeTitle);
         directLink.href = src;
         frame.hidden = false;
         empty.setAttribute("aria-hidden", "true");
@@ -239,7 +438,13 @@
         }, 60);
     }
 
+    installRedirectGuard();
+    episodeEntries = loadEpisodeEntries();
+    renderEpisodeNav();
     reloadButton.addEventListener("click", loadFrame);
+    episodeSelect?.addEventListener("change", () => playEpisodeAt(Number(episodeSelect.value)));
+    prevEpisodeButton?.addEventListener("click", () => playEpisodeAt(activeEpisodeIndex - 1));
+    nextEpisodeButton?.addEventListener("click", () => playEpisodeAt(activeEpisodeIndex + 1));
     loadFrame();
 })();
 </script>
