@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#050505">
+    <title>Nexora Player</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #050505;
+            --panel: rgba(10, 10, 10, .82);
+            --line: rgba(255, 255, 255, .16);
+            --text: #f7f3ea;
+            --muted: rgba(247, 243, 234, .68);
+            --accent: #e7c36d;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            min-width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        body {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+        }
+
+        .topbar {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+            padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+            background: var(--panel);
+            border-bottom: 1px solid var(--line);
+            backdrop-filter: blur(16px);
+        }
+
+        .title {
+            display: grid;
+            min-width: 0;
+            gap: 2px;
+        }
+
+        .brand {
+            color: var(--accent);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            margin: 0;
+            overflow: hidden;
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 650;
+            line-height: 1.2;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action {
+            display: inline-grid;
+            min-width: 42px;
+            min-height: 42px;
+            place-items: center;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, .07);
+            color: var(--text);
+            text-decoration: none;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .action svg {
+            width: 19px;
+            height: 19px;
+            fill: none;
+            stroke: currentColor;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-width: 2;
+        }
+
+        .frame-shell {
+            position: relative;
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        iframe,
+        .empty {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: #000;
+        }
+
+        .empty {
+            display: none;
+            place-items: center;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .empty[aria-hidden="false"] {
+            display: grid;
+        }
+
+        .empty p {
+            max-width: 34rem;
+            margin: 0;
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.45;
+        }
+
+        @media (orientation: landscape) and (max-height: 520px) {
+            .topbar {
+                position: absolute;
+                right: 0;
+                left: 0;
+                background: linear-gradient(180deg, rgba(0, 0, 0, .76), transparent);
+                border-bottom: 0;
+            }
+
+            body {
+                grid-template-rows: minmax(0, 1fr);
+            }
+
+            .frame-shell {
+                grid-row: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <div class="title">
+        <span class="brand">NEXORA</span>
+        <h1 id="playerTitle">Lecteur externe</h1>
+    </div>
+    <div class="actions">
+        <button class="action" id="reloadButton" type="button" aria-label="Recharger">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 12a9 9 0 1 1-3-6.7"></path>
+                <path d="M21 3v6h-6"></path>
+            </svg>
+        </button>
+        <a class="action" id="directLink" href="#" target="_blank" rel="noopener noreferrer" aria-label="Ouvrir directement">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14 3h7v7"></path>
+                <path d="M10 14 21 3"></path>
+                <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path>
+            </svg>
+        </a>
+    </div>
+</header>
+<main class="frame-shell">
+    <iframe
+        id="externalFrame"
+        title="Lecteur externe"
+        allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+        allowfullscreen
+        webkitallowfullscreen
+        referrerpolicy="strict-origin-when-cross-origin"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
+    ></iframe>
+    <div class="empty" id="emptyState" aria-hidden="true">
+        <p>Lecteur externe indisponible.</p>
+    </div>
+</main>
+<script>
+(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rawSrc = params.get("src") || "";
+    const rawTitle = params.get("title") || "Lecteur externe";
+    const frame = document.querySelector("#externalFrame");
+    const empty = document.querySelector("#emptyState");
+    const directLink = document.querySelector("#directLink");
+    const reloadButton = document.querySelector("#reloadButton");
+    const title = document.querySelector("#playerTitle");
+
+    function validExternalUrl(value) {
+        try {
+            const url = new URL(value);
+            return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+        } catch {
+            return "";
+        }
+    }
+
+    function showEmpty() {
+        frame.hidden = true;
+        empty.setAttribute("aria-hidden", "false");
+        directLink.removeAttribute("href");
+    }
+
+    function loadFrame() {
+        const src = validExternalUrl(rawSrc);
+        if (!src) {
+            showEmpty();
+            return;
+        }
+        title.textContent = rawTitle.slice(0, 90);
+        directLink.href = src;
+        frame.hidden = false;
+        empty.setAttribute("aria-hidden", "true");
+        frame.src = "about:blank";
+        window.setTimeout(() => {
+            frame.src = src;
+        }, 60);
+    }
+
+    reloadButton.addEventListener("click", loadFrame);
+    loadFrame();
+})();
+</script>
+</body>
+</html>

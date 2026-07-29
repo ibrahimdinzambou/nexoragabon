@@ -199,7 +199,7 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260729-mobile-embed-unlocked-1/);
+    assert.match(watch, /app\.js\?v=20260729-mobile-dedicated-embed-1/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
@@ -215,7 +215,7 @@ test("Voir plus recharge aussi les rayons de l'accueil", () => {
     assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
     assert.match(app, /const contentRemoteMore = !searching[\s\S]*?contentNexoraApiEnabled\(\) \|\| animeNexoraApiEnabled\(\)/);
     assert.match(app, /visibleItems\.length < rowItems\.length \|\| remoteMore \|\| likelyRemoteMore \|\| contentRemoteMore/);
-    assert.match(watch, /app\.js\?v=20260729-mobile-embed-unlocked-1/);
+    assert.match(watch, /app\.js\?v=20260729-mobile-dedicated-embed-1/);
 });
 
 test("les pages films et series enrichissent les univers et privilegient le flux natif mobile", () => {
@@ -268,10 +268,17 @@ test("le super admin n'est jamais bloqué par la date d'abonnement dans l'interf
 test("le lecteur integre bloque les redirections externes", () => {
     const watch = fs.readFileSync(path.join(__dirname, "../../main/resources/static/watch.html"), "utf8");
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    const dedicated = fs.readFileSync(path.join(__dirname, "../../main/resources/static/embed-player.html"), "utf8");
     const frame = watch.match(/<iframe\s+id="embedPlayer"[^>]+>/)?.[0] || "";
     const unlockEmbedShieldBody = app.match(/function unlockEmbedShield[\s\S]*?\n}/)?.[0] || "";
     assert.doesNotMatch(frame, /\ssandbox(?:=|\s|>)/);
     assert.doesNotMatch(app, /EMBED_PLAYER_MOBILE_SANDBOX/);
+    assert.match(app, /const DEDICATED_EMBED_PLAYER_PATH\s*=\s*"\/embed-player\.html"/);
+    assert.match(app, /function isVidzyEmbedUrl\(value\)/);
+    assert.match(app, /function shouldUseDedicatedEmbedPlayer[\s\S]*?isMobileEmbedEnvironment\(\)[\s\S]*?isVidzyEmbedUrl\(streamUrl\)/);
+    assert.match(app, /function embedFrameUrl[\s\S]*?dedicatedEmbedPlayerUrl\(streamUrl,\s*item\)/);
+    assert.match(app, /const frameUrl = embedFrameUrl\(streamUrl\)/);
+    assert.match(app, /elements\.embedPlayer\.src !== frameUrl/);
     assert.match(app, /removeAttribute\("sandbox"\)/);
     assert.match(app, /const EMBED_REDIRECT_SHIELD_ENABLED\s*=\s*true/);
     assert.match(app, /const EMBED_PLAYER_UNLOCK_MS\s*=\s*4500/);
@@ -281,10 +288,15 @@ test("le lecteur integre bloque les redirections externes", () => {
     assert.match(app, /window\.open = function guardedWindowOpen/);
     assert.match(app, /installPageNavigationGuard\(\);/);
     assert.match(app, /function loadEmbedFrame[\s\S]*?lockEmbedShield\(\);/);
-    assert.match(watch, /app\.css\?v=20260729-mobile-embed-unlocked-1/);
+    assert.match(watch, /app\.css\?v=20260729-mobile-dedicated-embed-1/);
     assert.match(app, /const mobileEmbed = hasEmbed && isMobileEmbedEnvironment\(\)/);
+    assert.match(app, /const externalHref = hasEmbed \? embedActionUrl\(state\.activeEmbedUrl\) : "#"/);
     assert.match(app, /if \(!EMBED_REDIRECT_SHIELD_ENABLED \|\| isMobileEmbedEnvironment\(\)\)/);
     assert.match(app, /function lockEmbedShield[\s\S]*?elements\.embedClickShield\.hidden = !shouldShow;/);
     assert.match(app, /function unlockEmbedShield\(milliseconds = EMBED_PLAYER_UNLOCK_MS\)/);
     assert.doesNotMatch(unlockEmbedShieldBody, /Number\.POSITIVE_INFINITY/);
+    assert.match(dedicated, /id="externalFrame"/);
+    assert.match(dedicated, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"/);
+    assert.doesNotMatch(dedicated, /allow-top-navigation/);
+    assert.match(dedicated, /referrerpolicy="strict-origin-when-cross-origin"/);
 });

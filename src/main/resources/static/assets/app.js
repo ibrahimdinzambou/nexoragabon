@@ -66,6 +66,7 @@ const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
+const DEDICATED_EMBED_PLAYER_PATH = "/embed-player.html";
 const EMBED_REDIRECT_SHIELD_ENABLED = true;
 const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
@@ -8649,6 +8650,44 @@ function isMobileEmbedEnvironment() {
     return hasCoarsePointer || isMobileUserAgent;
 }
 
+function isVidzyEmbedUrl(value) {
+    try {
+        const url = new URL(value, window.location.origin);
+        const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+        return host === "vidzy.org" || host.endsWith(".vidzy.org");
+    } catch {
+        return false;
+    }
+}
+
+function shouldUseDedicatedEmbedPlayer(streamUrl, item = state.activePlayerItem) {
+    return isMobileEmbedEnvironment()
+        && isVidzyEmbedUrl(streamUrl)
+        && !isContentNexoraPlayerItem(item);
+}
+
+function dedicatedEmbedPlayerUrl(streamUrl, item = state.activePlayerItem) {
+    const url = new URL(DEDICATED_EMBED_PLAYER_PATH, window.location.origin);
+    url.searchParams.set("src", streamUrl);
+    const title = item?.title || item?.name || item?.originalTitle || item?.original_name || "";
+    if (title) {
+        url.searchParams.set("title", title);
+    }
+    return url.href;
+}
+
+function embedFrameUrl(streamUrl, item = state.activePlayerItem) {
+    return shouldUseDedicatedEmbedPlayer(streamUrl, item)
+        ? dedicatedEmbedPlayerUrl(streamUrl, item)
+        : streamUrl;
+}
+
+function embedActionUrl(streamUrl, item = state.activePlayerItem) {
+    return shouldUseDedicatedEmbedPlayer(streamUrl, item)
+        ? dedicatedEmbedPlayerUrl(streamUrl, item)
+        : streamUrl;
+}
+
 function shouldGateEmbedLaunch(item) {
     return isMobileEmbedEnvironment()
         && (isTmdbPlayable(item)
@@ -8673,13 +8712,14 @@ function clearEmbedFrame() {
 }
 
 function loadEmbedFrame(streamUrl) {
+    const frameUrl = embedFrameUrl(streamUrl);
     configureEmbedFrame();
     elements.embedPlayer.hidden = false;
     if (isContentNexoraPlayerItem()) {
         elements.embedPlayer.addEventListener("load", primeContentNexoraPlayerFrame, { once: true });
     }
-    if (elements.embedPlayer.src !== streamUrl) {
-        elements.embedPlayer.src = streamUrl;
+    if (elements.embedPlayer.src !== frameUrl) {
+        elements.embedPlayer.src = frameUrl;
     }
     lockEmbedShield();
 }
@@ -8824,6 +8864,9 @@ function embedOpenedMessage() {
     if (isEpornerSource(state.activePlayerItem)) {
         return "Lecteur Adults ouvert dans Nexora. Si le chargement bloque, utilisez Reessayer ici.";
     }
+    if (shouldUseDedicatedEmbedPlayer(state.activeEmbedUrl)) {
+        return "Lecteur externe ouvert dans l'espace mobile Nexora.";
+    }
     return "Lecteur Videasy ouvert dans Nexora. Si le chargement bloque, utilisez Réessayer ici.";
 }
 
@@ -8924,7 +8967,7 @@ function syncPlayerEmbedMode(isEmbed) {
 function syncEmbedActionLinks() {
     const hasEmbed = state.activePlaybackMode === "embed" && Boolean(state.activeEmbedUrl);
     const mobileEmbed = hasEmbed && isMobileEmbedEnvironment();
-    const externalHref = hasEmbed ? state.activeEmbedUrl : "#";
+    const externalHref = hasEmbed ? embedActionUrl(state.activeEmbedUrl) : "#";
     elements.embedOpenExternalLink.href = externalHref;
     elements.embedOpenExternalLink.hidden = !hasEmbed || !state.embedRequiresUserLaunch;
     elements.embedOpenExternalLink.setAttribute(
