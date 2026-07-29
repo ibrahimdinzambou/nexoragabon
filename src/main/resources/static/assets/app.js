@@ -66,7 +66,6 @@ const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
-const EMBED_PLAYER_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock";
 const EMBED_REDIRECT_SHIELD_ENABLED = false;
 const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
@@ -8655,7 +8654,7 @@ function shouldGateEmbedLaunch(item) {
 }
 
 function configureEmbedFrame() {
-    elements.embedPlayer.setAttribute("sandbox", EMBED_PLAYER_SANDBOX);
+    elements.embedPlayer.removeAttribute("sandbox");
     elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
     elements.embedPlayer.removeAttribute("allowfullscreen");
     elements.embedPlayer.removeAttribute("webkitallowfullscreen");

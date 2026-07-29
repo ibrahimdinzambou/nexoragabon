@@ -199,7 +199,7 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260728-ios-hls-1/);
+    assert.match(watch, /app\.js\?v=20260729-unsandboxed-embed-2/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
@@ -215,7 +215,7 @@ test("Voir plus recharge aussi les rayons de l'accueil", () => {
     assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
     assert.match(app, /const contentRemoteMore = !searching[\s\S]*?contentNexoraApiEnabled\(\) \|\| animeNexoraApiEnabled\(\)/);
     assert.match(app, /visibleItems\.length < rowItems\.length \|\| remoteMore \|\| likelyRemoteMore \|\| contentRemoteMore/);
-    assert.match(watch, /app\.js\?v=20260728-ios-hls-1/);
+    assert.match(watch, /app\.js\?v=20260729-unsandboxed-embed-2/);
 });
 
 test("les pages films et series enrichissent les univers et privilegient le flux natif mobile", () => {
@@ -270,10 +270,9 @@ test("le lecteur integre bloque les redirections externes", () => {
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
     const frame = watch.match(/<iframe\s+id="embedPlayer"[^>]+>/)?.[0] || "";
     const unlockEmbedShieldBody = app.match(/function unlockEmbedShield[\s\S]*?\n}/)?.[0] || "";
-    assert.match(frame, /sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"/);
-    assert.match(app, /const EMBED_PLAYER_SANDBOX\s*=\s*"allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"/);
-    assert.match(app, /setAttribute\("sandbox",\s*EMBED_PLAYER_SANDBOX\)/);
-    assert.doesNotMatch(frame, /allow-top-navigation|allow-popups/);
+    assert.doesNotMatch(frame, /\ssandbox(?:=|\s|>)/);
+    assert.match(app, /removeAttribute\("sandbox"\)/);
+    assert.doesNotMatch(app, /EMBED_PLAYER_SANDBOX/);
     assert.match(app, /const EMBED_REDIRECT_SHIELD_ENABLED\s*=\s*false/);
     assert.match(app, /const EMBED_PLAYER_UNLOCK_MS\s*=\s*4500/);
     assert.match(app, /ALLOWED_PAGE_NAVIGATION_HOSTS\s*=\s*new Set\(\[[\s\S]*?"nexoragabon\.com"[\s\S]*?"www\.nexoragabon\.com"/);
