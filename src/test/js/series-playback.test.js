@@ -307,6 +307,8 @@ test("le lecteur integre bloque les redirections externes", () => {
     assert.match(dedicated, /id="externalFrame"/);
     assert.match(dedicated, /id="launchLayer"/);
     assert.match(dedicated, /id="launchButton"/);
+    assert.match(dedicated, /id="launchCopy"/);
+    assert.match(dedicated, /type === "movie"\) return "Appuyez pour lancer le film dans Nexora\."/);
     assert.match(dedicated, /id="episodeNav"/);
     assert.match(dedicated, /id="episodeSelect"/);
     assert.match(dedicated, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"/);

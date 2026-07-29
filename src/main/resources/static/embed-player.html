@@ -317,7 +317,7 @@
     </div>
     <div class="launch-layer" id="launchLayer">
         <div class="launch-panel">
-            <p>Appuyez pour lancer le lecteur dans Nexora.</p>
+            <p id="launchCopy">Appuyez pour lancer le lecteur dans Nexora.</p>
             <button class="launch-button" id="launchButton" type="button">Lancer</button>
         </div>
     </div>
@@ -337,6 +337,7 @@
     const nextEpisodeButton = document.querySelector("#nextEpisodeButton");
     const launchLayer = document.querySelector("#launchLayer");
     const launchButton = document.querySelector("#launchButton");
+    const launchCopy = document.querySelector("#launchCopy");
     const title = document.querySelector("#playerTitle");
     const nativeOpen = window.open?.bind(window);
     let episodeEntries = [];
@@ -354,6 +355,13 @@
 
     function safeTitle(value) {
         return String(value || "Lecteur externe").slice(0, 90);
+    }
+
+    function launchText() {
+        const type = String(params.get("type") || "").toLowerCase();
+        if (type === "movie") return "Appuyez pour lancer le film dans Nexora.";
+        if (type === "series") return "Appuyez pour lancer cet episode dans Nexora.";
+        return "Appuyez pour lancer le lecteur dans Nexora.";
     }
 
     function escapeHtml(value) {
@@ -521,6 +529,7 @@
     installRedirectGuard();
     episodeEntries = loadEpisodeEntries();
     renderEpisodeNav();
+    launchCopy.textContent = launchText();
     reloadButton.addEventListener("click", startFrame);
     launchButton.addEventListener("click", startFrame);
     episodeSelect?.addEventListener("change", () => playEpisodeAt(Number(episodeSelect.value)));
