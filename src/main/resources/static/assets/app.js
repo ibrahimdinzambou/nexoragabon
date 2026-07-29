@@ -980,9 +980,6 @@ function isPageNavigationUrlAllowed(value) {
 }
 
 function blockExternalPageNavigation(value, event) {
-    if (isMobileEmbedEnvironment()) {
-        return false;
-    }
     if (isPageNavigationUrlAllowed(value)) {
         return false;
     }
@@ -8819,7 +8816,7 @@ function lockEmbedShield(forceHide = false) {
         state.embedShieldTimer = null;
     }
     state.embedShieldUnlockedUntil = 0;
-    if (!EMBED_REDIRECT_SHIELD_ENABLED || isMobileEmbedEnvironment()) {
+    if (!EMBED_REDIRECT_SHIELD_ENABLED) {
         elements.embedClickShield.hidden = true;
         return;
     }
@@ -8832,7 +8829,7 @@ function lockEmbedShield(forceHide = false) {
 
 function unlockEmbedShield(milliseconds = EMBED_PLAYER_UNLOCK_MS) {
     if (!elements.embedClickShield || state.activePlaybackMode !== "embed") return;
-    if (!EMBED_REDIRECT_SHIELD_ENABLED || isMobileEmbedEnvironment()) {
+    if (!EMBED_REDIRECT_SHIELD_ENABLED) {
         elements.embedClickShield.hidden = true;
         return;
     }
