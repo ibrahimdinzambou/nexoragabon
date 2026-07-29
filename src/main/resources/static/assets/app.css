@@ -12529,7 +12529,19 @@ svg {
         background: #000 !important;
     }
 
-    #playerModal .player-screen > video {
+    #playerModal .player-screen > video,
+    #playerModal .player-screen > iframe,
+    #playerModal .player-screen > .embed-launch-panel,
+    #playerModal .player-screen > .player-placeholder {
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        aspect-ratio: auto !important;
+    }
+
+    #playerModal .player-screen > video,
+    #playerModal .player-screen > iframe {
         object-fit: contain !important;
         background: #000 !important;
     }

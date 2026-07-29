@@ -66,6 +66,7 @@ const SEARCH_VISIBLE_CATALOG = { live: 120, movie: 240, series: 240 };
 const VIDEASY_PLAYER_BASE_URL = "https://player.videasy.to";
 const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
+const EMBED_PLAYER_MOBILE_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation";
 const EMBED_REDIRECT_SHIELD_ENABLED = true;
 const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
@@ -8654,10 +8655,14 @@ function shouldGateEmbedLaunch(item) {
 }
 
 function configureEmbedFrame() {
-    elements.embedPlayer.removeAttribute("sandbox");
+    if (isMobileEmbedEnvironment()) {
+        elements.embedPlayer.setAttribute("sandbox", EMBED_PLAYER_MOBILE_SANDBOX);
+    } else {
+        elements.embedPlayer.removeAttribute("sandbox");
+    }
     elements.embedPlayer.setAttribute("allow", EMBED_PLAYER_ALLOW);
-    elements.embedPlayer.removeAttribute("allowfullscreen");
-    elements.embedPlayer.removeAttribute("webkitallowfullscreen");
+    elements.embedPlayer.setAttribute("allowfullscreen", "");
+    elements.embedPlayer.setAttribute("webkitallowfullscreen", "");
     elements.embedPlayer.referrerPolicy = isEpornerSource(state.activePlayerItem)
         ? "strict-origin-when-cross-origin"
         : "no-referrer";
@@ -8920,6 +8925,7 @@ function syncPlayerEmbedMode(isEmbed) {
 
 function syncEmbedActionLinks() {
     const hasEmbed = state.activePlaybackMode === "embed" && Boolean(state.activeEmbedUrl);
+    const mobileEmbed = hasEmbed && isMobileEmbedEnvironment();
     const externalHref = hasEmbed ? state.activeEmbedUrl : "#";
     elements.embedOpenExternalLink.href = externalHref;
     elements.embedOpenExternalLink.hidden = !hasEmbed || !state.embedRequiresUserLaunch;
@@ -8928,8 +8934,8 @@ function syncEmbedActionLinks() {
         String(!hasEmbed || !state.embedRequiresUserLaunch)
     );
     elements.playerEmbedOpenLink.href = externalHref;
-    elements.playerEmbedOpenLink.hidden = !hasEmbed || !state.embedAssistShown;
-    elements.playerEmbedOpenLink.setAttribute("aria-disabled", String(!hasEmbed || !state.embedAssistShown));
+    elements.playerEmbedOpenLink.hidden = !hasEmbed || !(state.embedAssistShown || mobileEmbed);
+    elements.playerEmbedOpenLink.setAttribute("aria-disabled", String(!hasEmbed || !(state.embedAssistShown || mobileEmbed)));
     elements.playerEmbedRetryButton.hidden = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
     elements.playerEmbedRetryButton.disabled = !hasEmbed || !state.embedAssistShown || state.embedManualRetryUsed;
 }
