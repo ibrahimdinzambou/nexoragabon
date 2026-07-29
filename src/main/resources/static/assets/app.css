@@ -12350,6 +12350,152 @@ svg {
     }
 }
 
+/* Final player layout guard: prevents title, metadata, actions, and episode rows from overlapping. */
+@media (min-width: 761px) {
+    #playerModal .player-screen {
+        max-height: min(57dvh, 650px) !important;
+    }
+
+    #playerModal .player-caption {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(460px, 540px) !important;
+        align-items: start !important;
+        gap: 18px !important;
+        padding: 4px 0 0 !important;
+    }
+
+    #playerModal .player-title-group {
+        display: flex !important;
+        min-width: 0 !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 8px !important;
+    }
+
+    #playerModal .player-title-group .live-badge {
+        grid-row: auto !important;
+        position: static !important;
+        line-height: 1 !important;
+    }
+
+    #playerModal .player-caption h2 {
+        font-size: clamp(28px, 2.4vw, 42px) !important;
+        line-height: 1.08 !important;
+        letter-spacing: 0 !important;
+    }
+
+    #playerModal #playerEpisodeSubtitle,
+    #playerModal #playerMessage,
+    #playerModal #playerSynopsis,
+    #playerModal #playerInfoSubtitle {
+        overflow-wrap: anywhere !important;
+    }
+
+    #playerModal .player-tools {
+        display: grid !important;
+        grid-template-columns: minmax(110px, 1fr) repeat(3, minmax(96px, 1fr)) !important;
+        align-items: end !important;
+        justify-content: stretch !important;
+        gap: 10px !important;
+    }
+
+    #playerModal .player-quality select,
+    #playerModal .player-fullscreen,
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 46px !important;
+    }
+
+    #playerModal #playerMessage {
+        grid-column: 1 / -1 !important;
+        margin: 0 !important;
+        font-size: 14px !important;
+        line-height: 1.45 !important;
+    }
+
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 10px !important;
+    }
+
+    #playerModal .player-primary-actions .button,
+    #playerModal .player-nextprev .button {
+        min-height: 48px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    #playerModal .player-primary-actions #playerResumeButton {
+        grid-column: span 1 !important;
+        flex-basis: auto !important;
+    }
+
+    #playerModal .player-episode-card {
+        grid-template-columns: 136px minmax(0, 1fr) 44px !important;
+        min-height: 108px !important;
+        padding: 10px !important;
+        gap: 12px !important;
+    }
+
+    #playerModal .player-episode-card img {
+        width: 136px !important;
+        height: 76px !important;
+        border-radius: 6px !important;
+    }
+
+    #playerModal .player-episode-card > span {
+        display: grid !important;
+        min-width: 0 !important;
+        gap: 7px !important;
+    }
+
+    #playerModal .player-episode-card strong {
+        -webkit-line-clamp: 1 !important;
+        font-size: 15px !important;
+        line-height: 1.25 !important;
+    }
+
+    #playerModal .player-episode-card span span {
+        -webkit-line-clamp: 2 !important;
+        font-size: 13px !important;
+        line-height: 1.35 !important;
+    }
+}
+
+@media (min-width: 761px) and (max-width: 1320px) {
+    #playerModal .player-caption {
+        grid-template-columns: 1fr !important;
+    }
+
+    #playerModal .player-tools,
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 760px) {
+    #playerModal .player-caption h2 {
+        font-size: clamp(23px, 6.4vw, 30px) !important;
+        line-height: 1.08 !important;
+    }
+
+    #playerModal .player-episode-card {
+        grid-template-columns: 104px minmax(0, 1fr) 34px !important;
+        min-height: 92px !important;
+    }
+
+    #playerModal .player-episode-card img {
+        width: 104px !important;
+        height: 58px !important;
+    }
+}
+
 /* Keep the external source chooser in its own desktop grid row. */
 @media (min-width: 761px) {
     #playerModal .player-room-main {
