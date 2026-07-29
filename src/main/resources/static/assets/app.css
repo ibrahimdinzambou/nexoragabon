@@ -12514,3 +12514,36 @@ svg {
         z-index: 1 !important;
     }
 }
+
+/* Mobile playback guard: keep the player large enough for touch video UX. */
+@media (max-width: 760px) {
+    #playerModal .player-room-layout {
+        gap: 16px !important;
+    }
+
+    #playerModal .player-screen {
+        height: clamp(260px, 58svh, 430px) !important;
+        min-height: clamp(260px, 58svh, 430px) !important;
+        max-height: none !important;
+        aspect-ratio: auto !important;
+        background: #000 !important;
+    }
+
+    #playerModal .player-screen > video {
+        object-fit: contain !important;
+        background: #000 !important;
+    }
+
+    #playerModal .embed-click-shield {
+        z-index: 7 !important;
+        padding: 18px !important;
+    }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+    #playerModal .player-screen {
+        height: max(260px, calc(100svh - 86px)) !important;
+        min-height: 260px !important;
+        max-height: none !important;
+    }
+}

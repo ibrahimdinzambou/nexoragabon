@@ -199,7 +199,7 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260729-unsandboxed-embed-2/);
+    assert.match(watch, /app\.js\?v=20260729-mobile-player-shield-1/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
@@ -215,7 +215,7 @@ test("Voir plus recharge aussi les rayons de l'accueil", () => {
     assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
     assert.match(app, /const contentRemoteMore = !searching[\s\S]*?contentNexoraApiEnabled\(\) \|\| animeNexoraApiEnabled\(\)/);
     assert.match(app, /visibleItems\.length < rowItems\.length \|\| remoteMore \|\| likelyRemoteMore \|\| contentRemoteMore/);
-    assert.match(watch, /app\.js\?v=20260729-unsandboxed-embed-2/);
+    assert.match(watch, /app\.js\?v=20260729-mobile-player-shield-1/);
 });
 
 test("les pages films et series enrichissent les univers et privilegient le flux natif mobile", () => {
@@ -273,14 +273,15 @@ test("le lecteur integre bloque les redirections externes", () => {
     assert.doesNotMatch(frame, /\ssandbox(?:=|\s|>)/);
     assert.match(app, /removeAttribute\("sandbox"\)/);
     assert.doesNotMatch(app, /EMBED_PLAYER_SANDBOX/);
-    assert.match(app, /const EMBED_REDIRECT_SHIELD_ENABLED\s*=\s*false/);
+    assert.match(app, /const EMBED_REDIRECT_SHIELD_ENABLED\s*=\s*true/);
     assert.match(app, /const EMBED_PLAYER_UNLOCK_MS\s*=\s*4500/);
     assert.match(app, /ALLOWED_PAGE_NAVIGATION_HOSTS\s*=\s*new Set\(\[[\s\S]*?"nexoragabon\.com"[\s\S]*?"www\.nexoragabon\.com"/);
     assert.match(app, /function installPageNavigationGuard\(\)/);
     assert.match(app, /window\.open = function guardedWindowOpen/);
     assert.match(app, /installPageNavigationGuard\(\);/);
     assert.match(app, /function loadEmbedFrame[\s\S]*?lockEmbedShield\(\);/);
-    assert.match(app, /if \(!EMBED_REDIRECT_SHIELD_ENABLED\)[\s\S]*?elements\.embedClickShield\.hidden = true;[\s\S]*?return;/);
+    assert.match(watch, /app\.css\?v=20260729-mobile-player-shield-1/);
+    assert.match(app, /function lockEmbedShield[\s\S]*?elements\.embedClickShield\.hidden = !shouldShow;/);
     assert.match(app, /function unlockEmbedShield\(milliseconds = EMBED_PLAYER_UNLOCK_MS\)/);
     assert.doesNotMatch(unlockEmbedShieldBody, /Number\.POSITIVE_INFINITY/);
 });
