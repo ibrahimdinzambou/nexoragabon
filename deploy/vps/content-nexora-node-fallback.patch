@@ -2,7 +2,7 @@ diff --git a/src/autoflix_api/app.py b/src/autoflix_api/app.py
 index c60d229..f3c8f1a 100644
 --- a/src/autoflix_api/app.py
 +++ b/src/autoflix_api/app.py
-@@ -501,6 +501,51 @@ def _merge_node_sources(content: dict[str, Any]) -> dict[str, Any]:
+@@ -501,6 +501,50 @@ def _merge_node_sources(content: dict[str, Any]) -> dict[str, Any]:
      content["streamAvailable"] = True
      return content
  
