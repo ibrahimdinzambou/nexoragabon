@@ -410,6 +410,20 @@
                 return guardedOpen(value, target || "_blank", features);
             };
         }
+        try {
+            const originalAssign = window.location.assign.bind(window.location);
+            const originalReplace = window.location.replace.bind(window.location);
+            window.location.assign = function guardedLocationAssign(value) {
+                if (blockExternalNavigation(value)) return;
+                return originalAssign(value);
+            };
+            window.location.replace = function guardedLocationReplace(value) {
+                if (blockExternalNavigation(value)) return;
+                return originalReplace(value);
+            };
+        } catch {
+            // Location methods are not writable in every browser.
+        }
         document.addEventListener("click", (event) => {
             const link = event.target.closest?.("a[href]");
             if (!link) return;

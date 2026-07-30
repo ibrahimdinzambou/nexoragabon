@@ -76,6 +76,40 @@ const ALLOWED_PAGE_NAVIGATION_HOSTS = new Set([
     "nexoragabon.com",
     "www.nexoragabon.com"
 ]);
+const CONTENT_NEXORA_SOURCE_FIELDS = [
+    "players",
+    "sources",
+    "hosters",
+    "links",
+    "streams",
+    "servers",
+    "lecteurs",
+    "embeds",
+    "videos",
+    "files",
+    "qualities",
+    "nodePlayers",
+    "node_sources",
+    "nodeSources",
+    "node_streams",
+    "nodeStreams",
+    "frenchSources",
+    "french_sources",
+    "frenchStreams",
+    "french_streams",
+    "frenchNexoraSources",
+    "french_nexora_sources",
+    "frenchNexoraStreams",
+    "french_nexora_streams",
+    "directSources",
+    "direct_sources",
+    "player",
+    "source",
+    "server",
+    "embed",
+    "video",
+    "file"
+];
 const imageRepairCache = new Map();
 const imageRepairInFlight = new Set();
 const animeNexoraResponseCache = new Map();
@@ -989,6 +1023,16 @@ function blockExternalPageNavigation(value, event) {
     return true;
 }
 
+function sameAllowedPageNavigationUrl(value) {
+    if (!value) return value;
+    try {
+        const url = new URL(String(value), window.location.href);
+        return isPageNavigationUrlAllowed(url.href) ? url.href : window.location.href;
+    } catch {
+        return window.location.href;
+    }
+}
+
 function installPageNavigationGuard() {
     document.addEventListener("click", (event) => {
         const link = event.target.closest?.("a[href]");
@@ -1012,6 +1056,34 @@ function installPageNavigationGuard() {
         }
         return originalOpen(url, ...args);
     };
+
+    try {
+        const originalAssign = window.location.assign.bind(window.location);
+        const originalReplace = window.location.replace.bind(window.location);
+        window.location.assign = function guardedLocationAssign(url) {
+            if (blockExternalPageNavigation(url)) return;
+            return originalAssign(url);
+        };
+        window.location.replace = function guardedLocationReplace(url) {
+            if (blockExternalPageNavigation(url)) return;
+            return originalReplace(url);
+        };
+    } catch {
+        // Location methods are not writable in every browser.
+    }
+
+    try {
+        const originalPushState = history.pushState.bind(history);
+        const originalReplaceState = history.replaceState.bind(history);
+        history.pushState = function guardedPushState(state, unused, url) {
+            return originalPushState(state, unused, sameAllowedPageNavigationUrl(url));
+        };
+        history.replaceState = function guardedReplaceState(state, unused, url) {
+            return originalReplaceState(state, unused, sameAllowedPageNavigationUrl(url));
+        };
+    } catch {
+        // History methods can be non-writable in hardened browser contexts.
+    }
 }
 
 // Les films et series hors anime passent par Content-Nexora.
@@ -6975,7 +7047,7 @@ function contentNexoraSeriesEpisodes(seasonEpisodes, seasonNumber, item) {
 
 function contentNexoraEntryHasSources(entry) {
     if (!entry || typeof entry !== "object") return false;
-    return ["players", "sources", "hosters", "links", "streams", "player", "source"]
+    return CONTENT_NEXORA_SOURCE_FIELDS
         .some((field) => {
             const value = entry[field];
             return Array.isArray(value) ? value.length > 0 : Boolean(value);
@@ -6984,7 +7056,7 @@ function contentNexoraEntryHasSources(entry) {
 
 function contentNexoraEntryHasInlineSources(entry) {
     if (!entry || typeof entry !== "object") return false;
-    return ["players", "sources", "hosters", "links", "streams", "player", "source"]
+    return CONTENT_NEXORA_SOURCE_FIELDS
         .some((field) => {
             const value = entry[field];
             return Array.isArray(value) ? value.length > 0 : Boolean(value);
@@ -7365,10 +7437,16 @@ function contentNexoraSourceUrl(source) {
         source.stream_url,
         source.streamUrl,
         source.proxyUrl,
+        source.mediaUrl,
+        source.playbackUrl,
+        source.playback_url,
         source.url,
         source.link,
         source.href,
         source.src,
+        source.hls,
+        source.hlsUrl,
+        source.hls_url,
         source.file,
         source.fileUrl,
         source.file_url,
@@ -7436,25 +7514,7 @@ function appendContentNexoraSourceValue(target, value, fallbackLabel = "") {
 
 function appendContentNexoraSourceFields(target, node) {
     if (!node || typeof node !== "object") return;
-    [
-        "players",
-        "sources",
-        "hosters",
-        "links",
-        "streams",
-        "servers",
-        "lecteurs",
-        "embeds",
-        "videos",
-        "files",
-        "qualities",
-        "player",
-        "source",
-        "server",
-        "embed",
-        "video",
-        "file"
-    ].forEach((field) => {
+    CONTENT_NEXORA_SOURCE_FIELDS.forEach((field) => {
         if (node[field] !== undefined && node[field] !== null) {
             appendContentNexoraSourceValue(target, node[field], field);
         }

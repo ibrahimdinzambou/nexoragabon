@@ -254,7 +254,8 @@ test("le lecteur Content-Nexora accepte les enveloppes API et les champs de lect
     assert.match(app, /data\?\.episode/);
     assert.match(app, /const content = contentNexoraPayloadContent\(contentPayload\)/);
     assert.match(app, /const match = contentNexoraPayloadMatch\(contentPayload\)/);
-    assert.match(app, /activeItem\.type === "movie" && !contentNexoraSourceCandidates\(content, activeItem\)\.length/);
+    assert.match(app, /const contentSourceCandidates = contentNexoraSourceCandidates\(content, activeItem\)/);
+    assert.match(app, /activeItem\.type === "movie" && !contentSourceCandidates\.length/);
     assert.match(app, /"servers"[\s\S]*"lecteurs"[\s\S]*"embeds"[\s\S]*"files"/);
     assert.doesNotMatch(app, /\["player", "source"\]\.includes\(field\) && typeof node\[field\] === "string"/);
 });
@@ -290,6 +291,9 @@ test("le lecteur integre bloque les redirections externes", () => {
     assert.match(app, /const EMBED_PLAYER_UNLOCK_MS\s*=\s*4500/);
     assert.match(app, /ALLOWED_PAGE_NAVIGATION_HOSTS\s*=\s*new Set\(\[[\s\S]*?"nexoragabon\.com"[\s\S]*?"www\.nexoragabon\.com"/);
     assert.match(app, /function installPageNavigationGuard\(\)/);
+    assert.match(app, /window\.location\.assign = function guardedLocationAssign/);
+    assert.match(app, /window\.location\.replace = function guardedLocationReplace/);
+    assert.match(app, /history\.pushState = function guardedPushState/);
     assert.doesNotMatch(app, /function blockExternalPageNavigation[\s\S]*?if \(isMobileEmbedEnvironment\(\)\)[\s\S]*?return false;/);
     assert.match(app, /window\.open = function guardedWindowOpen/);
     assert.match(app, /installPageNavigationGuard\(\);/);
@@ -320,9 +324,35 @@ test("le lecteur integre bloque les redirections externes", () => {
     assert.match(dedicated, /function isAllowedNavigationUrl\(value\)/);
     assert.match(dedicated, /function blockExternalNavigation\(value,\s*event\)/);
     assert.match(dedicated, /window\.open = function guardedWindowOpen/);
+    assert.match(dedicated, /window\.location\.assign = function guardedLocationAssign/);
+    assert.match(dedicated, /window\.location\.replace = function guardedLocationReplace/);
     assert.match(dedicated, /if \(!isAllowedNavigationUrl\(url\)\) return null/);
     assert.match(dedicated, /directLink\.href = "\/watch\.html"/);
     assert.match(dedicated, /function loadEpisodeEntries\(\)/);
     assert.match(dedicated, /function playEpisodeAt\(index\)/);
     assert.match(dedicated, /function startFrame\(\)/);
+});
+
+test("les sources Content-Nexora incluent les formats French/Node", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/static/assets/app.js"), "utf8");
+    assert.match(app, /const CONTENT_NEXORA_SOURCE_FIELDS\s*=\s*\[/);
+    assert.match(app, /"nodeSources"/);
+    assert.match(app, /"nodeStreams"/);
+    assert.match(app, /"frenchNexoraSources"/);
+    assert.match(app, /"frenchNexoraStreams"/);
+    assert.match(app, /source\.hlsUrl/);
+    assert.match(app, /source\.playbackUrl/);
+    assert.match(app, /CONTENT_NEXORA_SOURCE_FIELDS\.forEach/);
+});
+
+test("les headers de deploiement limitent les navigations externes", () => {
+    const rootVercel = fs.readFileSync(path.join(__dirname, "../../../vercel.json"), "utf8");
+    const staticVercel = fs.readFileSync(path.join(__dirname, "../../main/resources/static/vercel.json"), "utf8");
+    const netlifyHeaders = fs.readFileSync(path.join(__dirname, "../../main/resources/static/_headers"), "utf8");
+    const nginx = fs.readFileSync(path.join(__dirname, "../../../deploy/vps/nginx/nexora.conf"), "utf8");
+    for (const file of [rootVercel, staticVercel, netlifyHeaders, nginx]) {
+        assert.match(file, /Content-Security-Policy/);
+        assert.match(file, /navigate-to 'self' https:\/\/nexoragabon\.com https:\/\/www\.nexoragabon\.com/);
+        assert.match(file, /form-action 'self' https:\/\/nexoragabon\.com https:\/\/www\.nexoragabon\.com/);
+    }
 });
