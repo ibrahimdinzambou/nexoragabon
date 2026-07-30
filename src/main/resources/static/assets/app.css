@@ -13081,3 +13081,126 @@ svg {
         aspect-ratio: auto !important;
     }
 }
+
+/* Player cascade layout: keep details and fluxes readable below the video. */
+#playerModal .player-info-panel,
+#playerModal .player-source-panel {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+#playerModal .player-source-heading {
+    margin-bottom: 0 !important;
+}
+
+#playerModal .player-source-list {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+}
+
+#playerModal .player-source-option {
+    display: grid !important;
+    grid-template-columns: 38px minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 12px !important;
+    min-height: 76px !important;
+    padding: 12px 14px !important;
+    border-radius: 8px !important;
+}
+
+#playerModal .player-source-index {
+    display: grid !important;
+    width: 32px !important;
+    height: 32px !important;
+    place-items: center !important;
+    border: 1px solid rgba(231, 195, 109, 0.45) !important;
+    border-radius: 50% !important;
+    color: var(--accent-strong) !important;
+    background: rgba(231, 195, 109, 0.08) !important;
+    font-size: 12px !important;
+    font-weight: 900 !important;
+}
+
+#playerModal .player-source-option.active .player-source-index {
+    color: #081019 !important;
+    border-color: var(--accent-strong) !important;
+    background: var(--accent-strong) !important;
+}
+
+#playerModal .player-source-copy {
+    display: grid !important;
+    min-width: 0 !important;
+    gap: 5px !important;
+}
+
+#playerModal .player-source-option strong,
+#playerModal .player-source-option small,
+#playerModal .player-source-option em {
+    display: block !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#playerModal .player-source-option strong {
+    font-size: 14px !important;
+    line-height: 1.25 !important;
+}
+
+#playerModal .player-source-option small {
+    color: rgba(255, 255, 255, 0.68) !important;
+    font-size: 12px !important;
+}
+
+#playerModal .player-source-option em {
+    color: rgba(231, 195, 109, 0.86) !important;
+    font-size: 11px !important;
+    font-style: normal !important;
+}
+
+#playerModal .player-source-link {
+    justify-self: end !important;
+    white-space: nowrap !important;
+}
+
+@media (min-width: 1181px) {
+    #playerModal .player-room-main {
+        --player-screen-height: min(44dvh, 520px);
+        gap: 14px !important;
+    }
+
+    #playerModal .player-caption {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    #playerModal .player-title-group {
+        grid-template-columns: auto minmax(0, 1fr) !important;
+    }
+
+    #playerModal .player-tools {
+        grid-template-columns: minmax(120px, 160px) repeat(3, minmax(118px, 1fr)) !important;
+        max-width: 720px !important;
+    }
+
+    #playerModal .player-info-panel {
+        gap: 12px !important;
+    }
+
+    #playerModal .player-source-panel:not([hidden]) {
+        padding: 16px !important;
+        overflow: visible !important;
+    }
+}
+
+@media (max-width: 760px) {
+    #playerModal .player-source-option {
+        grid-template-columns: 32px minmax(0, 1fr) !important;
+    }
+
+    #playerModal .player-source-link {
+        grid-column: 2 !important;
+        justify-self: start !important;
+    }
+}

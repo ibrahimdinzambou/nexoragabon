@@ -7595,6 +7595,13 @@ function contentNexoraSourceKindLabel(kind) {
     return kind === "hls" ? "Flux HLS" : kind === "direct" ? "Fichier vidéo" : "Lecteur web";
 }
 
+function readableSourceHost(url) {
+    try {
+        return new URL(url).hostname.replace(/^www\./i, "");
+    } catch {
+        return "";
+    }
+}
 function normalizeContentNexoraSources(content, item = state.activePlayerItem) {
     const unique = new Map();
     contentNexoraSourceCandidates(content, item).forEach((source, index) => {
@@ -7609,6 +7616,7 @@ function normalizeContentNexoraSources(content, item = state.activePlayerItem) {
             quality: contentNexoraSourceQuality(raw),
             kind,
             kindLabel: contentNexoraSourceKindLabel(kind),
+            host: readableSourceHost(url),
             raw,
             index
         });
@@ -7649,14 +7657,15 @@ function renderFrenchSourcePanelLegacy(content = null) {
     if (elements.playerSourceCount) {
         elements.playerSourceCount.textContent = `${sources.length} source${sources.length > 1 ? "s" : ""}`;
     }
-    elements.playerSourceList.innerHTML = sources.map((source) => {
+    elements.playerSourceList.innerHTML = sources.map((source, index) => {
         const details = [source.language, source.quality, source.kindLabel].filter(Boolean).join(" · ");
         return `
             <a class="player-source-option" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" aria-label="Ouvrir ${escapeHtml(source.label)} dans un nouvel onglet">
-                <span class="player-source-dot" aria-hidden="true"></span>
+                <span class="player-source-index" aria-hidden="true">${index + 1}</span>
                 <span class="player-source-copy">
                     <strong>${escapeHtml(source.label)}</strong>
                     <small>${escapeHtml(details || "Source Content-Nexora")}</small>
+                    <em>${escapeHtml(source.host || readableSourceHost(source.url) || "Lien source")}</em>
                     <span class="player-source-link">Ouvrir la source <span aria-hidden="true">↗</span></span>
                 </span>
             </a>
@@ -7764,6 +7773,7 @@ async function resolveContentNexoraSource(source, content, index = 0) {
             .join(", "),
         kind,
         kindLabel: contentNexoraSourceKindLabel(kind),
+        host: readableSourceHost(safeMediaUrl || pageUrl),
         raw,
         resolution,
         verified: initialKind === "hls" || initialKind === "direct" || resolution?.resolved === true,
@@ -7958,15 +7968,17 @@ function renderFrenchSourcePanel(content = null, sources = []) {
     }
     elements.playerSourceList.innerHTML = sources.map((source, index) => {
         const details = [source.language, source.quality, source.kindLabel].filter(Boolean).join(" / ");
+        const host = source.host || readableSourceHost(source.mediaUrl || source.pageUrl);
         const active = state.activeFrenchSourceMediaUrl
             ? source.mediaUrl === state.activeFrenchSourceMediaUrl ? " active" : ""
             : index === state.activeFrenchSourceIndex ? " active" : "";
         return `
             <button class="player-source-option${active}" type="button" data-source-index="${index}" aria-label="Lire ${escapeHtml(source.label)}">
-                <span class="player-source-dot" aria-hidden="true"></span>
+                <span class="player-source-index" aria-hidden="true">${index + 1}</span>
                 <span class="player-source-copy">
                     <strong>${escapeHtml(source.label)}</strong>
                     <small>${escapeHtml(details || "Flux video")}</small>
+                    <em>${escapeHtml(host || "Flux disponible")}</em>
                     <span class="player-source-link">Lire le flux <span aria-hidden="true">&#9654;</span></span>
                 </span>
             </button>
