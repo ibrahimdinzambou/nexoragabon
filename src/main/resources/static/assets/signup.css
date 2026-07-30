@@ -497,6 +497,17 @@ body {
     overflow-x: clip;
 }
 
+/* Keyboard and TV remote navigation focus */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+}
+
 @media (max-width: 480px) {
     .signup-header {
         gap: 12px;
@@ -621,5 +632,12 @@ body {
 
     .signup-intro h1 {
         font-size: clamp(37px, 13vw, 50px);
+    }
+}
+
+@media (min-width: 1800px) {
+    .signup-shell {
+        max-width: 1800px;
+        margin-inline: auto;
     }
 }

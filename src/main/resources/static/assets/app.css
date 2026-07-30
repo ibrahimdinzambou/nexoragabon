@@ -153,12 +153,19 @@ button {
 }
 
 .nav-link:hover,
-.nav-link.active {
+.nav-link.active,
+.nav-link:focus-visible {
     color: #fff;
 }
 
-.nav-link.active::after {
+.nav-link.active::after,
+.nav-link:focus-visible::after {
     transform: scaleX(1);
+}
+
+.nav-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
 }
 
 .adult-nav-entry {
@@ -175,10 +182,16 @@ button {
     letter-spacing: 0.02em;
 }
 
-.adult-nav-entry:hover {
+.adult-nav-entry:hover,
+.adult-nav-entry:focus-visible {
     color: #fff;
     border-color: rgba(236, 92, 100, 0.68);
     background: rgba(236, 92, 100, 0.16);
+}
+
+.adult-nav-entry:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .topbar-actions {
@@ -469,6 +482,16 @@ button {
     cursor: pointer;
 }
 
+.icon-button:hover,
+.icon-button:focus-visible {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.icon-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
 .notification-dot {
     position: absolute;
     top: 2px;
@@ -661,8 +684,15 @@ button {
     transition: transform 180ms ease;
 }
 
-.account-button:hover > svg {
+.account-button:hover > svg,
+.account-button:focus-visible > svg {
     transform: translateY(2px);
+}
+
+.account-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
 }
 
 .avatar {
@@ -871,8 +901,14 @@ button {
     transition: color 180ms ease, background 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
-.button:hover {
+.button:hover,
+.button:focus-visible {
     transform: translateY(-2px);
+}
+
+.button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
 }
 
 .button svg {
@@ -2375,9 +2411,15 @@ body.compact-catalog .card-copy strong {
     line-height: 1;
 }
 
-.modal-close:hover {
+.modal-close:hover,
+.modal-close:focus-visible {
     color: #fff;
     border-color: rgba(255, 255, 255, 0.4);
+}
+
+.modal-close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 #authModal {
@@ -2817,7 +2859,7 @@ body.compact-catalog .card-copy strong {
     z-index: 1;
     width: min(1040px, 100%);
     max-height: calc(100vh - 40px);
-    min-height: 610px;
+    min-height: min(610px, calc(100vh - 40px));
     overflow: hidden auto;
     border: 1px solid rgba(255, 255, 255, 0.14);
     background: #0d0f12;
@@ -2852,7 +2894,7 @@ body.compact-catalog .card-copy strong {
     grid-template-columns: 230px minmax(0, 1fr);
     align-items: end;
     gap: clamp(28px, 5vw, 64px);
-    min-height: 610px;
+    min-height: min(610px, calc(100vh - 40px));
     padding: 72px 68px 58px;
 }
 
@@ -3295,6 +3337,12 @@ body.compact-catalog .card-copy strong {
     grid-template-columns: repeat(6, minmax(78px, 1fr));
     gap: 16px;
     margin: 16px 0 18px;
+}
+
+@media (max-width: 960px) {
+    .avatar-studio {
+        grid-template-columns: repeat(4, minmax(70px, 1fr));
+    }
 }
 
 .avatar-option {
@@ -4136,10 +4184,16 @@ body.compact-catalog .card-copy strong {
     font-size: 11px;
 }
 
-.player-source-option:hover {
+.player-source-option:hover,
+.player-source-option:focus-visible {
     border-color: rgba(231, 195, 109, 0.65);
     background: rgba(231, 195, 109, 0.1);
     transform: translateY(-1px);
+}
+
+.player-source-option:focus-visible {
+    outline: 2px solid var(--gold, #e7c36d);
+    outline-offset: 2px;
 }
 
 .player-source-option.active {
@@ -4215,6 +4269,79 @@ body.compact-catalog .card-copy strong {
         grid-row: 4 !important;
         position: relative !important;
         z-index: 1 !important;
+    }
+}
+
+/* Player metadata typography guard: keep the secondary title below badges and readable. */
+@media (min-width: 761px) {
+    #playerModal .player-room-main {
+        gap: 18px !important;
+    }
+
+    #playerModal .player-info-panel {
+        position: relative !important;
+        display: grid !important;
+        align-content: start !important;
+        gap: 12px !important;
+        min-height: 0 !important;
+        padding: 18px 0 0 !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-info-panel h4,
+    #playerModal #playerInfoSubtitle {
+        display: -webkit-box !important;
+        max-width: min(920px, 100%) !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 2 !important;
+        color: rgba(255, 255, 255, 0.78) !important;
+        font-family: inherit !important;
+        font-size: clamp(16px, 1.15vw, 20px) !important;
+        font-weight: 800 !important;
+        letter-spacing: 0 !important;
+        line-height: 1.3 !important;
+        text-transform: none !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+    }
+
+    #playerModal .player-info-pills {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        margin: 0 !important;
+    }
+
+    #playerModal .player-info-pills span {
+        min-height: 34px !important;
+        max-width: 220px !important;
+        padding: 0 14px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        line-height: 34px !important;
+    }
+
+    #playerModal #playerSynopsis {
+        margin: 0 !important;
+        color: rgba(255, 255, 255, 0.72) !important;
+        font-size: 14px !important;
+        line-height: 1.5 !important;
+    }
+}
+
+@media (max-width: 760px) {
+    #playerModal .player-info-panel h4,
+    #playerModal #playerInfoSubtitle {
+        font-family: inherit !important;
+        font-size: 15px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0 !important;
+        line-height: 1.32 !important;
+        text-transform: none !important;
     }
 }
 
@@ -4346,6 +4473,17 @@ body.compact-catalog .card-copy strong {
     background: rgba(255, 255, 255, 0.035);
     cursor: pointer;
     text-align: left;
+}
+
+.player-episode-card:hover,
+.player-episode-card:focus-visible {
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.player-episode-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .player-episode-card.active {
@@ -6795,6 +6933,12 @@ body.catalog-mode-drama .drama-card strong {
     height: 100% !important;
     max-height: none !important;
     aspect-ratio: auto !important;
+}
+
+#playerModal .player-screen > video,
+#playerModal .player-screen > iframe {
+    object-fit: contain !important;
+    background: #000 !important;
 }
 
 #playerModal .player-screen > video[hidden],
@@ -11111,6 +11255,12 @@ svg {
     aspect-ratio: auto !important;
 }
 
+#playerModal .player-screen > video,
+#playerModal .player-screen > iframe {
+    object-fit: contain !important;
+    background: #000 !important;
+}
+
 #playerModal .player-screen > video[hidden],
 #playerModal .player-screen > iframe[hidden],
 #playerModal .player-screen > .embed-launch-panel[hidden],
@@ -11661,6 +11811,23 @@ svg {
 
     #playerModal .player-caption h2 {
         font-size: clamp(30px, 2.2vw, 44px) !important;
+    }
+}
+
+/* 10-foot viewing guard: keep player controls readable on large TV screens. */
+@media (min-width: 1800px) {
+    #playerModal .player-quality select,
+    #playerModal .player-fullscreen,
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        min-height: 56px !important;
+        font-size: 15px !important;
+    }
+
+    #playerModal .player-primary-actions .button,
+    #playerModal .player-nextprev .button {
+        min-height: 56px !important;
+        font-size: 15px !important;
     }
 }
 
@@ -12465,6 +12632,15 @@ svg {
         font-size: 13px !important;
         line-height: 1.35 !important;
     }
+}
+
+#playerModal .player-screen:fullscreen,
+#playerModal .player-screen:-webkit-full-screen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    aspect-ratio: auto !important;
+    border-radius: 0 !important;
 }
 
 @media (min-width: 761px) and (max-width: 1320px) {

@@ -713,6 +713,17 @@ footer,
     display: none;
 }
 
+/* Keyboard and TV remote navigation focus */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--paper);
+    outline-offset: 2px;
+}
+
 @media (max-width: 480px) {
     .landing-header {
         grid-template-columns: minmax(0, 1fr) auto;

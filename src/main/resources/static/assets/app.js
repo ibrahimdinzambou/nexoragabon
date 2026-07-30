@@ -8872,7 +8872,13 @@ function prepareNativeStreamPlayer(playbackMode) {
     }
 }
 
+function isTvUserAgent() {
+    return /\bTV\b|SMART-TV|SmartTV|GoogleTV|BRAVIA|AFT[A-Z0-9]|Tizen|Web0S|webOS|HbbTV|VIDAA|NetCast/i
+        .test(navigator.userAgent || "");
+}
+
 function isMobileEmbedEnvironment() {
+    if (isTvUserAgent()) return false;
     const hasCoarsePointer = window.matchMedia?.(MOBILE_EMBED_QUERY).matches;
     const isMobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
     return hasCoarsePointer || isMobileUserAgent;
@@ -9324,16 +9330,16 @@ function embedAssistMessage() {
 }
 
 async function requestPlayerFullscreen() {
-    const playerCard = elements.playerModal.querySelector(".player-card");
+    const playerScreen = elements.playerModal.querySelector(".player-screen");
     const preferredTarget = state.activePlaybackMode === "embed"
         ? elements.embedPlayer
-        : playerCard;
-    const target = preferredTarget?.requestFullscreen ? preferredTarget : playerCard;
+        : playerScreen;
+    const target = preferredTarget?.requestFullscreen ? preferredTarget : playerScreen;
     try {
         await target?.requestFullscreen?.();
     } catch {
         try {
-            await playerCard?.requestFullscreen?.();
+            await playerScreen?.requestFullscreen?.();
         } catch {
             showToast("Le plein ecran n'est pas autorise par ce navigateur.", true);
         }
