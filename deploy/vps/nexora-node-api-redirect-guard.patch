@@ -2,8 +2,8 @@ diff --git a/src/lib/puppeteer.ts b/src/lib/puppeteer.ts
 index 8ad915d..2e8cdee 100644
 --- a/src/lib/puppeteer.ts
 +++ b/src/lib/puppeteer.ts
-@@ -5,0 +6,22 @@ const BAD_URL_RX = /(doubleclick|googlesyndication|googletagmanager|google-analy
-+const NEXORA_NAVIGATION_HOSTS = ['nexoragabon.com', 'www.nexoragabon.com'];
+@@ -5,0 +6,26 @@ const BAD_URL_RX = /(doubleclick|googlesyndication|googletagmanager|google-analy
++const NEXORA_NAVIGATION_HOSTS = ['nexoragabon.com', 'www.nexoragabon.com'] as const;
 +
 +function normalizeHost(value: string): string {
 +  return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
@@ -12,7 +12,11 @@ index 8ad915d..2e8cdee 100644
 +function hostnameMatches(hostname: string, allowedHost: string): boolean {
 +  const host = normalizeHost(hostname);
 +  const allowed = normalizeHost(allowedHost);
-+  return Boolean(allowed && (host === allowed || host.endsWith(`.${allowed}`)));
++  if (!allowed) return false;
++  if ((NEXORA_NAVIGATION_HOSTS as readonly string[]).includes(allowed)) {
++    return host === allowed;
++  }
++  return host === allowed || host.endsWith(`.${allowed}`);
 +}
 +
 +function isAllowedTopNavigation(value: string, allowedMainHosts: string[]): boolean {
@@ -25,7 +29,7 @@ index 8ad915d..2e8cdee 100644
 +    return false;
 +  }
 +}
-@@ -45,3 +67,17 @@ export async function preparePage(
+@@ -45,3 +71,22 @@ export async function preparePage(
 -
 -  // Anti-détection
 -  await page.evaluateOnNewDocument(() => {
@@ -35,18 +39,22 @@ index 8ad915d..2e8cdee 100644
 +
 +  // Anti-detection and top-level redirect guard.
 +  await page.evaluateOnNewDocument((hosts: string[]) => {
++    const nexoraHosts = new Set(['nexoragabon.com', 'www.nexoragabon.com']);
 +    const allowedHosts = new Set(hosts);
 +    const allowed = (value: unknown) => {
 +      try {
 +        const url = new URL(String(value || ''), window.location.href);
 +        if (!['http:', 'https:'].includes(url.protocol)) return true;
 +        const host = url.hostname.toLowerCase();
-+        return [...allowedHosts].some((entry) => host === entry || host.endsWith(`.${entry}`));
++        return [...allowedHosts].some((entry) => {
++          if (nexoraHosts.has(entry)) return host === entry;
++          return host === entry || host.endsWith(`.${entry}`);
++        });
 +      } catch {
 +        return false;
 +      }
 +    };
-@@ -49,0 +86,20 @@ export async function preparePage(
+@@ -49,0 +95,20 @@ export async function preparePage(
 +    try {
 +      const assign = window.location.assign.bind(window.location);
 +      const replace = window.location.replace.bind(window.location);
@@ -67,10 +75,10 @@ index 8ad915d..2e8cdee 100644
 +        !url || allowed(url) ? replaceState(state, unused, url) : undefined
 +      );
 +    } catch {}
-@@ -53 +109 @@ export async function preparePage(
+@@ -53 +118 @@ export async function preparePage(
 -  });
 +  }, allowedNavigationHosts);
-@@ -73,6 +129 @@ export async function preparePage(
+@@ -73,6 +138 @@ export async function preparePage(
 -        try {
 -          const host = new URL(url).hostname;
 -          if (allowedMainHosts.length && !allowedMainHosts.some((h) => host.includes(h))) {
@@ -78,7 +86,7 @@ index 8ad915d..2e8cdee 100644
 -          }
 -        } catch {}
 +        if (!isAllowedTopNavigation(url, allowedMainHosts)) return req.abort();
-@@ -96,0 +148,9 @@ export async function preparePage(
+@@ -96,0 +157,9 @@ export async function preparePage(
 +
 +  page.on('framenavigated', async (frame) => {
 +    try {
