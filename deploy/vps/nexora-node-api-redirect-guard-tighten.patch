@@ -1,0 +1,88 @@
+From 20563f642184152fbec5c091a1dcf345dc6ca1db Mon Sep 17 00:00:00 2001
+From: ibrahimdinzambou <ibrahimdinzambou@users.noreply.github.com>
+Date: Thu, 30 Jul 2026 23:17:44 +0100
+Subject: [PATCH] Tighten Nexora Puppeteer redirect guard
+
+---
+ src/lib/puppeteer.ts | 28 +++++++++++++---------------
+ 1 file changed, 13 insertions(+), 15 deletions(-)
+
+diff --git a/src/lib/puppeteer.ts b/src/lib/puppeteer.ts
+index c26c40f..ce2a47d 100644
+--- a/src/lib/puppeteer.ts
++++ b/src/lib/puppeteer.ts
+@@ -3,7 +3,7 @@ import puppeteer, { Browser, HTTPRequest, Page } from 'puppeteer';
+ let browser: Browser | null = null;
+ 
+ const BAD_URL_RX = /(doubleclick|googlesyndication|googletagmanager|google-analytics|facebook|fbcdn|disqus|popads|popcash|exoclick|adnxs|mgid|taboola|outbrain|adsterra|hilltopads|trafficjunky|propellerads|analytics|tracking|ads|advertisement)/i;
+-const NEXORA_NAVIGATION_HOSTS = ['nexoragabon.com', 'www.nexoragabon.com'];
++const NEXORA_NAVIGATION_HOSTS = ['nexoragabon.com', 'www.nexoragabon.com'] as const;
+ 
+ function normalizeHost(value: string): string {
+   return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+@@ -12,7 +12,11 @@ function normalizeHost(value: string): string {
+ function hostnameMatches(hostname: string, allowedHost: string): boolean {
+   const host = normalizeHost(hostname);
+   const allowed = normalizeHost(allowedHost);
+-  return Boolean(allowed && (host === allowed || host.endsWith(`.${allowed}`)));
++  if (!allowed) return false;
++  if ((NEXORA_NAVIGATION_HOSTS as readonly string[]).includes(allowed)) {
++    return host === allowed;
++  }
++  return host === allowed || host.endsWith(`.${allowed}`);
+ }
+ 
+ function isAllowedNavigation(value: string, allowedMainHosts: string[]): boolean {
+@@ -70,13 +74,17 @@ export async function preparePage(
+ 
+   // Anti-detection and top-level redirect guard.
+   await page.evaluateOnNewDocument((hosts: string[]) => {
++    const nexoraHosts = new Set(['nexoragabon.com', 'www.nexoragabon.com']);
+     const allowedHosts = new Set(hosts);
+     const allowed = (value: unknown) => {
+       try {
+         const url = new URL(String(value || ''), window.location.href);
+         if (!['http:', 'https:'].includes(url.protocol)) return true;
+         const host = url.hostname.toLowerCase();
+-        return [...allowedHosts].some((entry) => host === entry || host.endsWith(`.${entry}`));
++        return [...allowedHosts].some((entry) => {
++          if (nexoraHosts.has(entry)) return host === entry;
++          return host === entry || host.endsWith(`.${entry}`);
++        });
+       } catch {
+         return false;
+       }
+@@ -138,15 +146,11 @@ export async function preparePage(
+         return abortRequest(req);
+       }
+ 
+-      // Controle toutes les navigations de frames, quel que soit le provider.
+-      if (req.isNavigationRequest()) {
++      // Bloque toute navigation de page hors Nexora/domaines explicitement autorises.
++      if (req.isNavigationRequest() && req.resourceType() === 'document') {
+         if (!isAllowedNavigation(url, allowedMainHosts)) return abortRequest(req);
+       }
+ 
+-      if (redirectedOutsideAllowedHosts(req, allowedMainHosts)) {
+-        return abortRequest(req);
+-      }
+-
+       continueRequest(req);
+     } catch {
+       try {
+@@ -192,12 +196,6 @@ function continueRequest(req: HTTPRequest): void {
+   void req.continue().catch(() => {});
+ }
+ 
+-function redirectedOutsideAllowedHosts(req: HTTPRequest, allowedMainHosts: string[]): boolean {
+-  const redirectChain = req.redirectChain();
+-  if (!redirectChain.length) return false;
+-  return !isAllowedNavigation(req.url(), allowedMainHosts);
+-}
+-
+ export function attachCollector(page: Page) {
+   const store = {
+     embeds: new Set<string>(),
+-- 
+2.54.0.windows.1
+
