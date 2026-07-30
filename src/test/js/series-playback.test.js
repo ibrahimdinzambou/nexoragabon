@@ -298,7 +298,7 @@ test("le lecteur integre bloque les redirections externes", () => {
     assert.match(app, /window\.open = function guardedWindowOpen/);
     assert.match(app, /installPageNavigationGuard\(\);/);
     assert.match(app, /function loadEmbedFrame[\s\S]*?lockEmbedShield\(\);/);
-    assert.match(watch, /app\.css\?v=20260729-mobile-vidzy-guard-1/);
+    assert.match(watch, /app\.css\?v=20260730-player-layout-redirect-guard-1/);
     assert.match(app, /const mobileEmbed = hasEmbed && isMobileEmbedEnvironment\(\)/);
     assert.match(app, /const dedicatedEmbed = hasEmbed && shouldUseDedicatedEmbedPlayer\(state\.activeEmbedUrl\)/);
     assert.match(app, /const externalHref = hasEmbed \? embedActionUrl\(state\.activeEmbedUrl\) : "#"/);

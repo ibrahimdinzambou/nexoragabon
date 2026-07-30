@@ -12772,3 +12772,312 @@ svg {
         font-size: 13px !important;
     }
 }
+
+/* Playback details reset: keep video, metadata, source choices and episode rail in separate rows. */
+@media (min-width: 1181px) {
+    #playerModal:not([hidden]) {
+        position: fixed !important;
+        inset: 0 !important;
+        display: block !important;
+        height: 100dvh !important;
+        overflow: hidden !important;
+        background: #020711 !important;
+    }
+
+    #playerModal .player-room {
+        display: grid !important;
+        grid-template-rows: 84px minmax(0, 1fr) !important;
+        width: 100% !important;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+    }
+
+    #playerModal .player-watch-topbar {
+        height: 84px !important;
+        min-height: 84px !important;
+        padding: 0 clamp(20px, 2.9vw, 54px) !important;
+    }
+
+    #playerModal .player-room-layout {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) clamp(360px, 31vw, 560px) !important;
+        align-items: stretch !important;
+        gap: clamp(18px, 2.4vw, 38px) !important;
+        width: 100% !important;
+        height: calc(100dvh - 84px) !important;
+        min-height: 0 !important;
+        padding: clamp(18px, 2.2vw, 42px) clamp(18px, 2.9vw, 54px) clamp(20px, 2.2vw, 42px) !important;
+        overflow: hidden !important;
+    }
+
+    #playerModal .player-room-main {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: auto auto auto auto !important;
+        grid-auto-flow: row !important;
+        align-content: start !important;
+        gap: 16px !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        padding-right: 4px !important;
+    }
+
+    #playerModal .player-room-main > .player-screen,
+    #playerModal .player-room-main > .player-caption,
+    #playerModal .player-room-main > .player-info-panel,
+    #playerModal .player-room-main > .player-source-panel {
+        grid-column: 1 !important;
+        grid-row: auto !important;
+        position: relative !important;
+        z-index: auto !important;
+        transform: none !important;
+    }
+
+    #playerModal .player-screen {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: min(55dvh, 620px) !important;
+        aspect-ratio: 16 / 9 !important;
+        overflow: hidden !important;
+        border-radius: 12px !important;
+        background: #000 !important;
+    }
+
+    #playerModal .player-screen > video,
+    #playerModal .player-screen > iframe,
+    #playerModal .player-screen > .embed-launch-panel,
+    #playerModal .player-screen > .player-placeholder {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-height: none !important;
+    }
+
+    #playerModal .player-caption {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 420px) !important;
+        align-items: start !important;
+        gap: 14px !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+
+    #playerModal .player-title-group {
+        display: grid !important;
+        grid-template-columns: auto minmax(0, 1fr) !important;
+        align-items: center !important;
+        gap: 6px 10px !important;
+        min-width: 0 !important;
+    }
+
+    #playerModal .player-title-group .live-badge {
+        grid-row: 1 / span 2 !important;
+        position: static !important;
+        align-self: center !important;
+        max-width: 100% !important;
+        white-space: nowrap !important;
+    }
+
+    #playerModal .player-caption h2 {
+        display: -webkit-box !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 2 !important;
+        overflow-wrap: anywhere !important;
+        white-space: normal !important;
+        font-size: clamp(22px, 1.75vw, 34px) !important;
+        line-height: 1.12 !important;
+        letter-spacing: 0 !important;
+    }
+
+    #playerModal #playerEpisodeSubtitle {
+        display: -webkit-box !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 2 !important;
+        white-space: normal !important;
+        font-size: clamp(12px, 0.86vw, 15px) !important;
+        line-height: 1.35 !important;
+    }
+
+    #playerModal .player-tools {
+        display: grid !important;
+        grid-template-columns: minmax(116px, 1fr) repeat(3, minmax(92px, 1fr)) !important;
+        align-items: end !important;
+        gap: 8px !important;
+        min-width: 0 !important;
+    }
+
+    #playerModal .player-quality select,
+    #playerModal .player-fullscreen,
+    #playerModal .player-embed-open,
+    #playerModal .player-embed-retry {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 42px !important;
+        white-space: nowrap !important;
+    }
+
+    #playerModal #playerMessage {
+        grid-column: 1 / -1 !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        margin: 0 !important;
+        overflow-wrap: anywhere !important;
+        font-size: 13px !important;
+        line-height: 1.4 !important;
+    }
+
+    #playerModal .player-info-panel {
+        display: grid !important;
+        gap: 10px !important;
+        max-width: none !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        border: 0 !important;
+        background: transparent !important;
+    }
+
+    #playerModal .player-info-panel h4,
+    #playerModal #playerSynopsis {
+        margin: 0 !important;
+        overflow-wrap: anywhere !important;
+    }
+
+    #playerModal .player-info-panel h4 {
+        display: -webkit-box !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 2 !important;
+        font-size: clamp(16px, 1.05vw, 20px) !important;
+        line-height: 1.28 !important;
+    }
+
+    #playerModal #playerSynopsis {
+        display: -webkit-box !important;
+        overflow: hidden !important;
+        -webkit-box-orient: vertical !important;
+        -webkit-line-clamp: 3 !important;
+        max-width: 900px !important;
+        font-size: 13px !important;
+        line-height: 1.45 !important;
+    }
+
+    #playerModal .player-info-pills,
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        min-width: 0 !important;
+        margin: 0 !important;
+    }
+
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+    }
+
+    #playerModal .player-primary-actions .button,
+    #playerModal .player-nextprev .button {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        min-height: 42px !important;
+        padding: 0 10px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    #playerModal .player-primary-actions #playerResumeButton {
+        grid-column: auto !important;
+        flex-basis: auto !important;
+    }
+
+    #playerModal .player-source-panel:not([hidden]) {
+        display: grid !important;
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 14px !important;
+        overflow: hidden !important;
+        border-radius: 0 !important;
+    }
+
+    #playerModal .player-source-list {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+        gap: 8px !important;
+    }
+
+    #playerModal .player-source-option {
+        min-height: 72px !important;
+        padding: 9px 10px !important;
+    }
+
+    #playerModal .player-episode-panel {
+        display: grid !important;
+        grid-template-rows: auto minmax(0, 1fr) auto !important;
+        align-self: stretch !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        overflow: hidden !important;
+        border-radius: 12px !important;
+    }
+
+    #playerModal .player-episode-list {
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+    }
+}
+
+@media (min-width: 1181px) and (max-width: 1380px) {
+    #playerModal .player-caption,
+    #playerModal .player-tools,
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    #playerModal .player-title-group,
+    #playerModal #playerMessage {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+@media (min-width: 1600px) {
+    #playerModal .player-screen {
+        max-height: min(52dvh, 620px) !important;
+    }
+}
+
+@media (min-width: 1181px) {
+    #playerModal .player-room-main {
+        --player-screen-height: min(52dvh, 620px);
+        grid-template-rows: var(--player-screen-height) auto auto auto !important;
+    }
+
+    #playerModal .player-screen {
+        height: var(--player-screen-height) !important;
+        min-height: var(--player-screen-height) !important;
+        max-height: var(--player-screen-height) !important;
+        aspect-ratio: auto !important;
+    }
+}
