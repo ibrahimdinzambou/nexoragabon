@@ -1,98 +1,125 @@
+From 39bd7f25feaebf0c7a5b311d9f1bcd6c9ebdced6 Mon Sep 17 00:00:00 2001
+From: ibrahimdinzambou <ibrahimdinzambou@users.noreply.github.com>
+Date: Thu, 30 Jul 2026 22:56:32 +0100
+Subject: [PATCH] Block external Puppeteer redirects
+
+---
+ src/lib/puppeteer.ts | 62 +++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 52 insertions(+), 10 deletions(-)
+
 diff --git a/src/lib/puppeteer.ts b/src/lib/puppeteer.ts
-index 8ad915d..2e8cdee 100644
+index 2e8cdee..c26c40f 100644
 --- a/src/lib/puppeteer.ts
 +++ b/src/lib/puppeteer.ts
-@@ -5,0 +6,26 @@ const BAD_URL_RX = /(doubleclick|googlesyndication|googletagmanager|google-analy
-+const NEXORA_NAVIGATION_HOSTS = ['nexoragabon.com', 'www.nexoragabon.com'] as const;
+@@ -1,4 +1,4 @@
+-import puppeteer, { Browser, Page } from 'puppeteer';
++import puppeteer, { Browser, HTTPRequest, Page } from 'puppeteer';
+ 
+ let browser: Browser | null = null;
+ 
+@@ -15,7 +15,7 @@ function hostnameMatches(hostname: string, allowedHost: string): boolean {
+   return Boolean(allowed && (host === allowed || host.endsWith(`.${allowed}`)));
+ }
+ 
+-function isAllowedTopNavigation(value: string, allowedMainHosts: string[]): boolean {
++function isAllowedNavigation(value: string, allowedMainHosts: string[]): boolean {
+   try {
+     const url = new URL(value);
+     if (!['http:', 'https:'].includes(url.protocol)) return true;
+@@ -83,6 +83,20 @@ export async function preparePage(
+     };
+     // @ts-ignore
+     window.open = () => null; // Bloque les pop-ups
++    document.addEventListener('click', (event) => {
++      const target = event.target as Element | null;
++      const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null;
++      if (!anchor || allowed(anchor.href)) return;
++      event.preventDefault();
++      event.stopImmediatePropagation();
++    }, true);
++    document.addEventListener('submit', (event) => {
++      const form = event.target as HTMLFormElement | null;
++      const action = form?.action || window.location.href;
++      if (allowed(action)) return;
++      event.preventDefault();
++      event.stopImmediatePropagation();
++    }, true);
+     try {
+       const assign = window.location.assign.bind(window.location);
+       const replace = window.location.replace.bind(window.location);
+@@ -116,23 +130,27 @@ export async function preparePage(
+ 
+       // Bloque les pubs et trackers
+       if (BAD_URL_RX.test(url)) {
+-        return req.abort();
++        return abortRequest(req);
+       }
+ 
+       // Bloque les assets si demand?
+       if (opts.blockAssets && ['image', 'font', 'stylesheet'].includes(req.resourceType())) {
+-        return req.abort();
++        return abortRequest(req);
+       }
+ 
+-      // Contr?le les navigations principales
+-      if (req.isNavigationRequest() && req.frame() === page.mainFrame()) {
+-        if (!isAllowedTopNavigation(url, allowedMainHosts)) return req.abort();
++      // Controle toutes les navigations de frames, quel que soit le provider.
++      if (req.isNavigationRequest()) {
++        if (!isAllowedNavigation(url, allowedMainHosts)) return abortRequest(req);
+       }
+ 
+-      req.continue();
++      if (redirectedOutsideAllowedHosts(req, allowedMainHosts)) {
++        return abortRequest(req);
++      }
 +
-+function normalizeHost(value: string): string {
-+  return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-+}
-+
-+function hostnameMatches(hostname: string, allowedHost: string): boolean {
-+  const host = normalizeHost(hostname);
-+  const allowed = normalizeHost(allowedHost);
-+  if (!allowed) return false;
-+  if ((NEXORA_NAVIGATION_HOSTS as readonly string[]).includes(allowed)) {
-+    return host === allowed;
-+  }
-+  return host === allowed || host.endsWith(`.${allowed}`);
-+}
-+
-+function isAllowedTopNavigation(value: string, allowedMainHosts: string[]): boolean {
++      continueRequest(req);
+     } catch {
+       try {
+-        req.continue();
++        continueRequest(req);
+       } catch {}
+     }
+   });
+@@ -150,12 +168,36 @@ export async function preparePage(
+     try {
+       if (frame !== page.mainFrame()) return;
+       const url = frame.url();
+-      if (url === 'about:blank' || isAllowedTopNavigation(url, allowedMainHosts)) return;
++      if (url === 'about:blank' || isAllowedNavigation(url, allowedMainHosts)) return;
+       await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 3000 }).catch(() => {});
+     } catch {}
+   });
+ }
+ 
++function requestAlreadyHandled(req: HTTPRequest): boolean {
 +  try {
-+    const url = new URL(value);
-+    if (!['http:', 'https:'].includes(url.protocol)) return true;
-+    const allowedHosts = [...NEXORA_NAVIGATION_HOSTS, ...allowedMainHosts].map(normalizeHost).filter(Boolean);
-+    return allowedHosts.some((host) => hostnameMatches(url.hostname, host));
++    return req.isInterceptResolutionHandled();
 +  } catch {
 +    return false;
 +  }
 +}
-@@ -45,3 +71,22 @@ export async function preparePage(
--
--  // Anti-détection
--  await page.evaluateOnNewDocument(() => {
-+  const allowedNavigationHosts = [...NEXORA_NAVIGATION_HOSTS, ...allowedMainHosts]
-+    .map(normalizeHost)
-+    .filter(Boolean);
 +
-+  // Anti-detection and top-level redirect guard.
-+  await page.evaluateOnNewDocument((hosts: string[]) => {
-+    const nexoraHosts = new Set(['nexoragabon.com', 'www.nexoragabon.com']);
-+    const allowedHosts = new Set(hosts);
-+    const allowed = (value: unknown) => {
-+      try {
-+        const url = new URL(String(value || ''), window.location.href);
-+        if (!['http:', 'https:'].includes(url.protocol)) return true;
-+        const host = url.hostname.toLowerCase();
-+        return [...allowedHosts].some((entry) => {
-+          if (nexoraHosts.has(entry)) return host === entry;
-+          return host === entry || host.endsWith(`.${entry}`);
-+        });
-+      } catch {
-+        return false;
-+      }
-+    };
-@@ -49,0 +95,20 @@ export async function preparePage(
-+    try {
-+      const assign = window.location.assign.bind(window.location);
-+      const replace = window.location.replace.bind(window.location);
-+      window.location.assign = (url: string | URL) => {
-+        if (allowed(url)) assign(url);
-+      };
-+      window.location.replace = (url: string | URL) => {
-+        if (allowed(url)) replace(url);
-+      };
-+    } catch {}
-+    try {
-+      const pushState = history.pushState.bind(history);
-+      const replaceState = history.replaceState.bind(history);
-+      history.pushState = (state: unknown, unused: string, url?: string | URL | null) => (
-+        !url || allowed(url) ? pushState(state, unused, url) : undefined
-+      );
-+      history.replaceState = (state: unknown, unused: string, url?: string | URL | null) => (
-+        !url || allowed(url) ? replaceState(state, unused, url) : undefined
-+      );
-+    } catch {}
-@@ -53 +118 @@ export async function preparePage(
--  });
-+  }, allowedNavigationHosts);
-@@ -73,6 +138 @@ export async function preparePage(
--        try {
--          const host = new URL(url).hostname;
--          if (allowedMainHosts.length && !allowedMainHosts.some((h) => host.includes(h))) {
--            return req.abort();
--          }
--        } catch {}
-+        if (!isAllowedTopNavigation(url, allowedMainHosts)) return req.abort();
-@@ -96,0 +157,9 @@ export async function preparePage(
++function abortRequest(req: HTTPRequest): void {
++  if (requestAlreadyHandled(req)) return;
++  void req.abort('blockedbyclient').catch(() => {});
++}
 +
-+  page.on('framenavigated', async (frame) => {
-+    try {
-+      if (frame !== page.mainFrame()) return;
-+      const url = frame.url();
-+      if (url === 'about:blank' || isAllowedTopNavigation(url, allowedMainHosts)) return;
-+      await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 3000 }).catch(() => {});
-+    } catch {}
-+  });
++function continueRequest(req: HTTPRequest): void {
++  if (requestAlreadyHandled(req)) return;
++  void req.continue().catch(() => {});
++}
++
++function redirectedOutsideAllowedHosts(req: HTTPRequest, allowedMainHosts: string[]): boolean {
++  const redirectChain = req.redirectChain();
++  if (!redirectChain.length) return false;
++  return !isAllowedNavigation(req.url(), allowedMainHosts);
++}
++
+ export function attachCollector(page: Page) {
+   const store = {
+     embeds: new Set<string>(),
+-- 
+2.54.0.windows.1
+

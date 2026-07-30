@@ -1,0 +1,415 @@
+diff --git a/src/app/api/streams/route.ts b/src/app/api/streams/route.ts
+new file mode 100644
+index 0000000..e8d53c5
+--- /dev/null
++++ b/src/app/api/streams/route.ts
+@@ -0,0 +1,228 @@
++import { NextRequest } from 'next/server';
++import { getMovieSources } from '@/lib/scraper';
++import { getAetherMovieSource } from '@/lib/scraper-aether';
++import { getSeriesSource } from '@/lib/scraper-series';
++import { getTmdbEmbedSource } from '@/lib/scraper-tmdbembed';
++import { corsJson, corsOptions } from '@/lib/cors';
++
++const PROVIDER_TIMEOUT_MS = Number(process.env.STREAMS_PROVIDER_TIMEOUT_MS || 28_000);
++
++type MediaType = 'movie' | 'series';
++type Provider = 'orion' | 'aether' | 'tmdbembed';
++type SourceResponse = {
++  ok?: boolean;
++  erreur?: string;
++  titre?: string;
++  provider?: string;
++  hosters?: Hoster[];
++  requiresLanguageConfirmation?: boolean;
++  languageWarning?: string;
++};
++type Hoster = {
++  nom?: string;
++  name?: string;
++  label?: string;
++  lang?: string;
++  language?: string;
++  quality?: string | null;
++  source?: string;
++  provider?: string;
++  upstreamProvider?: string;
++  embedUrl?: string | null;
++  directUrl?: string | null;
++  m3u8?: string | null;
++  proxyM3U8?: string | null;
++  proxyM3u8?: string | null;
++  proxyTS?: string | null;
++  subtitles?: unknown;
++  languageTrust?: string;
++  canSelectFrenchAudio?: boolean;
++  canSelectFrenchSubtitles?: boolean;
++  preferredAudioLanguage?: string | null;
++  preferredSubtitleLanguage?: string | null;
++};
++
++export function OPTIONS() {
++  return corsOptions();
++}
++
++function normalizeMediaType(value: string | null): MediaType {
++  const mediaType = String(value || '').toLowerCase();
++  return ['series', 'serie', 'tv', 'show'].includes(mediaType) ? 'series' : 'movie';
++}
++
++function movieProviders(provider: string | null): Provider[] {
++  const selected = String(provider || 'all').toLowerCase();
++  if (selected === 'all' || selected === 'auto') return ['orion', 'aether', 'tmdbembed'];
++  if (selected === 'french-stream' || selected === 'frenchstream') return ['orion'];
++  if (['orion', 'aether', 'tmdbembed'].includes(selected)) return [selected as Provider];
++  return ['orion'];
++}
++
++function seriesProviders(provider: string | null): Provider[] {
++  const selected = String(provider || 'all').toLowerCase();
++  if (selected === 'all' || selected === 'auto') return ['orion', 'tmdbembed'];
++  if (selected === 'french-stream' || selected === 'frenchstream') return ['orion'];
++  if (selected === 'tmdbembed' || selected === 'orion') return [selected as Provider];
++  return ['orion'];
++}
++
++function withTimeout<T>(label: string, promise: Promise<T>): Promise<T | SourceResponse> {
++  return Promise.race([
++    promise,
++    new Promise<SourceResponse>((resolve) => {
++      setTimeout(() => {
++        resolve({
++          ok: false,
++          provider: label,
++          erreur: `Provider ${label} trop lent`,
++        });
++      }, PROVIDER_TIMEOUT_MS);
++    }),
++  ]);
++}
++
++async function loadMovieProvider(tmdbId: string, provider: Provider, allowNonFrench: boolean) {
++  if (provider === 'aether') return getAetherMovieSource(tmdbId);
++  if (provider === 'tmdbembed') {
++    return getTmdbEmbedSource(tmdbId, 'movie', undefined, undefined, { allowNonFrench });
++  }
++  const data = await getMovieSources(tmdbId);
++  return { ...data, provider: 'orion' };
++}
++
++async function loadSeriesProvider(
++  tmdbId: string,
++  season: number,
++  episode: number,
++  provider: Provider,
++  allowNonFrench: boolean
++) {
++  if (provider === 'tmdbembed') {
++    return getTmdbEmbedSource(tmdbId, 'series', season, episode, { allowNonFrench });
++  }
++  const data = await getSeriesSource(tmdbId, season, episode);
++  return { ...data, provider: 'orion' };
++}
++
++function sourceUrl(hoster: Hoster) {
++  return [
++    hoster.proxyM3U8,
++    hoster.proxyM3u8,
++    hoster.m3u8,
++    hoster.directUrl,
++    hoster.embedUrl,
++  ].find((value) => typeof value === 'string' && value.trim()) || null;
++}
++
++function normalizeHoster(hoster: Hoster, provider: string, index: number) {
++  const url = sourceUrl(hoster);
++  return {
++    id: `${provider}-${index}`,
++    title: hoster.nom || hoster.name || hoster.label || provider,
++    name: hoster.nom || hoster.name || hoster.label || provider,
++    provider,
++    source: hoster.source || provider,
++    upstreamProvider: hoster.upstreamProvider,
++    lang: hoster.lang || hoster.language || null,
++    language: hoster.language || hoster.lang || null,
++    quality: hoster.quality || null,
++    url,
++    streamUrl: url,
++    playbackUrl: url,
++    embedUrl: hoster.embedUrl || null,
++    directUrl: hoster.directUrl || null,
++    m3u8: hoster.m3u8 || null,
++    proxyM3U8: hoster.proxyM3U8 || hoster.proxyM3u8 || null,
++    proxyTS: hoster.proxyTS || null,
++    subtitles: hoster.subtitles || [],
++    languageTrust: hoster.languageTrust,
++    canSelectFrenchAudio: Boolean(hoster.canSelectFrenchAudio),
++    canSelectFrenchSubtitles: Boolean(hoster.canSelectFrenchSubtitles),
++    preferredAudioLanguage: hoster.preferredAudioLanguage || null,
++    preferredSubtitleLanguage: hoster.preferredSubtitleLanguage || null,
++  };
++}
++
++function mergeSources(responses: SourceResponse[]) {
++  const errors: string[] = [];
++  const hosters: Hoster[] = [];
++  responses.forEach((response) => {
++    const provider = response.provider || 'node';
++    if (!response.ok) {
++      if (response.erreur) errors.push(`${provider}: ${response.erreur}`);
++      return;
++    }
++    (response.hosters || []).forEach((hoster) => {
++      hosters.push({ ...hoster, provider: hoster.provider || provider });
++    });
++  });
++
++  const streams = hosters
++    .map((hoster, index) => normalizeHoster(hoster, hoster.provider || hoster.source || 'node', index))
++    .filter((stream) => stream.url);
++
++  return { hosters, streams, errors };
++}
++
++export async function GET(request: NextRequest) {
++  const searchParams = request.nextUrl.searchParams;
++  const tmdbId = searchParams.get('tmdbId') || searchParams.get('id');
++  const mediaType = normalizeMediaType(searchParams.get('mediaType') || searchParams.get('type'));
++  const provider = searchParams.get('provider');
++  const allowNonFrench = ['1', 'true', 'yes'].includes(String(searchParams.get('allowNonFrench') || '').toLowerCase());
++  const season = Number(searchParams.get('season') || searchParams.get('saison') || 1);
++  const episode = Number(searchParams.get('episode') || 1);
++
++  if (!tmdbId) {
++    return corsJson({ ok: false, success: false, error: 'tmdbId requis', streams: [] }, { status: 400 });
++  }
++
++  try {
++    const providers = mediaType === 'series' ? seriesProviders(provider) : movieProviders(provider);
++    const results = await Promise.all(providers.map(async (current) => {
++      try {
++        const data = mediaType === 'series'
++          ? await withTimeout(current, loadSeriesProvider(tmdbId, season, episode, current, allowNonFrench))
++          : await withTimeout(current, loadMovieProvider(tmdbId, current, allowNonFrench));
++        return { ...(data as SourceResponse), provider: (data as SourceResponse).provider || current };
++      } catch (error: any) {
++        return { ok: false, provider: current, erreur: error?.message || 'erreur inconnue' };
++      }
++    }));
++    const { hosters, streams, errors } = mergeSources(results);
++    const ok = streams.length > 0;
++
++    return corsJson({
++      ok,
++      success: ok,
++      tmdbId,
++      mediaType,
++      type: mediaType,
++      provider: provider || 'all',
++      count: streams.length,
++      errors,
++      hosters,
++      streams,
++      sources: streams,
++      players: streams,
++      nodeSources: streams,
++      nodeStreams: streams,
++      frenchNexoraSources: streams,
++      frenchNexoraStreams: streams,
++      error: ok ? undefined : errors.join(' ; ') || 'Aucune source trouvee',
++    }, { status: ok ? 200 : 404 });
++  } catch (error: any) {
++    return corsJson({
++      ok: false,
++      success: false,
++      tmdbId,
++      mediaType,
++      provider: provider || 'all',
++      streams: [],
++      sources: [],
++      players: [],
++      error: error?.message || 'Erreur API streams',
++    }, { status: 500 });
++  }
++}
+diff --git a/src/lib/puppeteer.ts b/src/lib/puppeteer.ts
+index 8ad915d..ce2a47d 100644
+--- a/src/lib/puppeteer.ts
++++ b/src/lib/puppeteer.ts
+@@ -1,8 +1,34 @@
+-import puppeteer, { Browser, Page } from 'puppeteer';
++import puppeteer, { Browser, HTTPRequest, Page } from 'puppeteer';
+ 
+ let browser: Browser | null = null;
+ 
+ const BAD_URL_RX = /(doubleclick|googlesyndication|googletagmanager|google-analytics|facebook|fbcdn|disqus|popads|popcash|exoclick|adnxs|mgid|taboola|outbrain|adsterra|hilltopads|trafficjunky|propellerads|analytics|tracking|ads|advertisement)/i;
++const NEXORA_NAVIGATION_HOSTS = ['nexoragabon.com', 'www.nexoragabon.com'] as const;
++
++function normalizeHost(value: string): string {
++  return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
++}
++
++function hostnameMatches(hostname: string, allowedHost: string): boolean {
++  const host = normalizeHost(hostname);
++  const allowed = normalizeHost(allowedHost);
++  if (!allowed) return false;
++  if ((NEXORA_NAVIGATION_HOSTS as readonly string[]).includes(allowed)) {
++    return host === allowed;
++  }
++  return host === allowed || host.endsWith(`.${allowed}`);
++}
++
++function isAllowedNavigation(value: string, allowedMainHosts: string[]): boolean {
++  try {
++    const url = new URL(value);
++    if (!['http:', 'https:'].includes(url.protocol)) return true;
++    const allowedHosts = [...NEXORA_NAVIGATION_HOSTS, ...allowedMainHosts].map(normalizeHost).filter(Boolean);
++    return allowedHosts.some((host) => hostnameMatches(url.hostname, host));
++  } catch {
++    return false;
++  }
++}
+ 
+ export async function getBrowser(): Promise<Browser> {
+   if (!browser) {
+@@ -42,15 +68,67 @@ export async function preparePage(
+   }
+ 
+   await page.setExtraHTTPHeaders(headers);
++  const allowedNavigationHosts = [...NEXORA_NAVIGATION_HOSTS, ...allowedMainHosts]
++    .map(normalizeHost)
++    .filter(Boolean);
+ 
+-  // Anti-détection
+-  await page.evaluateOnNewDocument(() => {
++  // Anti-detection and top-level redirect guard.
++  await page.evaluateOnNewDocument((hosts: string[]) => {
++    const nexoraHosts = new Set(['nexoragabon.com', 'www.nexoragabon.com']);
++    const allowedHosts = new Set(hosts);
++    const allowed = (value: unknown) => {
++      try {
++        const url = new URL(String(value || ''), window.location.href);
++        if (!['http:', 'https:'].includes(url.protocol)) return true;
++        const host = url.hostname.toLowerCase();
++        return [...allowedHosts].some((entry) => {
++          if (nexoraHosts.has(entry)) return host === entry;
++          return host === entry || host.endsWith(`.${entry}`);
++        });
++      } catch {
++        return false;
++      }
++    };
+     // @ts-ignore
+     window.open = () => null; // Bloque les pop-ups
++    document.addEventListener('click', (event) => {
++      const target = event.target as Element | null;
++      const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null;
++      if (!anchor || allowed(anchor.href)) return;
++      event.preventDefault();
++      event.stopImmediatePropagation();
++    }, true);
++    document.addEventListener('submit', (event) => {
++      const form = event.target as HTMLFormElement | null;
++      const action = form?.action || window.location.href;
++      if (allowed(action)) return;
++      event.preventDefault();
++      event.stopImmediatePropagation();
++    }, true);
++    try {
++      const assign = window.location.assign.bind(window.location);
++      const replace = window.location.replace.bind(window.location);
++      window.location.assign = (url: string | URL) => {
++        if (allowed(url)) assign(url);
++      };
++      window.location.replace = (url: string | URL) => {
++        if (allowed(url)) replace(url);
++      };
++    } catch {}
++    try {
++      const pushState = history.pushState.bind(history);
++      const replaceState = history.replaceState.bind(history);
++      history.pushState = (state: unknown, unused: string, url?: string | URL | null) => (
++        !url || allowed(url) ? pushState(state, unused, url) : undefined
++      );
++      history.replaceState = (state: unknown, unused: string, url?: string | URL | null) => (
++        !url || allowed(url) ? replaceState(state, unused, url) : undefined
++      );
++    } catch {}
+     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+     Object.defineProperty(navigator, 'languages', { get: () => ['fr-FR', 'fr'] });
+     Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+-  });
++  }, allowedNavigationHosts);
+ 
+   await page.setRequestInterception(true);
+ 
+@@ -60,28 +138,23 @@ export async function preparePage(
+ 
+       // Bloque les pubs et trackers
+       if (BAD_URL_RX.test(url)) {
+-        return req.abort();
++        return abortRequest(req);
+       }
+ 
+       // Bloque les assets si demandé
+       if (opts.blockAssets && ['image', 'font', 'stylesheet'].includes(req.resourceType())) {
+-        return req.abort();
++        return abortRequest(req);
+       }
+ 
+-      // Contrôle les navigations principales
+-      if (req.isNavigationRequest() && req.frame() === page.mainFrame()) {
+-        try {
+-          const host = new URL(url).hostname;
+-          if (allowedMainHosts.length && !allowedMainHosts.some((h) => host.includes(h))) {
+-            return req.abort();
+-          }
+-        } catch {}
++      // Bloque toute navigation de page hors Nexora/domaines explicitement autorises.
++      if (req.isNavigationRequest() && req.resourceType() === 'document') {
++        if (!isAllowedNavigation(url, allowedMainHosts)) return abortRequest(req);
+       }
+ 
+-      req.continue();
++      continueRequest(req);
+     } catch {
+       try {
+-        req.continue();
++        continueRequest(req);
+       } catch {}
+     }
+   });
+@@ -94,6 +167,33 @@ export async function preparePage(
+       }
+     } catch {}
+   });
++
++  page.on('framenavigated', async (frame) => {
++    try {
++      if (frame !== page.mainFrame()) return;
++      const url = frame.url();
++      if (url === 'about:blank' || isAllowedNavigation(url, allowedMainHosts)) return;
++      await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 3000 }).catch(() => {});
++    } catch {}
++  });
++}
++
++function requestAlreadyHandled(req: HTTPRequest): boolean {
++  try {
++    return req.isInterceptResolutionHandled();
++  } catch {
++    return false;
++  }
++}
++
++function abortRequest(req: HTTPRequest): void {
++  if (requestAlreadyHandled(req)) return;
++  void req.abort('blockedbyclient').catch(() => {});
++}
++
++function continueRequest(req: HTTPRequest): void {
++  if (requestAlreadyHandled(req)) return;
++  void req.continue().catch(() => {});
+ }
+ 
+ export function attachCollector(page: Page) {
