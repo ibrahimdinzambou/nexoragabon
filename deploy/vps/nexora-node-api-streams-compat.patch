@@ -1,0 +1,244 @@
+From 9e6dc78e1e153826407d9589eb6714927aaf7bf4 Mon Sep 17 00:00:00 2001
+From: ibrahimdinzambou <ibrahimdinzambou@users.noreply.github.com>
+Date: Thu, 30 Jul 2026 20:25:59 +0100
+Subject: [PATCH] Add streams compatibility endpoint
+
+---
+ src/app/api/streams/route.ts | 228 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 228 insertions(+)
+ create mode 100644 src/app/api/streams/route.ts
+
+diff --git a/src/app/api/streams/route.ts b/src/app/api/streams/route.ts
+new file mode 100644
+index 0000000..e8d53c5
+--- /dev/null
++++ b/src/app/api/streams/route.ts
+@@ -0,0 +1,228 @@
++import { NextRequest } from 'next/server';
++import { getMovieSources } from '@/lib/scraper';
++import { getAetherMovieSource } from '@/lib/scraper-aether';
++import { getSeriesSource } from '@/lib/scraper-series';
++import { getTmdbEmbedSource } from '@/lib/scraper-tmdbembed';
++import { corsJson, corsOptions } from '@/lib/cors';
++
++const PROVIDER_TIMEOUT_MS = Number(process.env.STREAMS_PROVIDER_TIMEOUT_MS || 28_000);
++
++type MediaType = 'movie' | 'series';
++type Provider = 'orion' | 'aether' | 'tmdbembed';
++type SourceResponse = {
++  ok?: boolean;
++  erreur?: string;
++  titre?: string;
++  provider?: string;
++  hosters?: Hoster[];
++  requiresLanguageConfirmation?: boolean;
++  languageWarning?: string;
++};
++type Hoster = {
++  nom?: string;
++  name?: string;
++  label?: string;
++  lang?: string;
++  language?: string;
++  quality?: string | null;
++  source?: string;
++  provider?: string;
++  upstreamProvider?: string;
++  embedUrl?: string | null;
++  directUrl?: string | null;
++  m3u8?: string | null;
++  proxyM3U8?: string | null;
++  proxyM3u8?: string | null;
++  proxyTS?: string | null;
++  subtitles?: unknown;
++  languageTrust?: string;
++  canSelectFrenchAudio?: boolean;
++  canSelectFrenchSubtitles?: boolean;
++  preferredAudioLanguage?: string | null;
++  preferredSubtitleLanguage?: string | null;
++};
++
++export function OPTIONS() {
++  return corsOptions();
++}
++
++function normalizeMediaType(value: string | null): MediaType {
++  const mediaType = String(value || '').toLowerCase();
++  return ['series', 'serie', 'tv', 'show'].includes(mediaType) ? 'series' : 'movie';
++}
++
++function movieProviders(provider: string | null): Provider[] {
++  const selected = String(provider || 'all').toLowerCase();
++  if (selected === 'all' || selected === 'auto') return ['orion', 'aether', 'tmdbembed'];
++  if (selected === 'french-stream' || selected === 'frenchstream') return ['orion'];
++  if (['orion', 'aether', 'tmdbembed'].includes(selected)) return [selected as Provider];
++  return ['orion'];
++}
++
++function seriesProviders(provider: string | null): Provider[] {
++  const selected = String(provider || 'all').toLowerCase();
++  if (selected === 'all' || selected === 'auto') return ['orion', 'tmdbembed'];
++  if (selected === 'french-stream' || selected === 'frenchstream') return ['orion'];
++  if (selected === 'tmdbembed' || selected === 'orion') return [selected as Provider];
++  return ['orion'];
++}
++
++function withTimeout<T>(label: string, promise: Promise<T>): Promise<T | SourceResponse> {
++  return Promise.race([
++    promise,
++    new Promise<SourceResponse>((resolve) => {
++      setTimeout(() => {
++        resolve({
++          ok: false,
++          provider: label,
++          erreur: `Provider ${label} trop lent`,
++        });
++      }, PROVIDER_TIMEOUT_MS);
++    }),
++  ]);
++}
++
++async function loadMovieProvider(tmdbId: string, provider: Provider, allowNonFrench: boolean) {
++  if (provider === 'aether') return getAetherMovieSource(tmdbId);
++  if (provider === 'tmdbembed') {
++    return getTmdbEmbedSource(tmdbId, 'movie', undefined, undefined, { allowNonFrench });
++  }
++  const data = await getMovieSources(tmdbId);
++  return { ...data, provider: 'orion' };
++}
++
++async function loadSeriesProvider(
++  tmdbId: string,
++  season: number,
++  episode: number,
++  provider: Provider,
++  allowNonFrench: boolean
++) {
++  if (provider === 'tmdbembed') {
++    return getTmdbEmbedSource(tmdbId, 'series', season, episode, { allowNonFrench });
++  }
++  const data = await getSeriesSource(tmdbId, season, episode);
++  return { ...data, provider: 'orion' };
++}
++
++function sourceUrl(hoster: Hoster) {
++  return [
++    hoster.proxyM3U8,
++    hoster.proxyM3u8,
++    hoster.m3u8,
++    hoster.directUrl,
++    hoster.embedUrl,
++  ].find((value) => typeof value === 'string' && value.trim()) || null;
++}
++
++function normalizeHoster(hoster: Hoster, provider: string, index: number) {
++  const url = sourceUrl(hoster);
++  return {
++    id: `${provider}-${index}`,
++    title: hoster.nom || hoster.name || hoster.label || provider,
++    name: hoster.nom || hoster.name || hoster.label || provider,
++    provider,
++    source: hoster.source || provider,
++    upstreamProvider: hoster.upstreamProvider,
++    lang: hoster.lang || hoster.language || null,
++    language: hoster.language || hoster.lang || null,
++    quality: hoster.quality || null,
++    url,
++    streamUrl: url,
++    playbackUrl: url,
++    embedUrl: hoster.embedUrl || null,
++    directUrl: hoster.directUrl || null,
++    m3u8: hoster.m3u8 || null,
++    proxyM3U8: hoster.proxyM3U8 || hoster.proxyM3u8 || null,
++    proxyTS: hoster.proxyTS || null,
++    subtitles: hoster.subtitles || [],
++    languageTrust: hoster.languageTrust,
++    canSelectFrenchAudio: Boolean(hoster.canSelectFrenchAudio),
++    canSelectFrenchSubtitles: Boolean(hoster.canSelectFrenchSubtitles),
++    preferredAudioLanguage: hoster.preferredAudioLanguage || null,
++    preferredSubtitleLanguage: hoster.preferredSubtitleLanguage || null,
++  };
++}
++
++function mergeSources(responses: SourceResponse[]) {
++  const errors: string[] = [];
++  const hosters: Hoster[] = [];
++  responses.forEach((response) => {
++    const provider = response.provider || 'node';
++    if (!response.ok) {
++      if (response.erreur) errors.push(`${provider}: ${response.erreur}`);
++      return;
++    }
++    (response.hosters || []).forEach((hoster) => {
++      hosters.push({ ...hoster, provider: hoster.provider || provider });
++    });
++  });
++
++  const streams = hosters
++    .map((hoster, index) => normalizeHoster(hoster, hoster.provider || hoster.source || 'node', index))
++    .filter((stream) => stream.url);
++
++  return { hosters, streams, errors };
++}
++
++export async function GET(request: NextRequest) {
++  const searchParams = request.nextUrl.searchParams;
++  const tmdbId = searchParams.get('tmdbId') || searchParams.get('id');
++  const mediaType = normalizeMediaType(searchParams.get('mediaType') || searchParams.get('type'));
++  const provider = searchParams.get('provider');
++  const allowNonFrench = ['1', 'true', 'yes'].includes(String(searchParams.get('allowNonFrench') || '').toLowerCase());
++  const season = Number(searchParams.get('season') || searchParams.get('saison') || 1);
++  const episode = Number(searchParams.get('episode') || 1);
++
++  if (!tmdbId) {
++    return corsJson({ ok: false, success: false, error: 'tmdbId requis', streams: [] }, { status: 400 });
++  }
++
++  try {
++    const providers = mediaType === 'series' ? seriesProviders(provider) : movieProviders(provider);
++    const results = await Promise.all(providers.map(async (current) => {
++      try {
++        const data = mediaType === 'series'
++          ? await withTimeout(current, loadSeriesProvider(tmdbId, season, episode, current, allowNonFrench))
++          : await withTimeout(current, loadMovieProvider(tmdbId, current, allowNonFrench));
++        return { ...(data as SourceResponse), provider: (data as SourceResponse).provider || current };
++      } catch (error: any) {
++        return { ok: false, provider: current, erreur: error?.message || 'erreur inconnue' };
++      }
++    }));
++    const { hosters, streams, errors } = mergeSources(results);
++    const ok = streams.length > 0;
++
++    return corsJson({
++      ok,
++      success: ok,
++      tmdbId,
++      mediaType,
++      type: mediaType,
++      provider: provider || 'all',
++      count: streams.length,
++      errors,
++      hosters,
++      streams,
++      sources: streams,
++      players: streams,
++      nodeSources: streams,
++      nodeStreams: streams,
++      frenchNexoraSources: streams,
++      frenchNexoraStreams: streams,
++      error: ok ? undefined : errors.join(' ; ') || 'Aucune source trouvee',
++    }, { status: ok ? 200 : 404 });
++  } catch (error: any) {
++    return corsJson({
++      ok: false,
++      success: false,
++      tmdbId,
++      mediaType,
++      provider: provider || 'all',
++      streams: [],
++      sources: [],
++      players: [],
++      error: error?.message || 'Erreur API streams',
++    }, { status: 500 });
++  }
++}
