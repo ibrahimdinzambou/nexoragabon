@@ -49,6 +49,7 @@ public class IptvCatalogService {
     );
     private static final int MAX_BACKGROUND_CATALOG_REFRESHES = 2;
     private static final int MAX_BOOTSTRAP_CATALOG_LOADS = 8;
+    private static final int CATALOG_LOAD_FAILURE_DISABLE_THRESHOLD = 3;
     private static final String CACHED_ONLY_STREAM_UNAVAILABLE_REASON =
             "Ce contenu est visible dans le catalogue cache, mais aucun compte IPTV actif ne possede ce flux.";
     private static final Set<String> BLOCKING_HEALTH_STATUSES = Set.of(
@@ -1410,11 +1411,24 @@ public class IptvCatalogService {
         if (account == null || ARCHIVED_BY_ADMIN.equals(account.disabledReason)) {
             return;
         }
+        account.failureCount += 1;
+        account.lastHealthStatus = status;
+        if (account.failureCount < CATALOG_LOAD_FAILURE_DISABLE_THRESHOLD) {
+            accounts.save(account);
+            LOGGER.warn(
+                    "Chargement catalogue IPTV en echec ({}/{}), compte laisse actif: id={}, nom={}, status={}, raison={}",
+                    account.failureCount,
+                    CATALOG_LOAD_FAILURE_DISABLE_THRESHOLD,
+                    account.id,
+                    account.name,
+                    status,
+                    reason
+            );
+            return;
+        }
         account.active = false;
         account.disabled = true;
         account.activeStreams = 0;
-        account.failureCount += 1;
-        account.lastHealthStatus = status;
         account.disabledReason = "catalog-load:" + (reason == null || reason.isBlank()
                 ? status
                 : reason.strip().substring(0, Math.min(160, reason.strip().length())));

@@ -6,6 +6,7 @@ Cette configuration deploie les services suivants sur le meme VPS:
 - `nexora-drama`: API Python ReelShort/Drama, port local `5000`.
 - `content-nexora`: API Python et lecteur web Content-Nexora, port local `8787`, expose sous `content.nexoragabon.com`.
 - `nexora-anime`: API Python Anime-Sama, port local `5001`, relayee par Spring sous `/api/external/anime`.
+- `frenchnexora-api` (optionnel): API Next.js/Puppeteer French Nexora API Node, port local `3100`, source de flux complementaire de Content-Nexora (voir section 2b).
 
 Nginx expose le site et l'API en HTTPS, puis Spring appelle l'API drama en interne avec:
 
@@ -17,7 +18,16 @@ Ajoute aussi un enregistrement DNS `content.nexoragabon.com` vers le VPS : le le
 
 ## 0. Supprimer les anciennes APIs Node FR
 
-À exécuter une seule fois sur le VPS avant d'activer Content-Nexora. Les chemins sont ceux de l'ancien déploiement :
+À exécuter une seule fois sur le VPS avant d'activer Content-Nexora, uniquement
+si d'anciens services Node FR abandonnés tournent encore (déploiement jamais
+mis à jour). Si vous voulez au contraire réactiver `nexora-node-api` comme
+source complémentaire de Content-Nexora, allez directement à la section 2b —
+ce nettoyage n'est pas un prérequis pour ça.
+
+**Attention** : `frenchnexora-api` et `/opt/nexora/node-api` sont les mêmes noms
+que ceux (ré)installés en section 2b. Ne relancez pas ce script après avoir
+installé la section 2b, sinon il supprime le service et le dépôt que vous venez
+d'installer. Les chemins ci-dessous sont ceux de l'ancien déploiement :
 
 ```bash
 for service in frenchnexora-api frenchnexora-fallback node-fr node-api french-providers orion; do
@@ -94,6 +104,38 @@ python3 -m venv .venv
 pip install -r requirements.txt
 ```
 
+## 2b. (Optionnel) French Nexora API Node
+
+Source complémentaire de Content-Nexora (scraping via navigateur headless
+Puppeteer, avec blocage des popups/redirections publicitaires et capture
+réseau des flux `.m3u8`). Désactivé par défaut: Content-Nexora fonctionne
+sans cette étape. À installer seulement si vous voulez ajouter cette source.
+
+Prérequis Node.js et Chromium (une fois par serveur):
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs chromium
+```
+
+Installer le service:
+
+```bash
+git clone https://github.com/Dinzambou241/nexora-node-api.git /opt/nexora/node-api
+cd /opt/nexora/node-api
+npm ci
+npm run build
+```
+
+Puis regler dans `/opt/nexora/app/.env`:
+
+```env
+FRENCH_NEXORA_API_BASE_URL=http://127.0.0.1:3100
+```
+
+Sans cette variable (ou si elle est vide), Content-Nexora ignore silencieusement
+cette source complementaire — aucun impact sur le reste du site.
+
 Donner ensuite le dossier a l'utilisateur de service:
 
 ```bash
@@ -117,6 +159,8 @@ ANIME_NEXORA_BASE_URL=http://127.0.0.1:5001
 ANIME_SOURCE_MODE=anime-nexora
 ANIME_NEXORA_INTERNAL_BASE_URL=http://127.0.0.1:5001
 CONTENT_NEXORA_INTERNAL_BASE_URL=http://127.0.0.1:8787
+# Optionnel, seulement si la section 2b a ete installee:
+# FRENCH_NEXORA_API_BASE_URL=http://127.0.0.1:3100
 ```
 
 Si tu utilises PostgreSQL:
@@ -144,6 +188,14 @@ sudo systemctl enable --now content-nexora
 sudo systemctl enable --now nexora-anime
 ```
 
+Si la section 2b a ete installee:
+
+```bash
+sudo cp /opt/nexora/app/deploy/vps/systemd/frenchnexora-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now frenchnexora-api
+```
+
 Verifier:
 
 ```bash
@@ -155,6 +207,9 @@ curl http://127.0.0.1:8080/actuator/health
 curl http://127.0.0.1:8080/api/dramas/bookshelves?lang=fr
 curl http://127.0.0.1:8787/api/health
 curl http://127.0.0.1:5001/health
+# Si la section 2b a ete installee:
+curl http://127.0.0.1:3100/api/health
+curl "http://127.0.0.1:3100/api/streams?tmdbId=936075&mediaType=movie&provider=all"
 ```
 
 ## 5. Installer Nginx
@@ -252,6 +307,13 @@ sudo nginx -t
 sudo systemctl reload nginx
 sudo systemctl restart nexora-drama nexora-api content-nexora
 sudo systemctl restart nexora-anime
+
+# Si la section 2b a ete installee:
+sudo -u nexora git -C /opt/nexora/node-api pull --ff-only origin main
+sudo -u nexora bash -c 'cd /opt/nexora/node-api && npm ci && npm run build'
+sudo cp /opt/nexora/app/deploy/vps/systemd/frenchnexora-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart frenchnexora-api
 ```
 
 Les routes `/api/**` laissent Spring Security gérer CORS, y compris les requêtes

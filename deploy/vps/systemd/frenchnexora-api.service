@@ -1,0 +1,21 @@
+[Unit]
+Description=Nexora French Nexora API Node (Next.js/Puppeteer, complementaire de Content-Nexora)
+After=network.target
+
+[Service]
+Type=simple
+User=nexora
+WorkingDirectory=/opt/nexora/node-api
+EnvironmentFile=-/opt/nexora/app/.env
+Environment=NODE_ENV=production
+Environment=PORT=3100
+Environment=PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+Environment=PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

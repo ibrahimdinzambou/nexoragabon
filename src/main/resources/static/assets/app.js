@@ -7063,7 +7063,10 @@ async function contentNexoraSeriesInfo(item) {
         timeoutMs: matchedUrl ? EXTERNAL_API_TIMEOUT_MS : 12000
     });
     const content = contentNexoraPayloadContent(payload);
-    const match = contentNexoraPayloadMatch(payload);
+    const match = contentNexoraPayloadMatch(payload) || {
+        title: matchedTitle || item.originalTitle || query,
+        url: matchedUrl || content?.url || ""
+    };
     assertContentNexoraSeriesIdentity(item, match, content);
     const initialSeasons = Array.isArray(content?.seasons) ? content.seasons : [];
     const remoteSeasons = await hydrateContentNexoraSeasons(initialSeasons);
@@ -9008,7 +9011,6 @@ function unlockEmbedShield(milliseconds = EMBED_PLAYER_UNLOCK_MS) {
     elements.playerMessage.textContent = "Interaction avec le lecteur autorisee quelques secondes.";
     state.embedShieldTimer = window.setTimeout(() => {
         lockEmbedShield();
-        elements.playerMessage.textContent = "Protection anti-redirection reactivee.";
     }, milliseconds);
 }
 
