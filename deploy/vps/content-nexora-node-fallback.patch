@@ -103,7 +103,7 @@ diff --git a/src/autoflix_api/node_providers.py b/src/autoflix_api/node_provider
 index 7c9b5f1..9a372a2 100644
 --- a/src/autoflix_api/node_providers.py
 +++ b/src/autoflix_api/node_providers.py
-@@ -11,5 +11,14 @@ def base_url() -> str:
+@@ -11,6 +11,15 @@ def base_url() -> str:
      return os.getenv("FRENCH_NEXORA_API_BASE_URL", "").strip().rstrip("/")
  
  
