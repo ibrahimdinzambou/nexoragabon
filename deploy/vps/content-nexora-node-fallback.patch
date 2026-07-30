@@ -1,0 +1,133 @@
+diff --git a/src/autoflix_api/app.py b/src/autoflix_api/app.py
+index c60d229..f3c8f1a 100644
+--- a/src/autoflix_api/app.py
++++ b/src/autoflix_api/app.py
+@@ -501,6 +501,51 @@ def _merge_node_sources(content: dict[str, Any]) -> dict[str, Any]:
+     content["streamAvailable"] = True
+     return content
+ 
++
++def _node_only_content(provider_name: str) -> dict[str, Any]:
++    """Return Node streams even when the Python provider search misses the title."""
++    tmdb_id = request.args.get("tmdbId", "").strip()
++    if not tmdb_id or not node_providers.configured():
++        raise ValueError("No Content-Nexora result and no Node fallback is configured")
++    raw_media_type = (request.args.get("mediaType") or request.args.get("type") or "movie").lower()
++    media_type = "series" if raw_media_type in {"series", "tv"} else "movie"
++    title = (request.args.get("q") or request.args.get("title") or f"TMDB {tmdb_id}").strip()
++    content = {
++        "id": f"content-nexora~node~{media_type}~{tmdb_id}",
++        "type": media_type,
++        "name": title,
++        "title": title,
++        "provider": provider_name,
++        "source": "french-nexora-node",
++        "players": [],
++        "sources": [],
++        "streamAvailable": False,
++    }
++    if media_type == "series":
++        season_number = int(request.args.get("season", "1") or 1)
++        content["seasons"] = [{
++            "season": season_number,
++            "season_number": season_number,
++            "title": f"Saison {season_number}",
++            "episodes": {},
++        }]
++    return _merge_node_sources(content)
++
++
++def _has_node_sources(content: dict[str, Any]) -> bool:
++    if content.get("streamAvailable"):
++        return True
++    for key in ("players", "sources", "streams", "nodeStreams", "frenchNexoraStreams"):
++        value = content.get(key)
++        if isinstance(value, list) and value:
++            return True
++    for season in content.get("seasons", []) or []:
++        for episodes in (season.get("episodes", {}) or {}).values():
++            if any((episode.get("players") or episode.get("sources")) for episode in episodes or []):
++                return True
++    return False
++
+ 
+ @app.get("/")
+ def index():
+@@ -706,11 +751,20 @@ def content():
+         provider_name = request.args["provider"].lower()
+         def load_content():
+             normalized, match = _requested_content(provider_name, "content")
+-            payload = {"content": _merge_node_sources(normalized)}
++            content_payload = _merge_node_sources(normalized)
++            payload = {"content": content_payload}
+             if match:
+                 payload["match"] = match
+             return payload
+-        payload = cached_response(request_cache_key("content"), 180, load_content)
++        def load_content_with_node_fallback():
++            try:
++                return load_content()
++            except ValueError as exc:
++                fallback = _node_only_content(provider_name)
++                if _has_node_sources(fallback):
++                    return {"content": fallback, "match": {"fallback": True, "source": "french-nexora-node"}}
++                raise exc
++        payload = cached_response(request_cache_key("content"), 180, load_content_with_node_fallback)
+         return jsonify(payload)
+     except ValueError as exc:
+         return jsonify({"error": str(exc)}), 400
+@@ -721,11 +775,20 @@ def series():
+         provider_name = request.args["provider"].lower()
+         def load_series():
+             normalized, match = _requested_content(provider_name, "series")
+-            payload = {"content": _merge_node_sources(normalized)}
++            content_payload = _merge_node_sources(normalized)
++            payload = {"content": content_payload}
+             if match:
+                 payload["match"] = match
+             return payload
+-        payload = cached_response(request_cache_key("series"), 180, load_series)
++        def load_series_with_node_fallback():
++            try:
++                return load_series()
++            except ValueError as exc:
++                fallback = _node_only_content(provider_name)
++                if _has_node_sources(fallback):
++                    return {"content": fallback, "match": {"fallback": True, "source": "french-nexora-node"}}
++                raise exc
++        payload = cached_response(request_cache_key("series"), 180, load_series_with_node_fallback)
+         return jsonify(payload)
+     except ValueError as exc:
+         return jsonify({"error": str(exc)}), 400
+diff --git a/src/autoflix_api/node_providers.py b/src/autoflix_api/node_providers.py
+index 7c9b5f1..9a372a2 100644
+--- a/src/autoflix_api/node_providers.py
++++ b/src/autoflix_api/node_providers.py
+@@ -11,5 +11,14 @@ def base_url() -> str:
+     return os.getenv("FRENCH_NEXORA_API_BASE_URL", "").strip().rstrip("/")
+ 
+ 
++def absolute_url(value: Any) -> str:
++    raw = str(value or "").strip()
++    if raw.startswith("//"):
++        return f"https:{raw}"
++    if raw.startswith("/"):
++        return f"{base_url()}{raw}"
++    return raw
++
++
+ def configured() -> bool:
+     return bool(base_url())
+ 
+@@ -57,6 +66,10 @@ def normalized_sources(payload: dict[str, Any]) -> list[dict[str, Any]]:
+         if not isinstance(stream, dict):
+             continue
+-        url = str(stream.get("url", "")).strip()
++        url = ""
++        for key in ("url", "streamUrl", "playbackUrl", "proxyM3U8", "proxyM3u8", "m3u8", "directUrl", "embedUrl"):
++            url = absolute_url(stream.get(key))
++            if url:
++                break
+         if not url or url in seen:
+             continue
+         seen.add(url)
