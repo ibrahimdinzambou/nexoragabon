@@ -1,5 +1,5 @@
 /*
-  Content-Security-Policy: navigate-to 'self' https://nexoragabon.com https://www.nexoragabon.com; form-action 'self' https://nexoragabon.com https://www.nexoragabon.com
+  Content-Security-Policy: form-action 'self' https://nexoragabon.com https://www.nexoragabon.com
 
 /admin.html
   Cache-Control: no-store, no-cache, must-revalidate, max-age=0

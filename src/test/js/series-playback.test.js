@@ -199,7 +199,7 @@ test("le catalogue affiche Content-Nexora et garde Anime-Nexora pour les animes"
     assert.match(runtime, /\/api\/external\/anime/);
     assert.match(application, /enabled:\s*\$\{ANIME_NEXORA_ENABLED:\$\{CONSUMET_ENABLED:false\}\}/);
     assert.match(watch, /runtime-config\.js\?v=20260728-content-catalog-1/);
-    assert.match(watch, /app\.js\?v=20260729-mobile-vidzy-guard-1/);
+    assert.match(watch, /app\.js\?v=20260731-player-responsive-https-1/);
 });
 
 test("Voir plus recharge aussi les rayons de l'accueil", () => {
@@ -215,7 +215,7 @@ test("Voir plus recharge aussi les rayons de l'accueil", () => {
     assert.doesNotMatch(app, /Math\.min\(requestedLimit,\s*72\)/);
     assert.match(app, /const contentRemoteMore = !searching[\s\S]*?contentNexoraApiEnabled\(\) \|\| animeNexoraApiEnabled\(\)/);
     assert.match(app, /visibleItems\.length < rowItems\.length \|\| remoteMore \|\| likelyRemoteMore \|\| contentRemoteMore/);
-    assert.match(watch, /app\.js\?v=20260729-mobile-vidzy-guard-1/);
+    assert.match(watch, /app\.js\?v=20260731-player-responsive-https-1/);
 });
 
 test("les pages films et series enrichissent les univers et privilegient le flux natif mobile", () => {
@@ -276,9 +276,9 @@ test("le lecteur integre bloque les redirections externes", () => {
     assert.doesNotMatch(app, /EMBED_PLAYER_MOBILE_SANDBOX/);
     assert.match(app, /const DEDICATED_EMBED_PLAYER_PATH\s*=\s*"\/embed-player\.html"/);
     assert.match(app, /const DEDICATED_EMBED_PLAYER_STORAGE_PREFIX\s*=\s*"nexora:embedEpisodeSet:"/);
-    assert.match(app, /function isVidzyEmbedUrl\(value\)/);
-    assert.match(app, /function shouldUseDedicatedEmbedPlayer[\s\S]*?isMobileEmbedEnvironment\(\)[\s\S]*?isVidzyEmbedUrl\(streamUrl\)/);
-    assert.doesNotMatch(app, /isVidzyEmbedUrl\(streamUrl\)[\s\S]{0,120}&& !isContentNexoraPlayerItem/);
+    assert.match(app, /function isKnownExternalEmbedProviderUrl\(value\)/);
+    assert.match(app, /function shouldUseDedicatedEmbedPlayer[\s\S]*?isMobileEmbedEnvironment\(\)[\s\S]*?isKnownExternalEmbedProviderUrl\(streamUrl\)[\s\S]*?isContentNexoraPlayerItem\(item\)/);
+    assert.doesNotMatch(app, /isKnownExternalEmbedProviderUrl\(streamUrl\)[\s\S]{0,120}&& !isContentNexoraPlayerItem/);
     assert.match(app, /function dedicatedEmbedEpisodeEntries\(content,\s*item,\s*currentUrl\)/);
     assert.match(app, /sessionStorage\.setItem\(key,\s*JSON\.stringify/);
     assert.match(app, /function openDedicatedEmbedPage\(streamUrl,\s*item = state\.activePlayerItem\)/);
@@ -298,7 +298,7 @@ test("le lecteur integre bloque les redirections externes", () => {
     assert.match(app, /window\.open = function guardedWindowOpen/);
     assert.match(app, /installPageNavigationGuard\(\);/);
     assert.match(app, /function loadEmbedFrame[\s\S]*?lockEmbedShield\(\);/);
-    assert.match(watch, /app\.css\?v=20260730-player-layout-redirect-guard-1/);
+    assert.match(watch, /app\.css\?v=20260731-player-responsive-https-1/);
     assert.match(app, /const mobileEmbed = hasEmbed && isMobileEmbedEnvironment\(\)/);
     assert.match(app, /const dedicatedEmbed = hasEmbed && shouldUseDedicatedEmbedPlayer\(state\.activeEmbedUrl\)/);
     assert.match(app, /const externalHref = hasEmbed \? embedActionUrl\(state\.activeEmbedUrl\) : "#"/);
@@ -352,7 +352,7 @@ test("les headers de deploiement limitent les navigations externes", () => {
     const nginx = fs.readFileSync(path.join(__dirname, "../../../deploy/vps/nginx/nexora.conf"), "utf8");
     for (const file of [rootVercel, staticVercel, netlifyHeaders, nginx]) {
         assert.match(file, /Content-Security-Policy/);
-        assert.match(file, /navigate-to 'self' https:\/\/nexoragabon\.com https:\/\/www\.nexoragabon\.com/);
+        assert.doesNotMatch(file, /navigate-to/);
         assert.match(file, /form-action 'self' https:\/\/nexoragabon\.com https:\/\/www\.nexoragabon\.com/);
     }
 });

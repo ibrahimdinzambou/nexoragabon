@@ -13407,3 +13407,274 @@ svg {
 #playerModal .player-info-panel > .player-source-panel {
     clear: both !important;
 }
+
+/* Player responsive lock v4: keep media, metadata, actions and sources in separate rows. */
+#playerModal:not([hidden]) {
+    overflow: hidden !important;
+}
+
+#playerModal .player-room {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+#playerModal .player-watch-topbar {
+    flex: 0 0 auto !important;
+}
+
+#playerModal .player-room-layout {
+    flex: 1 1 auto !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 31vw, 560px) !important;
+    align-items: stretch !important;
+    gap: clamp(18px, 2.2vw, 34px) !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: clamp(16px, 2.4vw, 42px) clamp(18px, 3vw, 54px) !important;
+    overflow: hidden !important;
+}
+
+#playerModal .player-room-main {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: clamp(14px, 1.5vw, 20px) !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-right: 6px !important;
+    scrollbar-gutter: stable !important;
+}
+
+#playerModal .player-screen {
+    position: relative !important;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    height: clamp(300px, 47dvh, 620px) !important;
+    min-height: clamp(300px, 47dvh, 620px) !important;
+    max-height: clamp(300px, 47dvh, 620px) !important;
+    aspect-ratio: auto !important;
+    overflow: hidden !important;
+    border-radius: 12px !important;
+    background: #000 !important;
+}
+
+#playerModal .player-screen > video,
+#playerModal .player-screen > iframe,
+#playerModal .player-screen > .embed-launch-panel,
+#playerModal .player-screen > .player-placeholder,
+#playerModal .player-screen > .embed-click-shield {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    aspect-ratio: auto !important;
+}
+
+#playerModal .player-screen > video,
+#playerModal .player-screen > iframe {
+    display: block !important;
+    border: 0 !important;
+    object-fit: contain !important;
+    background: #000 !important;
+}
+
+#playerModal .player-screen > video[hidden],
+#playerModal .player-screen > iframe[hidden],
+#playerModal .player-screen > .embed-launch-panel[hidden],
+#playerModal .player-screen > .player-placeholder[hidden],
+#playerModal .player-screen > .embed-click-shield[hidden] {
+    display: none !important;
+}
+
+#playerModal .player-caption {
+    flex: 0 0 auto !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 0.85fr) !important;
+    align-items: end !important;
+    gap: 16px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+}
+
+#playerModal .player-title-group,
+#playerModal .player-tools,
+#playerModal .player-info-panel,
+#playerModal .player-source-panel {
+    min-width: 0 !important;
+}
+
+#playerModal .player-caption h2 {
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+    line-height: 1.08 !important;
+}
+
+#playerModal .player-tools {
+    display: grid !important;
+    grid-template-columns: minmax(130px, 180px) repeat(3, minmax(120px, 1fr)) !important;
+    gap: 10px !important;
+    width: 100% !important;
+}
+
+#playerModal #playerMessage {
+    grid-column: 1 / -1 !important;
+    min-height: 18px !important;
+}
+
+#playerModal .player-info-panel {
+    flex: 0 0 auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+    width: 100% !important;
+    padding: 16px 0 0 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+    overflow: visible !important;
+}
+
+#playerModal .player-info-pills,
+#playerModal .player-primary-actions,
+#playerModal .player-nextprev {
+    position: static !important;
+    display: grid !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+}
+
+#playerModal .player-primary-actions {
+    grid-template-columns: repeat(4, minmax(120px, 1fr)) !important;
+    gap: 10px !important;
+}
+
+#playerModal .player-nextprev {
+    grid-template-columns: repeat(2, minmax(140px, 1fr)) !important;
+    gap: 10px !important;
+}
+
+#playerModal .player-source-panel:not([hidden]) {
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    width: 100% !important;
+    margin: 2px 0 0 !important;
+    padding: 16px !important;
+    overflow: visible !important;
+}
+
+#playerModal .player-episode-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+#playerModal .player-episode-list {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+}
+
+@media (max-width: 1280px) {
+    #playerModal .player-caption {
+        grid-template-columns: minmax(0, 1fr) !important;
+        align-items: stretch !important;
+    }
+}
+
+@media (max-width: 1180px) {
+    #playerModal:not([hidden]) {
+        overflow-y: auto !important;
+    }
+
+    #playerModal .player-room {
+        height: auto !important;
+        min-height: 100dvh !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-room-layout {
+        grid-template-columns: minmax(0, 1fr) !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+    }
+
+    #playerModal .player-room-main {
+        height: auto !important;
+        overflow: visible !important;
+        padding-right: 0 !important;
+    }
+
+    #playerModal .player-screen {
+        height: clamp(260px, 52svh, 520px) !important;
+        min-height: clamp(260px, 52svh, 520px) !important;
+        max-height: clamp(260px, 52svh, 520px) !important;
+    }
+
+    #playerModal .player-episode-panel {
+        height: auto !important;
+        max-height: none !important;
+    }
+
+    #playerModal .player-episode-list {
+        max-height: 62svh !important;
+    }
+}
+
+@media (max-width: 760px) {
+    #playerModal .player-room-layout {
+        gap: 16px !important;
+        padding: 12px !important;
+    }
+
+    #playerModal .player-screen {
+        height: clamp(220px, 48svh, 390px) !important;
+        min-height: clamp(220px, 48svh, 390px) !important;
+        max-height: clamp(220px, 48svh, 390px) !important;
+        border-radius: 10px !important;
+    }
+
+    #playerModal .player-tools,
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    #playerModal .player-source-option {
+        grid-template-columns: 34px minmax(0, 1fr) !important;
+        min-height: 92px !important;
+    }
+
+    #playerModal .player-source-link {
+        grid-column: 2 !important;
+        justify-self: start !important;
+    }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+    #playerModal .player-screen {
+        height: max(240px, calc(100svh - 92px)) !important;
+        min-height: 240px !important;
+        max-height: none !important;
+    }
+}

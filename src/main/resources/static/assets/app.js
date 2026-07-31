@@ -989,9 +989,25 @@ async function contentNexoraApi(path, options = {}) {
 }
 
 function resolveApiResourceUrl(value) {
-    return window.NexoraApi?.resolve
+    const resolved = window.NexoraApi?.resolve
         ? window.NexoraApi.resolve(value)
         : new URL(value, window.location.origin).href;
+    return upgradeInsecureExternalUrl(resolved);
+}
+
+function upgradeInsecureExternalUrl(value) {
+    try {
+        const url = new URL(String(value || ""), window.location.href);
+        if (url.protocol !== "http:") return url.href;
+        const host = url.hostname.toLowerCase();
+        const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+        if (window.location.protocol === "https:" && !localHosts.has(host)) {
+            url.protocol = "https:";
+        }
+        return url.href;
+    } catch {
+        return value;
+    }
 }
 
 function isPageNavigationUrlAllowed(value) {
@@ -7481,7 +7497,7 @@ function contentNexoraClickableSourceUrl(value) {
     try {
         const url = new URL(raw, contentNexoraSourceOrigin());
         if (!["http:", "https:"].includes(url.protocol) || !url.hostname) return "";
-        return url.href;
+        return upgradeInsecureExternalUrl(url.href);
     } catch {
         return "";
     }
@@ -8896,11 +8912,11 @@ function isMobileEmbedEnvironment() {
     return hasCoarsePointer || isMobileUserAgent;
 }
 
-function isVidzyEmbedUrl(value) {
+function isKnownExternalEmbedProviderUrl(value) {
     try {
         const url = new URL(value, window.location.origin);
         const host = url.hostname.replace(/^www\./i, "").toLowerCase();
-        return host === "vidzy.org" || host.endsWith(".vidzy.org");
+        return /(?:^|\.)((vidzy|uqload|netu|voe|dood|streamtape|filemoon|lulustream|kokoflix|mixdrop|vidoza|upstream|waaw|streamwish|streamsb|filelions|savefiles|wolfstream|multiup|fsvid)\.[a-z0-9.-]+)$/i.test(host);
     } catch {
         return false;
     }
@@ -8908,7 +8924,7 @@ function isVidzyEmbedUrl(value) {
 
 function shouldUseDedicatedEmbedPlayer(streamUrl, item = state.activePlayerItem) {
     return isMobileEmbedEnvironment()
-        && isVidzyEmbedUrl(streamUrl);
+        && (isKnownExternalEmbedProviderUrl(streamUrl) || isContentNexoraPlayerItem(item));
 }
 
 function dedicatedEmbedPlayerUrl(streamUrl, item = state.activePlayerItem) {
