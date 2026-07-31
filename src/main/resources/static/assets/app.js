@@ -68,7 +68,7 @@ const VIDEASY_ACCENT_COLOR = "e7c36d";
 const EMBED_PLAYER_ALLOW = "autoplay; fullscreen; picture-in-picture; encrypted-media";
 const DEDICATED_EMBED_PLAYER_PATH = "/embed-player.html";
 const DEDICATED_EMBED_PLAYER_STORAGE_PREFIX = "nexora:embedEpisodeSet:";
-const EMBED_REDIRECT_SHIELD_ENABLED = true;
+const EMBED_REDIRECT_SHIELD_ENABLED = false;
 const EMBED_PLAYER_UNLOCK_MS = 4500;
 const MOBILE_EMBED_QUERY = "(max-width: 760px), (pointer: coarse)";
 const CONTENT_NEXORA_PROVIDER = "french-stream";
@@ -8917,6 +8917,16 @@ function isKnownExternalEmbedProviderUrl(value) {
         const url = new URL(value, window.location.origin);
         const host = url.hostname.replace(/^www\./i, "").toLowerCase();
         return /(?:^|\.)((vidzy|uqload|netu|voe|dood|streamtape|filemoon|lulustream|kokoflix|mixdrop|vidoza|upstream|waaw|streamwish|streamsb|filelions|savefiles|wolfstream|multiup|fsvid)\.[a-z0-9.-]+)$/i.test(host);
+    } catch {
+        return false;
+    }
+}
+
+function isVidzyEmbedUrl(value) {
+    try {
+        const url = new URL(value, window.location.origin);
+        const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+        return /(?:^|\.)vidzy\.[a-z0-9.-]+$/i.test(host);
     } catch {
         return false;
     }
