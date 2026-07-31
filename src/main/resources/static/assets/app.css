@@ -13430,10 +13430,12 @@ svg {
 #playerModal .player-room-layout {
     flex: 1 1 auto !important;
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) clamp(340px, 31vw, 560px) !important;
+    grid-template-columns: minmax(0, 1fr) clamp(320px, 26vw, 420px) !important;
     align-items: stretch !important;
     gap: clamp(18px, 2.2vw, 34px) !important;
     width: 100% !important;
+    max-width: 1760px !important;
+    margin: 0 auto !important;
     height: auto !important;
     min-height: 0 !important;
     padding: clamp(16px, 2.4vw, 42px) clamp(18px, 3vw, 54px) !important;
@@ -13458,10 +13460,10 @@ svg {
     position: relative !important;
     flex: 0 0 auto !important;
     width: 100% !important;
-    height: clamp(300px, 47dvh, 620px) !important;
-    min-height: clamp(300px, 47dvh, 620px) !important;
-    max-height: clamp(300px, 47dvh, 620px) !important;
-    aspect-ratio: auto !important;
+    aspect-ratio: 16 / 9 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: 75dvh !important;
     overflow: hidden !important;
     border-radius: 12px !important;
     background: #000 !important;
@@ -13626,9 +13628,10 @@ svg {
     }
 
     #playerModal .player-screen {
-        height: clamp(260px, 52svh, 520px) !important;
-        min-height: clamp(260px, 52svh, 520px) !important;
-        max-height: clamp(260px, 52svh, 520px) !important;
+        aspect-ratio: 16 / 9 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: 60svh !important;
     }
 
     #playerModal .player-episode-panel {
@@ -13648,9 +13651,10 @@ svg {
     }
 
     #playerModal .player-screen {
-        height: clamp(220px, 48svh, 390px) !important;
-        min-height: clamp(220px, 48svh, 390px) !important;
-        max-height: clamp(220px, 48svh, 390px) !important;
+        aspect-ratio: 16 / 9 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: 50svh !important;
         border-radius: 10px !important;
     }
 
