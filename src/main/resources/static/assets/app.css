@@ -13204,3 +13204,147 @@ svg {
         justify-self: start !important;
     }
 }
+
+/* Final anti-overlap pass: the watch room content must stack, never share rows. */
+#playerModal .player-room-main {
+    display: flex !important;
+    flex-direction: column !important;
+    align-content: stretch !important;
+    align-items: stretch !important;
+    gap: 18px !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+}
+
+#playerModal .player-screen,
+#playerModal .player-caption,
+#playerModal .player-info-panel,
+#playerModal .player-source-panel {
+    position: relative !important;
+    inset: auto !important;
+    z-index: auto !important;
+    flex: 0 0 auto !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+    transform: none !important;
+}
+
+#playerModal .player-caption {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+    padding: 0 !important;
+}
+
+#playerModal .player-title-group {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+}
+
+#playerModal .player-title-group .live-badge {
+    position: static !important;
+    flex: 0 0 auto !important;
+}
+
+#playerModal .player-caption h2,
+#playerModal #playerEpisodeSubtitle,
+#playerModal #playerMessage {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    overflow-wrap: anywhere !important;
+}
+
+#playerModal .player-tools {
+    display: grid !important;
+    grid-template-columns: minmax(130px, 180px) repeat(3, minmax(130px, 1fr)) !important;
+    align-items: end !important;
+    gap: 10px !important;
+    width: 100% !important;
+    max-width: none !important;
+}
+
+#playerModal #playerMessage {
+    grid-column: 1 / -1 !important;
+}
+
+#playerModal .player-info-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+    padding: 16px 0 0 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+    overflow: visible !important;
+}
+
+#playerModal .player-info-pills,
+#playerModal .player-primary-actions,
+#playerModal .player-nextprev {
+    position: static !important;
+    display: grid !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+}
+
+#playerModal .player-info-pills {
+    grid-template-columns: repeat(auto-fit, minmax(120px, max-content)) !important;
+    gap: 8px !important;
+}
+
+#playerModal .player-primary-actions {
+    grid-template-columns: repeat(4, minmax(130px, 1fr)) !important;
+    gap: 10px !important;
+}
+
+#playerModal .player-nextprev {
+    grid-template-columns: repeat(2, minmax(160px, 1fr)) !important;
+    gap: 10px !important;
+    padding-top: 0 !important;
+    border-top: 0 !important;
+}
+
+#playerModal .player-source-panel:not([hidden]) {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    padding: 16px !important;
+    overflow: visible !important;
+}
+
+@media (min-width: 1181px) {
+    #playerModal .player-room-main {
+        --player-screen-height: min(40dvh, 480px);
+    }
+
+    #playerModal .player-screen {
+        height: var(--player-screen-height) !important;
+        min-height: var(--player-screen-height) !important;
+        max-height: var(--player-screen-height) !important;
+        aspect-ratio: auto !important;
+    }
+}
+
+@media (max-width: 1180px) {
+    #playerModal .player-tools,
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 760px) {
+    #playerModal .player-tools,
+    #playerModal .player-primary-actions,
+    #playerModal .player-nextprev {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+}

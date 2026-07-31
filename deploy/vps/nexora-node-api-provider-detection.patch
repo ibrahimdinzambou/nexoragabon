@@ -1,5 +1,5 @@
 diff --git a/src/lib/puppeteer.ts b/src/lib/puppeteer.ts
-index ce2a47d..04b3d68 100644
+index 38e21b1..04b3d68 100644
 --- a/src/lib/puppeteer.ts
 +++ b/src/lib/puppeteer.ts
 @@ -4,6 +4,7 @@ let browser: Browser | null = null;
@@ -10,40 +10,7 @@ index ce2a47d..04b3d68 100644
  
  function normalizeHost(value: string): string {
    return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-@@ -30,6 +31,16 @@ function isAllowedNavigation(value: string, allowedMainHosts: string[]): boolean
-   }
- }
- 
-+function isAllowedNexoraNavigation(value: string): boolean {
-+  try {
-+    const url = new URL(value);
-+    if (!['http:', 'https:'].includes(url.protocol)) return true;
-+    return NEXORA_NAVIGATION_HOSTS.some((host) => hostnameMatches(url.hostname, host));
-+  } catch {
-+    return false;
-+  }
-+}
-+
- export async function getBrowser(): Promise<Browser> {
-   if (!browser) {
-     browser = await puppeteer.launch({
-@@ -146,9 +157,13 @@ export async function preparePage(
-         return abortRequest(req);
-       }
- 
--      // Bloque toute navigation de page hors Nexora/domaines explicitement autorises.
-+      // Bloque les navigations externes, y compris les iframes de players.
-       if (req.isNavigationRequest() && req.resourceType() === 'document') {
--        if (!isAllowedNavigation(url, allowedMainHosts)) return abortRequest(req);
-+        const isMainFrame = req.frame() === page.mainFrame();
-+        const allowed = isMainFrame
-+          ? isAllowedNavigation(url, allowedMainHosts)
-+          : isAllowedNexoraNavigation(url);
-+        if (!allowed) return abortRequest(req);
-       }
- 
-       continueRequest(req);
-@@ -203,6 +218,10 @@ export function attachCollector(page: Page) {
+@@ -217,6 +218,10 @@ export function attachCollector(page: Page) {
    };
  
    const isLikelyM3U8 = (url: string) => url && /\.m3u8(\?|$)/i.test(url);
@@ -54,7 +21,7 @@ index ce2a47d..04b3d68 100644
  
    page.on('request', (req) => {
      try {
-@@ -210,7 +229,7 @@ export function attachCollector(page: Page) {
+@@ -224,7 +229,7 @@ export function attachCollector(page: Page) {
        if (isLikelyM3U8(u)) {
          store.m3u8s.add(u);
        }
@@ -63,7 +30,7 @@ index ce2a47d..04b3d68 100644
          store.embeds.add(u);
        }
      } catch {}
-@@ -234,13 +253,18 @@ export function attachCollector(page: Page) {
+@@ -248,13 +253,18 @@ export function attachCollector(page: Page) {
  
        const text = await res.text().catch(() => '');
        if (!text || text.length > 800000) return;
@@ -84,7 +51,7 @@ index ce2a47d..04b3d68 100644
    });
  
 diff --git a/src/lib/scraper-series.ts b/src/lib/scraper-series.ts
-index 6337d4f..e9d87cc 100644
+index 38d454e..e9d87cc 100644
 --- a/src/lib/scraper-series.ts
 +++ b/src/lib/scraper-series.ts
 @@ -3,6 +3,7 @@ import { CONFIG } from './config';
@@ -105,17 +72,8 @@ index 6337d4f..e9d87cc 100644
        return vidzyFrame ? (vidzyFrame as any).src : null;
      });
    } catch {
-@@ -166,7 +168,7 @@ async function scrapeSeriesEpisode(
- ): Promise<{ embedUrl: string | null; m3u8: string | null; lang: string }> {
-   const b = await getBrowser();
-   const page = await b.newPage();
--  const allowedHosts = [...CONFIG.FRENCH_STREAM_DOMAINS, 'vidzy.live', 'vidzy.cc'];
-+  const allowedHosts = [...CONFIG.FRENCH_STREAM_DOMAINS];
-   await preparePage(page, allowedHosts, { blockAssets: true });
-   const collector = attachCollector(page);
- 
 diff --git a/src/lib/scraper.ts b/src/lib/scraper.ts
-index 217f2d1..0d3a821 100644
+index 8bc3f82..0d3a821 100644
 --- a/src/lib/scraper.ts
 +++ b/src/lib/scraper.ts
 @@ -4,6 +4,7 @@ import { CONFIG } from './config';
@@ -135,12 +93,3 @@ index 217f2d1..0d3a821 100644
    } catch {
      return [];
    }
-@@ -233,7 +234,7 @@ async function scrapeMovie(filmUrl: string): Promise<{ embedUrl: string | null;
-   const t0 = Date.now();
-   const b = await getBrowser();
-   const page = await b.newPage();
--  const allowedHosts = [...CONFIG.FRENCH_STREAM_DOMAINS, 'vidzy.live', 'vidzy.cc'];
-+  const allowedHosts = [...CONFIG.FRENCH_STREAM_DOMAINS];
-   await preparePage(page, allowedHosts, { blockAssets: true });
-   const collector = attachCollector(page);
- 

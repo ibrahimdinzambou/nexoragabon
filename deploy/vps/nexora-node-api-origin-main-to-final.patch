@@ -233,10 +233,10 @@ index 0000000..e8d53c5
 +  }
 +}
 diff --git a/src/lib/puppeteer.ts b/src/lib/puppeteer.ts
-index 8ad915d..38e21b1 100644
+index 8ad915d..04b3d68 100644
 --- a/src/lib/puppeteer.ts
 +++ b/src/lib/puppeteer.ts
-@@ -1,8 +1,44 @@
+@@ -1,8 +1,45 @@
 -import puppeteer, { Browser, Page } from 'puppeteer';
 +import puppeteer, { Browser, HTTPRequest, Page } from 'puppeteer';
  
@@ -244,6 +244,7 @@ index 8ad915d..38e21b1 100644
  
  const BAD_URL_RX = /(doubleclick|googlesyndication|googletagmanager|google-analytics|facebook|fbcdn|disqus|popads|popcash|exoclick|adnxs|mgid|taboola|outbrain|adsterra|hilltopads|trafficjunky|propellerads|analytics|tracking|ads|advertisement)/i;
 +const NEXORA_NAVIGATION_HOSTS = ['nexoragabon.com', 'www.nexoragabon.com'] as const;
++const PLAYER_PROVIDER_RX = /(vidzy|uqload|netu|voe|dood|streamtape|filemoon|lulustream|kokoflix|mixdrop|vidoza|upstream|waaw|streamwish|streamsb|filelions|savefiles|wolfstream|embed|player)/i;
 +
 +function normalizeHost(value: string): string {
 +  return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
@@ -282,7 +283,7 @@ index 8ad915d..38e21b1 100644
  
  export async function getBrowser(): Promise<Browser> {
    if (!browser) {
-@@ -42,15 +78,67 @@ export async function preparePage(
+@@ -42,15 +79,67 @@ export async function preparePage(
    }
  
    await page.setExtraHTTPHeaders(headers);
@@ -353,7 +354,7 @@ index 8ad915d..38e21b1 100644
  
    await page.setRequestInterception(true);
  
-@@ -60,28 +148,27 @@ export async function preparePage(
+@@ -60,28 +149,27 @@ export async function preparePage(
  
        // Bloque les pubs et trackers
        if (BAD_URL_RX.test(url)) {
@@ -393,7 +394,7 @@ index 8ad915d..38e21b1 100644
        } catch {}
      }
    });
-@@ -94,6 +181,33 @@ export async function preparePage(
+@@ -94,6 +182,33 @@ export async function preparePage(
        }
      } catch {}
    });
@@ -427,11 +428,69 @@ index 8ad915d..38e21b1 100644
  }
  
  export function attachCollector(page: Page) {
+@@ -103,6 +218,10 @@ export function attachCollector(page: Page) {
+   };
+ 
+   const isLikelyM3U8 = (url: string) => url && /\.m3u8(\?|$)/i.test(url);
++  const isLikelyPlayerEmbed = (url: string) => {
++    if (!url || !/^https?:\/\//i.test(url)) return false;
++    return PLAYER_PROVIDER_RX.test(url) && /(embed|player|stream|video|\/e\/|\/v\/|\/f\/|\/d\/)/i.test(url);
++  };
+ 
+   page.on('request', (req) => {
+     try {
+@@ -110,7 +229,7 @@ export function attachCollector(page: Page) {
+       if (isLikelyM3U8(u)) {
+         store.m3u8s.add(u);
+       }
+-      if (/vidzy\.live\/embed-[a-z0-9]+\.html/i.test(u)) {
++      if (isLikelyPlayerEmbed(u)) {
+         store.embeds.add(u);
+       }
+     } catch {}
+@@ -134,13 +253,18 @@ export function attachCollector(page: Page) {
+ 
+       const text = await res.text().catch(() => '');
+       if (!text || text.length > 800000) return;
+-      if (!/(m3u8|vidzy|source|file)/i.test(text)) return;
++      if (!/(m3u8|source|file|embed|player|stream|vidzy|uqload|netu|voe|dood|streamtape|filemoon|lulustream|kokoflix)/i.test(text)) return;
+ 
+       const m3u8 = extractM3U8FromText(text);
+       if (m3u8) store.m3u8s.add(m3u8);
+ 
+       const allUrls = text.match(/https?:\/\/[^\s"'<>\\]+\.m3u8[^\s"'<>\\]*/gi);
+       if (allUrls) allUrls.forEach((u) => store.m3u8s.add(u));
++
++      const embedUrls = text.match(/https?:\/\/[^\s"'<>\\]+/gi);
++      if (embedUrls) {
++        embedUrls.filter(isLikelyPlayerEmbed).forEach((u) => store.embeds.add(u));
++      }
+     } catch {}
+   });
+ 
 diff --git a/src/lib/scraper-series.ts b/src/lib/scraper-series.ts
-index 6337d4f..38d454e 100644
+index 6337d4f..e9d87cc 100644
 --- a/src/lib/scraper-series.ts
 +++ b/src/lib/scraper-series.ts
-@@ -166,7 +166,7 @@ async function scrapeSeriesEpisode(
+@@ -3,6 +3,7 @@ import { CONFIG } from './config';
+ 
+ 
+ const DEBUG_SCRAPER_LOGS = process.env.DEBUG_SCRAPER_LOGS === 'true';
++const PLAYER_PROVIDER_RX = /(vidzy|uqload|netu|voe|dood|streamtape|filemoon|lulustream|kokoflix|mixdrop|vidoza|upstream|waaw|streamwish|streamsb|filelions|savefiles|wolfstream|embed|player)/i;
+ function debugLog(...args: unknown[]) {
+   if (DEBUG_SCRAPER_LOGS) console.log(...args);
+ }
+@@ -145,7 +146,8 @@ async function getIframeEmbed(page: any): Promise<string | null> {
+   try {
+     return await page.evaluate(() => {
+       const frames = Array.from(document.querySelectorAll('iframe'));
+-      const vidzyFrame = frames.find((f: any) => f.src && f.src.includes('vidzy'));
++      const playerProviderRx = /(vidzy|uqload|netu|voe|dood|streamtape|filemoon|lulustream|kokoflix|mixdrop|vidoza|upstream|waaw|streamwish|streamsb|filelions|savefiles|wolfstream|embed|player)/i;
++      const vidzyFrame = frames.find((f: any) => f.src && playerProviderRx.test(f.src));
+       return vidzyFrame ? (vidzyFrame as any).src : null;
+     });
+   } catch {
+@@ -166,7 +168,7 @@ async function scrapeSeriesEpisode(
  ): Promise<{ embedUrl: string | null; m3u8: string | null; lang: string }> {
    const b = await getBrowser();
    const page = await b.newPage();
@@ -441,10 +500,27 @@ index 6337d4f..38d454e 100644
    const collector = attachCollector(page);
  
 diff --git a/src/lib/scraper.ts b/src/lib/scraper.ts
-index 217f2d1..8bc3f82 100644
+index 217f2d1..0d3a821 100644
 --- a/src/lib/scraper.ts
 +++ b/src/lib/scraper.ts
-@@ -233,7 +233,7 @@ async function scrapeMovie(filmUrl: string): Promise<{ embedUrl: string | null;
+@@ -4,6 +4,7 @@ import { CONFIG } from './config';
+ 
+ 
+ const DEBUG_SCRAPER_LOGS = process.env.DEBUG_SCRAPER_LOGS === 'true';
++const PLAYER_PROVIDER_RX = /(vidzy|uqload|netu|voe|dood|streamtape|filemoon|lulustream|kokoflix|mixdrop|vidoza|upstream|waaw|streamwish|streamsb|filelions|savefiles|wolfstream|embed|player)/i;
+ function debugLog(...args: unknown[]) {
+   if (DEBUG_SCRAPER_LOGS) console.log(...args);
+ }
+@@ -181,7 +182,7 @@ async function scanDOMEmbeds(page: any, sourceUrl: string): Promise<string[]> {
+       return out;
+     });
+ 
+-    return (urls || []).filter((u: string) => /vidzy\.live\/embed-[a-z0-9]+\.html/i.test(u));
++    return (urls || []).filter((u: string) => PLAYER_PROVIDER_RX.test(u));
+   } catch {
+     return [];
+   }
+@@ -233,7 +234,7 @@ async function scrapeMovie(filmUrl: string): Promise<{ embedUrl: string | null;
    const t0 = Date.now();
    const b = await getBrowser();
    const page = await b.newPage();
