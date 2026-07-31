@@ -7,7 +7,7 @@
     <meta name="description" content="Votre espace de streaming personnel Nexora.">
     <title>Nexora Watch | TV, films et séries</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/app.css?v=20260731-player-cascade-flux-2">
+    <link rel="stylesheet" href="/assets/app.css?v=20260731-player-cascade-flux-3">
 </head>
 <body>
 <div class="noise" aria-hidden="true"></div>
@@ -690,17 +690,17 @@
                         <button class="button button-outline" id="playerPrevEpisodeButton" type="button" disabled>Episode precedent</button>
                         <button class="button button-outline" id="playerNextEpisodeButton" type="button" disabled>Episode suivant</button>
                     </div>
+                    <section class="player-source-panel" id="playerSourcePanel" hidden aria-labelledby="playerSourceTitle">
+                        <div class="player-source-heading">
+                            <div>
+                                <span class="eyebrow">Content-Nexora</span>
+                                <h3 id="playerSourceTitle">Sources disponibles</h3>
+                            </div>
+                            <span class="player-source-count" id="playerSourceCount">0 source</span>
+                        </div>
+                        <div class="player-source-list" id="playerSourceList" role="list" aria-label="Sources vidéo Nexora"></div>
+                    </section>
                 </section>
-        <section class="player-source-panel" id="playerSourcePanel" hidden aria-labelledby="playerSourceTitle">
-            <div class="player-source-heading">
-                <div>
-                    <span class="eyebrow">Content-Nexora</span>
-                    <h3 id="playerSourceTitle">Sources disponibles</h3>
-                </div>
-                <span class="player-source-count" id="playerSourceCount">0 source</span>
-            </div>
-            <div class="player-source-list" id="playerSourceList" role="list" aria-label="Sources vidéo Nexora"></div>
-        </section>
             </main>
             <aside class="player-episode-panel" id="playerEpisodePanel" aria-labelledby="playerEpisodePanelTitle">
                 <div class="player-episode-panel-head">
@@ -732,6 +732,6 @@
 <script src="/assets/vendor/hls.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js" defer></script>
 <script src="/assets/series-playback.js?v=20260728-tmdb-normalized-content-1" defer></script>
-<script src="/assets/app.js?v=20260731-player-cascade-flux-2" defer></script>
+<script src="/assets/app.js?v=20260731-player-cascade-flux-3" defer></script>
 </body>
 </html>
