@@ -1049,14 +1049,40 @@ function sameAllowedPageNavigationUrl(value) {
     }
 }
 
+function guardLinkActivation(event) {
+    const link = event.target.closest?.("a[href], area[href]");
+    if (!link) return;
+    const href = link.getAttribute("href") || "";
+    if (!href || href.startsWith("#")) return;
+    blockExternalPageNavigation(href, event);
+}
+
+function disarmUnsafeMetaRefresh(meta) {
+    const content = String(meta.getAttribute("content") || "");
+    const match = content.match(/url\s*=\s*(.+)$/i);
+    if (!match) return;
+    if (isPageNavigationUrlAllowed(match[1].trim().replace(/^['"]|['"]$/g, ""))) return;
+    meta.remove();
+}
+
+function installMetaRefreshGuard() {
+    document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(disarmUnsafeMetaRefresh);
+    new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            mutation.addedNodes.forEach((node) => {
+                if (!(node instanceof Element)) return;
+                if (node.matches?.('meta[http-equiv="refresh" i]')) {
+                    disarmUnsafeMetaRefresh(node);
+                }
+                node.querySelectorAll?.('meta[http-equiv="refresh" i]').forEach(disarmUnsafeMetaRefresh);
+            });
+        }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+}
+
 function installPageNavigationGuard() {
-    document.addEventListener("click", (event) => {
-        const link = event.target.closest?.("a[href]");
-        if (!link) return;
-        const href = link.getAttribute("href") || "";
-        if (!href || href.startsWith("#")) return;
-        blockExternalPageNavigation(href, event);
-    }, true);
+    document.addEventListener("click", guardLinkActivation, true);
+    document.addEventListener("auxclick", guardLinkActivation, true);
 
     document.addEventListener("submit", (event) => {
         const form = event.target;
@@ -1064,14 +1090,23 @@ function installPageNavigationGuard() {
         blockExternalPageNavigation(form.action, event);
     }, true);
 
-    const originalOpen = window.open?.bind(window);
-    if (!originalOpen) return;
-    window.open = function guardedWindowOpen(url, ...args) {
-        if (url && blockExternalPageNavigation(url)) {
-            return null;
+    if (window.opener) {
+        try {
+            window.opener = null;
+        } catch {
+            // Some browsers keep window.opener read-only once set.
         }
-        return originalOpen(url, ...args);
-    };
+    }
+
+    const originalOpen = window.open?.bind(window);
+    if (originalOpen) {
+        window.open = function guardedWindowOpen(url, ...args) {
+            if (url && blockExternalPageNavigation(url)) {
+                return null;
+            }
+            return originalOpen(url, ...args);
+        };
+    }
 
     try {
         const originalAssign = window.location.assign.bind(window.location);
@@ -1100,6 +1135,8 @@ function installPageNavigationGuard() {
     } catch {
         // History methods can be non-writable in hardened browser contexts.
     }
+
+    installMetaRefreshGuard();
 }
 
 // Les films et series hors anime passent par Content-Nexora.
