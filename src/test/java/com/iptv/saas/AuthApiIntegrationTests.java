@@ -206,6 +206,7 @@ class AuthApiIntegrationTests {
                                   "name": "Nouvel Utilisateur",
                                   "organizationName": "Espace Familial",
                                   "email": "%s",
+                                  "whatsappNumber": "+241 77 12 34 56",
                                   "password": "Nexora2026!",
                                   "planCode": "pro"
                                 }
@@ -214,6 +215,7 @@ class AuthApiIntegrationTests {
                 .andExpect(jsonPath("$.data.requiresEmailVerification").value(true))
                 .andExpect(jsonPath("$.data.token").doesNotExist())
                 .andExpect(jsonPath("$.data.user.email").value(email))
+                .andExpect(jsonPath("$.data.user.whatsappNumber").value("+241 77 12 34 56"))
                 .andExpect(jsonPath("$.data.user.emailVerified").value(false))
                 .andExpect(jsonPath("$.data.organization.name").value("Espace Familial"))
                 .andExpect(jsonPath("$.data.subscription.plan.code").value("pro"))

@@ -19,6 +19,7 @@ public final class ApiMappers {
         m.put("id", user.id);
         m.put("name", user.name);
         m.put("email", user.email);
+        m.put("whatsappNumber", user.whatsappNumber);
         m.put("role", user.role);
         m.put("active", user.active);
         m.put("emailVerified", user.emailVerified);

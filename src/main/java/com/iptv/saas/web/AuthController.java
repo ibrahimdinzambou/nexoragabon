@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -52,6 +53,7 @@ public class AuthController {
         return Responses.ok(auth.register(
                 request.name(),
                 request.email(),
+                request.whatsappNumber(),
                 request.password(),
                 request.organizationName(),
                 request.planCode(),
@@ -164,6 +166,7 @@ public class AuthController {
     public record RegisterRequest(
             @NotBlank String name,
             @Email @NotBlank String email,
+            @NotBlank @Pattern(regexp = "^\\+?[0-9\\s().-]{8,24}$", message = "Numero WhatsApp invalide") String whatsappNumber,
             @Size(min = 6) String password,
             String organizationName,
             String planCode,

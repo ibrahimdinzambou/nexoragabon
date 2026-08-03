@@ -25,6 +25,9 @@ public class UserEntity extends BaseEntity {
     @Column(nullable = false, unique = true)
     public String email;
 
+    @Column
+    public String whatsappNumber;
+
     @JsonIgnore
     @Column(nullable = false)
     public String passwordHash;

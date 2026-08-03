@@ -262,6 +262,7 @@ function validateForm(formData) {
     const name = String(formData.get("name") || "").trim();
     const organizationName = String(formData.get("organizationName") || "").trim();
     const email = String(formData.get("email") || "").trim();
+    const whatsappNumber = String(formData.get("whatsappNumber") || "").trim();
     const password = String(formData.get("password") || "");
     const confirmation = String(formData.get("passwordConfirmation") || "");
 
@@ -275,6 +276,10 @@ function validateForm(formData) {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         showFieldError("email", "Saisissez une adresse e-mail valide.");
+        valid = false;
+    }
+    if (!/^\+?[0-9\s().-]{8,24}$/.test(whatsappNumber)) {
+        showFieldError("whatsappNumber", "Indiquez un numero WhatsApp valide.");
         valid = false;
     }
     if (password.length < 8) {
@@ -340,6 +345,7 @@ async function submitSignup(event) {
                     name: String(formData.get("name")).trim(),
                     organizationName: String(formData.get("organizationName")).trim(),
                     email: String(formData.get("email")).trim(),
+                    whatsappNumber: String(formData.get("whatsappNumber")).trim(),
                     password: String(formData.get("password")),
                     planCode: state.selectedPlan.code,
                     paymentMethodCode: isPaidPlan(state.selectedPlan) ? state.selectedPaymentMethod : null,

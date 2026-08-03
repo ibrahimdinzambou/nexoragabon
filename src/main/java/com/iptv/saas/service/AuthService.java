@@ -80,6 +80,7 @@ public class AuthService {
     public Map<String, Object> register(
             String name,
             String email,
+            String whatsappNumber,
             String password,
             String organizationName,
             String planCode,
@@ -93,6 +94,7 @@ public class AuthService {
         UserEntity user = new UserEntity();
         user.name = name;
         user.email = normalizedEmail;
+        user.whatsappNumber = normalizeWhatsappNumber(whatsappNumber);
         user.passwordHash = passwordEncoder.encode(password);
         user.role = Enums.UserRole.USER;
         user.active = true;
@@ -442,5 +444,16 @@ public class AuthService {
             throw ApiException.validation("Email obligatoire");
         }
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeWhatsappNumber(String whatsappNumber) {
+        if (whatsappNumber == null || whatsappNumber.isBlank()) {
+            throw ApiException.validation("Numero WhatsApp obligatoire");
+        }
+        String normalized = whatsappNumber.trim().replaceAll("\\s+", " ");
+        if (!normalized.matches("^\\+?[0-9\\s().-]{8,24}$")) {
+            throw ApiException.validation("Numero WhatsApp invalide");
+        }
+        return normalized;
     }
 }
